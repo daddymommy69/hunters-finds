@@ -1,5 +1,11 @@
+import { supabase } from './supabaseClient'
 import React, { useState, useEffect } from 'react';
-import { MapPin, TrendingUp, Plus, Search, X, Image, MessageSquare, Users, Compass, User, UserPlus, Bookmark, Star, List, Settings } from 'lucide-react';
+import { MapPin, TrendingUp, Plus, Search, X, Image, MessageSquare, Users, Compass, User, UserPlus, Bookmark, Star, List, Settings, Lock } from 'lucide-react';
+import { useAuth } from './hooks/useAuth';
+import LoadingSpinner from './components/LoadingSpinner';
+import EmptyState from './components/EmptyState';
+import { useRealTimeData } from './hooks/useRealTimeData';
+
 
 /*
  * MAP IMPLEMENTATION:
@@ -43,110 +49,14 @@ import { MapPin, TrendingUp, Plus, Search, X, Image, MessageSquare, Users, Compa
  */
 
 
-const mockRestaurants = [
-  { id: 1, name: "taco palace", cuisine: "mexican", avgSRR: 87,
-    location: { lat: 37.8044, lng: -122.2712, address: "123 Telegraph Ave, Oakland, CA" },
-    photos: ['🌮', '🌯', '🥑'],
-    recentScores: [
-      { user: 'alice', date: '2026-01-28', taste: 85, portion: 90, overall: 87 },
-      { user: 'bob', date: '2026-01-27', taste: 88, portion: 85, overall: 86 },
-      { user: 'charlie', date: '2026-01-26', taste: 90, portion: 88, overall: 89 },
-      { user: 'diana', date: '2026-01-25', taste: 82, portion: 87, overall: 84 },
-      { user: 'evan', date: '2026-01-24', taste: 87, portion: 89, overall: 88 }
-    ],
-    topDishes: [
-      { id: 'd1', name: "carne asada tacos", srr: 92, price: 8.50, numRatings: 24, photos: 15, comments: 18 },
-      { id: 'd2', name: "california burrito", srr: 89, price: 11.00, numRatings: 18, photos: 12, comments: 14 }
-    ]
-  },
-  { id: 2, name: "joe's diner", cuisine: "american", avgSRR: 82,
-    location: { lat: 37.8088, lng: -122.2690, address: "456 Broadway, Oakland, CA" },
-    photos: ['🍔', '🍟', '🥤'],
-    recentScores: [
-      { user: 'frank', date: '2026-01-29', taste: 80, portion: 85, overall: 82 },
-      { user: 'grace', date: '2026-01-28', taste: 82, portion: 83, overall: 82 },
-      { user: 'henry', date: '2026-01-27', taste: 78, portion: 84, overall: 81 },
-      { user: 'iris', date: '2026-01-26', taste: 84, portion: 82, overall: 83 },
-      { user: 'jack', date: '2026-01-25', taste: 81, portion: 80, overall: 80 }
-    ],
-    topDishes: [
-      { id: 'd4', name: "classic cheeseburger", srr: 88, price: 12.00, numRatings: 42, photos: 28, comments: 35 }
-    ]
-  },
-  { id: 3, name: "pizza haven", cuisine: "italian", avgSRR: 91,
-    location: { lat: 37.8100, lng: -122.2620, address: "789 College Ave, Oakland, CA" },
-    photos: ['🍕', '🍝', '🥗'],
-    recentScores: [
-      { user: 'kate', date: '2026-01-30', taste: 92, portion: 90, overall: 91 },
-      { user: 'leo', date: '2026-01-29', taste: 90, portion: 91, overall: 90 },
-      { user: 'mia', date: '2026-01-28', taste: 93, portion: 89, overall: 91 },
-      { user: 'noah', date: '2026-01-27', taste: 89, portion: 92, overall: 90 },
-      { user: 'olivia', date: '2026-01-26', taste: 91, portion: 90, overall: 90 }
-    ],
-    topDishes: [
-      { id: 'd7', name: "margherita pizza", srr: 95, price: 14.00, numRatings: 56, photos: 41, comments: 48 }
-    ]
-  }
-];
 
-const mockGroups = [
-  { 
-    id: 1, 
-    name: "foodie squad", 
-    members: 45, 
-    score: 247, 
-    uniqueDishes: 156,
-    membersList: [
-      { username: 'alice', score: 89, dishes: 32 },
-      { username: 'bob', score: 85, dishes: 28 },
-      { username: 'charlie', score: 92, dishes: 41 },
-      { username: 'diana', score: 81, dishes: 25 },
-      { username: 'evan', score: 88, dishes: 30 }
-    ],
-    dishes: [
-      { name: "carne asada tacos", restaurant: "taco palace", srr: 92 },
-      { name: "margherita pizza", restaurant: "pizza haven", srr: 95 },
-      { name: "classic cheeseburger", restaurant: "joe's diner", srr: 88 }
-    ]
-  },
-  { 
-    id: 2, 
-    name: "bay area eats", 
-    members: 38, 
-    score: 231, 
-    uniqueDishes: 142,
-    membersList: [
-      { username: 'frank', score: 87, dishes: 29 },
-      { username: 'grace', score: 90, dishes: 35 },
-      { username: 'henry', score: 83, dishes: 27 },
-      { username: 'iris', score: 86, dishes: 31 }
-    ],
-    dishes: [
-      { name: "california burrito", restaurant: "taco palace", srr: 89 },
-      { name: "margherita pizza", restaurant: "pizza haven", srr: 95 }
-    ]
-  }
-];
 
-const mockUsers = [
-  { id: 1, username: "alice", ratings: 47, location: "oakland, ca", overlap: 78 },
-  { id: 2, username: "bob", ratings: 32, location: "san francisco, ca", overlap: 65 }
-];
-
-const mockMyGroups = [
-  { id: 1, name: "oakland food crew", members: 12, rankedItems: 47 }
-];
-
-const mockMyLists = [
-  { id: 1, name: "places to try", items: 12, isPublic: false },
-  { id: 2, name: "favorite pizzas", items: 8, isPublic: true, saves: 3 }
-];
 
 const categoryAverages = {
-  'carne asada tacos': 8.50,
-  'cheeseburger': 12.00,
-  'margherita pizza': 14.00,
-  'california burrito': 11.00
+  'mexican': 10,
+  'italian': 12,
+  'american': 11,
+  'various': 10
 };
 
 // Count-up animation component for scores
@@ -179,7 +89,83 @@ const CountUpScore = ({ value, duration = 800, className = "" }) => {
 };
 
 const HuntersFindsApp = () => {
+  // ===== AUTHENTICATION =====
+  const { user, loading: authLoading, signOut, signUpWithEmail, signInWithEmail, error: authError } = useAuth();
+  
+  // Real-time data
+  const { dishes = [], restaurants = [], userRatings = [], loading: dataLoading } = useRealTimeData(user);
+  const [rankingMode, setRankingMode] = useState('global');
   const [isMapLoaded, setIsMapLoaded] = React.useState(false);
+  const [activeTab, setActiveTab] = useState('rankings');
+  const [selectedDish, setSelectedDish] = useState(null);
+  const [rankingView, setRankingView] = useState('dishes');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSubmissionModalOpen, setIsSubmissionModalOpen] = useState(false);
+  const [exploreView, setExploreView] = useState('for-you');
+  const [youView, setYouView] = useState('profile');
+  const [isNewListModalOpen, setIsNewListModalOpen] = useState(false);
+  const [isNewGroupModalOpen, setIsNewGroupModalOpen] = useState(false);
+  const [newListName, setNewListName] = useState('');
+  const [newListItems, setNewListItems] = useState([]);
+  const [newListCollaborators, setNewListCollaborators] = useState([]);
+  const [listItemSearch, setListItemSearch] = useState('');
+  const [collaboratorSearch, setCollaboratorSearch] = useState('');
+  const [newGroupName, setNewGroupName] = useState('');
+  const [newGroupMembers, setNewGroupMembers] = useState([]);
+  const [groupMemberSearch, setGroupMemberSearch] = useState('');
+  const [isResultsModalOpen, setIsResultsModalOpen] = useState(false);
+  const [submittedRating, setSubmittedRating] = useState(null);
+  const [isResultsClosing, setIsResultsClosing] = useState(false);
+  const [isSubmissionClosing, setIsSubmissionClosing] = useState(false);
+  const [isDishModalClosing, setIsDishModalClosing] = useState(false);
+  const [isNewListModalClosing, setIsNewListModalClosing] = useState(false);
+  const [isNewGroupModalClosing, setIsNewGroupModalClosing] = useState(false);
+  const [selectedRestaurant, setSelectedRestaurant] = useState(null);
+  const [isRestaurantModalClosing, setIsRestaurantModalClosing] = useState(false);
+  const [selectedGroup, setSelectedGroup] = useState(null);
+  const [isGroupModalClosing, setIsGroupModalClosing] = useState(false);
+  const [groupModalView, setGroupModalView] = useState('members');
+  const [savedItems, setSavedItems] = useState([]);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [isUserModalClosing, setIsUserModalClosing] = useState(false);
+  const [modalStack, setModalStack] = useState([]);
+  const [restaurant, setRestaurant] = useState('');
+  const [dishName, setDishName] = useState('');
+  const [dishCategory, setDishCategory] = useState('');
+  const [categoryInput, setCategoryInput] = useState('');
+  const [showCategorySuggestions, setShowCategorySuggestions] = useState(false);
+  const [price, setPrice] = useState('');
+  const [tasteScore, setTasteScore] = useState(50);
+  const [portionScore, setPortionScore] = useState(50);
+  const [priceScore, setPriceScore] = useState(50);
+  const [comment, setComment] = useState('');
+  
+  // Restaurant autocomplete states
+  const [restaurantSearch, setRestaurantSearch] = useState('');
+  const [showRestaurantDropdown, setShowRestaurantDropdown] = useState(false);
+  const [restaurantSuggestions, setRestaurantSuggestions] = useState([]);
+  const [showCreateRestaurant, setShowCreateRestaurant] = useState(false);
+  const [newRestaurantAddress, setNewRestaurantAddress] = useState('');
+  const [newRestaurantCuisine, setNewRestaurantCuisine] = useState('');
+  
+  // Auth form states
+  const [authMode, setAuthMode] = useState('signin'); // 'signin' or 'signup'
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authUsername, setAuthUsername] = useState('');
+  const [authPhone, setAuthPhone] = useState('');
+  const [authCountryCode, setAuthCountryCode] = useState('+1');
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [authMethod, setAuthMethod] = useState('email'); // 'email' or 'phone'
+  const [authFormLoading, setAuthFormLoading] = useState(false);
+  
+  // OTP-specific states
+  const [otpEmail, setOtpEmail] = useState('');
+  const [otpPhone, setOtpPhone] = useState('');
+
+
+  
 
   React.useEffect(() => {
     // Load Leaflet CSS and JS (free OpenStreetMap alternative)
@@ -229,129 +215,39 @@ const HuntersFindsApp = () => {
   };
 
   const getAllDishes = () => {
-    const dishes = [];
-    mockRestaurants.forEach(restaurant => {
-      restaurant.topDishes.forEach(dish => {
-        dishes.push({
-          ...dish,
-          restaurantName: restaurant.name,
-          cuisine: restaurant.cuisine
-        });
-      });
-    });
-    return dishes.sort((a, b) => b.srr - a.srr);
+    if (rankingMode === 'personal' && user && userRatings) {
+      return userRatings.map(rating => ({
+        id: rating.dish?.id || rating.id,
+        name: rating.dish?.name || 'Unknown',
+        restaurantName: rating.dish?.restaurant_name || 'Unknown',
+        cuisine: rating.dish?.cuisine_type || 'various',
+        price: rating.dish?.price || 0,
+        srr: Math.round(rating.overall_score || 0),
+        numRatings: 1,
+        photos: 0,
+        comments: 0
+      }));
+    }
+    
+    return (dishes || []).map(dish => ({
+      id: dish.id,
+      name: dish.name,
+      restaurantName: dish.restaurant_name,
+      cuisine: dish.cuisine_type || 'various',
+      price: dish.price || 0,
+      srr: Math.round(dish.avg_srr || 0),
+      numRatings: dish.total_ratings || 0,
+      photos: 0,
+      comments: 0
+    }));
   };
 
-  const [activeTab, setActiveTab] = useState('rankings');
-  const [selectedDish, setSelectedDish] = useState(null);
-  const [rankingView, setRankingView] = useState('dishes');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isSubmissionModalOpen, setIsSubmissionModalOpen] = useState(false);
-  const [exploreView, setExploreView] = useState('for-you');
-  const [youView, setYouView] = useState('profile');
-  const [isNewListModalOpen, setIsNewListModalOpen] = useState(false);
-  const [isNewGroupModalOpen, setIsNewGroupModalOpen] = useState(false);
-  const [newListName, setNewListName] = useState('');
-  const [newListItems, setNewListItems] = useState([]);
-  const [newListCollaborators, setNewListCollaborators] = useState([]);
-  const [listItemSearch, setListItemSearch] = useState('');
-  const [collaboratorSearch, setCollaboratorSearch] = useState('');
-  const [newGroupName, setNewGroupName] = useState('');
-  const [newGroupMembers, setNewGroupMembers] = useState([]);
-  const [groupMemberSearch, setGroupMemberSearch] = useState('');
-  const [isResultsModalOpen, setIsResultsModalOpen] = useState(false);
-  const [submittedRating, setSubmittedRating] = useState(null);
-  const [isResultsClosing, setIsResultsClosing] = useState(false);
-  const [isSubmissionClosing, setIsSubmissionClosing] = useState(false);
-  const [isDishModalClosing, setIsDishModalClosing] = useState(false);
-  const [isNewListModalClosing, setIsNewListModalClosing] = useState(false);
-  const [isNewGroupModalClosing, setIsNewGroupModalClosing] = useState(false);
-  const [selectedRestaurant, setSelectedRestaurant] = useState(null);
-  const [isRestaurantModalClosing, setIsRestaurantModalClosing] = useState(false);
-  const [selectedGroup, setSelectedGroup] = useState(null);
-  const [isGroupModalClosing, setIsGroupModalClosing] = useState(false);
-  const [groupModalView, setGroupModalView] = useState('members');
-  const [savedItems, setSavedItems] = useState([]);
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [isUserModalClosing, setIsUserModalClosing] = useState(false);
-  
-  // Modal Stack System for nested navigation
-  const [modalStack, setModalStack] = useState([]);
-  // modalStack structure: [{ type: 'group', data: groupObj }, { type: 'user', data: userObj }]
-  
-  // Submission form state
-  const [restaurant, setRestaurant] = useState('');
-  const [dishName, setDishName] = useState('');
-  const [dishCategory, setDishCategory] = useState('');
-  const [categoryInput, setCategoryInput] = useState('');
-  const [showCategorySuggestions, setShowCategorySuggestions] = useState(false);
-  const [price, setPrice] = useState('');
-  const [tasteScore, setTasteScore] = useState(50);
-  const [portionScore, setPortionScore] = useState(50);
-  const [priceScore, setPriceScore] = useState(50);
-  const [comment, setComment] = useState('');
-
+  // Call getAllDishes to get the dishes array
   const allDishes = getAllDishes();
   
-  const categorySuggestions = Object.keys(categoryAverages).filter(cat =>
+  const categorySuggestions = Object.keys(categoryAverages || {}).filter(cat =>
     cat.toLowerCase().includes(categoryInput.toLowerCase())
   );
-
-  const handleCategorySelect = (category) => {
-    setDishCategory(category);
-    setCategoryInput(category);
-    setShowCategorySuggestions(false);
-  };
-
-  useEffect(() => {
-    if (price && dishCategory && categoryAverages[dishCategory.toLowerCase()]) {
-      const avgPrice = categoryAverages[dishCategory.toLowerCase()];
-      const actualPrice = parseFloat(price);
-      const beta = 0.5;
-      const r = actualPrice / avgPrice;
-      let calculatedScore = 50 + (50 * (1 - r)) / beta;
-      calculatedScore = Math.max(1, Math.min(100, calculatedScore));
-      setPriceScore(Math.round(calculatedScore));
-    }
-  }, [price, dishCategory]);
-
-  const finalSRR = Math.round(((tasteScore * 0.33) + (priceScore * 0.33) + (portionScore * 0.33)) * 10) / 10;
-
-  const calculateRankingPosition = (score) => {
-    const allDishesWithNew = [...getAllDishes(), { 
-      name: dishName, 
-      srr: score, 
-      restaurantName: restaurant,
-      price: parseFloat(price),
-      cuisine: dishCategory
-    }].sort((a, b) => b.srr - a.srr);
-    
-    const currentIndex = allDishesWithNew.findIndex(d => d.name === dishName && d.srr === score);
-    const rank = currentIndex + 1;
-    const topRanked = allDishesWithNew[0];
-    const aboveItem = currentIndex > 0 ? allDishesWithNew[currentIndex - 1] : null;
-    const belowItem = currentIndex < allDishesWithNew.length - 1 ? allDishesWithNew[currentIndex + 1] : null;
-    
-    return { rank, total: allDishesWithNew.length, topRanked, aboveItem, belowItem };
-  };
-
-  const handleSubmit = () => {
-    const rating = {
-      restaurant,
-      dishName,
-      dishCategory,
-      price: parseFloat(price),
-      tasteScore,
-      priceScore,
-      portionScore,
-      finalSRR,
-      ranking: calculateRankingPosition(finalSRR)
-    };
-    
-    setSubmittedRating(rating);
-    setIsSubmissionModalOpen(false);
-    setIsResultsModalOpen(true);
-  };
 
   const handleCloseResults = () => {
     setIsResultsClosing(true);
@@ -368,6 +264,115 @@ const HuntersFindsApp = () => {
       setPriceScore(50);
       setComment('');
     }, 300); // Match animation duration
+  };
+
+  const calculateRankingPosition = (score) => {
+    const allDishesWithNew = [...getAllDishes(), { 
+      name: dishName,
+      restaurantName: restaurant,
+      srr: score,
+      cuisine: dishCategory,
+      price: parseFloat(price)
+    }].sort((a, b) => b.srr - a.srr);
+    
+    const currentIndex = allDishesWithNew.findIndex(d => d.name === dishName && d.srr === score);
+    const rank = currentIndex + 1;
+    const topRanked = allDishesWithNew[0];
+    const aboveItem = currentIndex > 0 ? allDishesWithNew[currentIndex - 1] : null;
+    const belowItem = currentIndex < allDishesWithNew.length - 1 ? allDishesWithNew[currentIndex + 1] : null;
+    
+    return { rank, total: allDishesWithNew.length, topRanked, aboveItem, belowItem };
+  };
+
+  const handleSubmit = async () => {
+    // Check if user is logged in
+    if (!user) {
+      alert('Please login to submit a rating!');
+      { setActiveTab('you'); setYouView('login'); };
+      return;
+    }
+
+    // Calculate final SRR score
+    const finalSRR = Math.round((tasteScore + priceScore + portionScore) / 3);
+
+    const rating = {
+      restaurant,
+      dishName,
+      dishCategory,
+      price: parseFloat(price),
+      tasteScore,
+      priceScore,
+      portionScore,
+      finalSRR,
+      ranking: calculateRankingPosition(finalSRR)
+    };
+    
+    // Save to Supabase database
+    try {
+      // First, check if the dish exists, if not create it
+      const { data: existingDish, error: dishCheckError } = await supabase
+        .from('dishes')
+        .select('id')
+        .eq('name', dishName)
+        .eq('restaurant_name', restaurant)
+        .single();
+
+      let dishId;
+
+      if (existingDish) {
+        dishId = existingDish.id;
+      } else {
+        // Create the dish
+        const { data: newDish, error: dishError } = await supabase
+          .from('dishes')
+          .insert([{
+            name: dishName,
+            restaurant_name: restaurant,
+            cuisine_type: dishCategory,
+            price: parseFloat(price),
+            avg_srr: finalSRR,
+            total_ratings: 1
+          }])
+          .select()
+          .single();
+
+        if (dishError) {
+          console.error('Error creating dish:', dishError);
+          alert('Error saving dish. Please try again.');
+          return;
+        }
+        dishId = newDish.id;
+      }
+
+      // Save the rating
+      const { error: ratingError } = await supabase
+        .from('ratings')
+        .insert([{
+          dish_id: dishId,
+          user_id: user.id,
+          taste_score: tasteScore,
+          portion_score: portionScore,
+          price_score: priceScore,
+          overall_score: finalSRR,
+          comment: comment || null
+        }]);
+
+      if (ratingError) {
+        console.error('Error saving rating:', ratingError);
+        alert('Error saving rating. Please try again.');
+        return;
+      }
+
+      console.log('✅ Rating saved to database!');
+    } catch (error) {
+      console.error('Unexpected error:', error);
+      alert('Something went wrong. Please try again.');
+      return;
+    }
+    
+    setSubmittedRating(rating);
+    setIsSubmissionModalOpen(false);
+    setIsResultsModalOpen(true);
   };
 
   const handleCloseSubmission = () => {
@@ -489,6 +494,74 @@ const HuntersFindsApp = () => {
   const isItemSaved = (itemId, type) => {
     return savedItems.some(i => i.id === itemId && i.type === type);
   };
+
+  // Restaurant search with fuzzy matching
+  
+  // Format phone number as user types (US format)
+  const formatPhoneNumber = (value) => {
+    // Remove all non-digits
+    const phoneNumber = value.replace(/\D/g, '');
+    
+    // Don't add anything if empty
+    if (phoneNumber.length === 0) return '';
+    
+    // Format based on length (assuming US: XXX-XXX-XXXX)
+    if (phoneNumber.length <= 3) {
+      return phoneNumber;
+    } else if (phoneNumber.length <= 6) {
+      return `${phoneNumber.slice(0, 3)}-${phoneNumber.slice(3)}`;
+    } else {
+      return `${phoneNumber.slice(0, 3)}-${phoneNumber.slice(3, 6)}-${phoneNumber.slice(6, 10)}`;
+    }
+  };
+
+  const searchRestaurants = async (searchTerm) => {
+    if (!searchTerm || searchTerm.length < 2) {
+      setRestaurantSuggestions([]);
+      return;
+    }
+
+    try {
+      // Search restaurants in Supabase (case-insensitive)
+      const { data, error } = await supabase
+        .from('restaurants')
+        .select('*')
+        .ilike('name', `%${searchTerm}%`)
+        .limit(5);
+
+      if (error) throw error;
+      setRestaurantSuggestions(data || []);
+    } catch (error) {
+      console.error('Error searching restaurants:', error);
+      setRestaurantSuggestions([]);
+    }
+  };
+
+  // Create new restaurant
+  const createRestaurant = async (name, address, cuisine, priceRange) => {
+    try {
+      const { data, error} = await supabase
+        .from('restaurants')
+        .insert([
+          {
+            name: name.trim(),
+            address: address?.trim() || null,
+            cuisine: cuisine?.trim() || null,
+            price_range: priceRange || null,
+            created_by: user?.id || null,
+          }
+        ])
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error('Error creating restaurant:', error);
+      return null;
+    }
+  };
+
 
   return (
     <div className="h-screen flex flex-col bg-gray-50" style={{ fontFamily: '"Courier New", monospace' }}>
@@ -837,7 +910,7 @@ const HuntersFindsApp = () => {
                         }).addTo(map);
 
                         // Add markers for each restaurant
-                        mockRestaurants.forEach(restaurant => {
+                        (restaurants || []).forEach(restaurant => {
                           // Determine marker color based on SRR score
                           const markerColor = restaurant.avgSRR >= 90 ? '#a855f7' : 
                                             restaurant.avgSRR >= 85 ? '#eab308' : '#33a29b';
@@ -989,29 +1062,44 @@ const HuntersFindsApp = () => {
 
             <div className="max-w-4xl mx-auto p-4">
               {rankingView === 'dishes' && (
-                <div className="space-y-2">
-                  {allDishes.map((dish, idx) => {
-                    const badge = getTierBadge(dish.srr);
-                    return (
-                      <div key={idx} className="bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition cursor-pointer stagger-item" onClick={() => setSelectedDish(dish)}>
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 text-center text-lg font-bold text-gray-400">#{idx + 1}</div>
-                          <div className="flex-1">
-                            <div className="font-semibold text-sm">{dish.name}</div>
-                            <div className="text-xs text-gray-500">{dish.restaurantName} • {dish.cuisine} • ${dish.price.toFixed(2)}</div>
+                <>
+                  {allDishes.length === 0 ? (
+                    <EmptyState
+                      icon={TrendingUp}
+                      title="no dishes rated yet"
+                      message="Be the first to rate a dish and set the standard!"
+                      actionText="rate now"
+                      onAction={() => setIsSubmissionModalOpen(true)}
+                    />
+                  ) : (
+                    <div className="space-y-2">
+                      {allDishes.map((dish, idx) => {
+                        const badge = getTierBadge(dish.srr);
+                        return (
+                          <div key={idx} className="bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition cursor-pointer stagger-item" onClick={() => setSelectedDish(dish)}>
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 text-center text-lg font-bold text-gray-400">#{idx + 1}</div>
+                              <div className="flex-1">
+                                <div className="font-semibold text-sm">{dish.name}</div>
+                                <div className="text-xs text-gray-500">{dish.restaurantName} • {dish.cuisine} • ${dish.price.toFixed(2)}</div>
+                              </div>
+                              <span className={`text-xs px-2 py-1 rounded float-badge ${badge.color}`}>{badge.label}</span>
+                              <div className={`text-2xl font-bold ${getSRRColor(dish.srr)} ${dish.srr >= 90 ? 'score-shine' : ''}`}>{dish.srr}</div>
+                              <div className="text-[10px] text-gray-500 text-center mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
+                                {dish.numRatings} rating{dish.numRatings !== 1 ? 's' : ''}
+                              </div>
+                            </div>
                           </div>
-                          <span className={`text-xs px-2 py-1 rounded float-badge ${badge.color}`}>{badge.label}</span>
-                          <div className={`text-2xl font-bold ${getSRRColor(dish.srr)} ${dish.srr >= 90 ? 'score-shine' : ''}`}>{dish.srr}</div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
               )}
 
               {rankingView === 'restaurants' && (
                 <div className="space-y-2">
-                  {[...mockRestaurants].sort((a, b) => b.avgSRR - a.avgSRR).map((restaurant, idx) => {
+                  {[...(restaurants || [])].sort((a, b) => b.avgSRR - a.avgSRR).map((restaurant, idx) => {
                     const badge = getTierBadge(restaurant.avgSRR);
                     return (
                       <div key={idx} className="bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition cursor-pointer stagger-item" onClick={() => setSelectedRestaurant(restaurant)}>
@@ -1033,7 +1121,7 @@ const HuntersFindsApp = () => {
               {rankingView === 'groups' && (
                 <div className="space-y-3">
                   <h2 className="text-lg font-bold mb-4">group rankings</h2>
-                  {mockGroups.map((group, idx) => (
+                  {[].map((group, idx) => (
                     <div key={idx} onClick={() => setSelectedGroup(group)} className="bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition">
                       <div className="flex items-center gap-3">
                         <div className="text-2xl font-bold text-gray-400">#{idx + 1}</div>
@@ -1062,10 +1150,20 @@ const HuntersFindsApp = () => {
 
             <div className="max-w-4xl mx-auto p-4">
               {exploreView === 'for-you' && (
-                <div className="space-y-4">
+                <>
+                  {dishes.length < 3 ? (
+                    <EmptyState
+                      icon={Compass}
+                      title="not enough data yet"
+                      message="Rate more dishes or restaurants to get personalized recommendations"
+                      actionText="rate now"
+                      onAction={() => setIsSubmissionModalOpen(true)}
+                    />
+                  ) : (
+                    <div className="space-y-4">
                   <h3 className="text-sm font-semibold mb-3">because you loved carne asada tacos...</h3>
                   <div 
-                    onClick={() => setSelectedRestaurant(mockRestaurants[0])}
+                    onClick={() => setSelectedRestaurant(restaurants[0] || {name: "Sample Restaurant", topDishes: []})}
                     className="bg-white rounded-lg p-3 shadow-sm flex gap-2 cursor-pointer hover:shadow-md transition"
                   >
                     <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
@@ -1082,15 +1180,15 @@ const HuntersFindsApp = () => {
                         <button 
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleSaveItem(mockRestaurants[0].topDishes[0], 'dish');
+                            handleSaveItem((restaurants[0]?.topDishes?.[0] || {}), 'dish');
                           }}
                           className={`px-2 py-0.5 rounded text-[10px] transition ${
-                            isItemSaved(mockRestaurants[0].topDishes[0].id, 'dish')
+                            isItemSaved((restaurants[0]?.topDishes?.[0]?.id || "sample-1"), 'dish')
                               ? 'bg-blue-500 text-white hover:bg-blue-600'
                               : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                           }`}
                         >
-                          <Bookmark size={10} className="inline" /> {isItemSaved(mockRestaurants[0].topDishes[0].id, 'dish') ? 'saved' : 'save'}
+                          <Bookmark size={10} className="inline" /> {isItemSaved((restaurants[0]?.topDishes?.[0]?.id || "sample-1"), 'dish') ? 'saved' : 'save'}
                         </button>
                         <button 
                           onClick={(e) => {
@@ -1107,7 +1205,7 @@ const HuntersFindsApp = () => {
 
                   <h3 className="text-sm font-semibold mb-3 mt-6">trending in oakland...</h3>
                   <div 
-                    onClick={() => setSelectedRestaurant(mockRestaurants[2])}
+                    onClick={() => setSelectedRestaurant(restaurants[1] || {name: "Sample Restaurant", topDishes: []})}
                     className="bg-white rounded-lg p-3 shadow-sm flex gap-2 cursor-pointer hover:shadow-md transition"
                   >
                     <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
@@ -1124,15 +1222,15 @@ const HuntersFindsApp = () => {
                         <button 
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleSaveItem(mockRestaurants[2].topDishes[0], 'dish');
+                            handleSaveItem((restaurants[1]?.topDishes?.[0] || {}), 'dish');
                           }}
                           className={`px-2 py-0.5 rounded text-[10px] transition ${
-                            isItemSaved(mockRestaurants[2].topDishes[0].id, 'dish')
+                            isItemSaved((restaurants[1]?.topDishes?.[0]?.id || "sample-2"), 'dish')
                               ? 'bg-blue-500 text-white hover:bg-blue-600'
                               : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                           }`}
                         >
-                          <Bookmark size={10} className="inline" /> {isItemSaved(mockRestaurants[2].topDishes[0].id, 'dish') ? 'saved' : 'save'}
+                          <Bookmark size={10} className="inline" /> {isItemSaved((restaurants[1]?.topDishes?.[0]?.id || "sample-2"), 'dish') ? 'saved' : 'save'}
                         </button>
                         <button 
                           onClick={(e) => {
@@ -1147,12 +1245,14 @@ const HuntersFindsApp = () => {
                     </div>
                   </div>
                 </div>
+                  )}
+                </>
               )}
 
               {exploreView === 'people' && (
                 <div className="space-y-3">
                   <h2 className="text-lg font-bold mb-4">explore people</h2>
-                  {mockUsers.map(user => (
+                  {[].map(user => (
                     <div 
                       key={user.id} 
                       onClick={() => pushModal('user', user)}
@@ -1185,7 +1285,7 @@ const HuntersFindsApp = () => {
               {exploreView === 'groups' && (
                 <div className="space-y-3">
                   <h2 className="text-lg font-bold mb-4">explore groups</h2>
-                  {mockGroups.map(group => (
+                  {[].map(group => (
                     <div 
                       key={group.id} 
                       onClick={() => setSelectedGroup(group)}
@@ -1220,23 +1320,107 @@ const HuntersFindsApp = () => {
         {activeTab === 'you' && (
           <div>
             <div className="bg-white border-b px-4 py-2 flex gap-2 overflow-x-auto">
-              <button onClick={() => setYouView('profile')} className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition ${youView === 'profile' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} style={{ fontFamily: '"Courier New", monospace' }}>
+              
+              {!user && (
+                <button 
+                  onClick={() => setYouView('login')} 
+                  className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition relative ${
+                    youView === 'login' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`} 
+                  style={{ fontFamily: '"Courier New", monospace' }}
+                >
+                  <User size={18} className="opacity-70" />
+                </button>
+              )}
+              <button 
+                onClick={() => setYouView('profile')} 
+                disabled={!user}
+                className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition relative ${
+                  youView === 'profile' 
+                    ? 'bg-gray-700 text-white' 
+                    : !user
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`} 
+                style={{ fontFamily: '"Courier New", monospace' }}
+              >
                 <User size={18} />
+                {!user && <Lock size={10} className="absolute top-1 right-1 text-gray-500" />}
               </button>
-              <button onClick={() => setYouView('ratings')} className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition ${youView === 'ratings' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} style={{ fontFamily: '"Courier New", monospace' }}>
+              <button 
+                onClick={() => setYouView('ratings')} 
+                disabled={!user}
+                className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition relative ${
+                  youView === 'ratings' 
+                    ? 'bg-gray-700 text-white' 
+                    : !user
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`} 
+                style={{ fontFamily: '"Courier New", monospace' }}
+              >
                 <Star size={18} />
+                {!user && <Lock size={10} className="absolute top-1 right-1 text-gray-500" />}
               </button>
-              <button onClick={() => setYouView('lists')} className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition ${youView === 'lists' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} style={{ fontFamily: '"Courier New", monospace' }}>
+              <button 
+                onClick={() => setYouView('lists')} 
+                disabled={!user}
+                className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition relative ${
+                  youView === 'lists' 
+                    ? 'bg-gray-700 text-white' 
+                    : !user
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`} 
+                style={{ fontFamily: '"Courier New", monospace' }}
+              >
                 <List size={18} />
+                {!user && <Lock size={10} className="absolute top-1 right-1 text-gray-500" />}
               </button>
-              <button onClick={() => setYouView('groups')} className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition ${youView === 'groups' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} style={{ fontFamily: '"Courier New", monospace' }}>
+              <button 
+                onClick={() => setYouView('groups')} 
+                disabled={!user}
+                className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition relative ${
+                  youView === 'groups' 
+                    ? 'bg-gray-700 text-white' 
+                    : !user
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`} 
+                style={{ fontFamily: '"Courier New", monospace' }}
+              >
                 <Users size={18} />
+                {!user && <Lock size={10} className="absolute top-1 right-1 text-gray-500" />}
               </button>
-              <button onClick={() => setYouView('saved')} className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition ${youView === 'saved' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} style={{ fontFamily: '"Courier New", monospace' }}>
+              <button 
+                onClick={() => setYouView('saved')} 
+                disabled={!user}
+                className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition relative ${
+                  youView === 'saved' 
+                    ? 'bg-gray-700 text-white' 
+                    : !user
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`} 
+                style={{ fontFamily: '"Courier New", monospace' }}
+              >
                 <Bookmark size={18} />
+                {!user && <Lock size={10} className="absolute top-1 right-1 text-gray-500" />}
               </button>
-              <button onClick={() => setYouView('friends')} className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition ${youView === 'friends' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} style={{ fontFamily: '"Courier New", monospace' }}>
+              <button 
+                onClick={() => setYouView('friends')} 
+                disabled={!user}
+                className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition relative ${
+                  youView === 'friends' 
+                    ? 'bg-gray-700 text-white' 
+                    : !user
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`} 
+                style={{ fontFamily: '"Courier New", monospace' }}
+              >
                 <UserPlus size={18} />
+                {!user && <Lock size={10} className="absolute top-1 right-1 text-gray-500" />}
               </button>
               <button onClick={() => setYouView('settings')} className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition ${youView === 'settings' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} style={{ fontFamily: '"Courier New", monospace' }}>
                 <Settings size={18} />
@@ -1244,6 +1428,274 @@ const HuntersFindsApp = () => {
             </div>
 
             <div className="max-w-4xl mx-auto p-4">
+              {youView === 'login' && !user && (
+                <div className="space-y-4 max-w-md mx-auto">
+                  <h3 className="text-lg font-bold mb-4" style={{ fontFamily: '"Courier New", monospace' }}>
+                    {authMode === 'signin' ? 'sign in' : 'create account'}
+                  </h3>
+                  
+                  <div className="bg-white rounded-lg p-6 shadow-sm space-y-4">
+                    {/* Email/Phone Toggle */}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setAuthMethod('email')}
+                        className={`flex-1 py-2 rounded-lg font-semibold transition ${
+                          authMethod === 'email' ? 'bg-[#33a29b] text-white' : 'bg-gray-100 text-gray-600'
+                        }`}
+                        style={{ fontFamily: '"Courier New", monospace' }}
+                      >
+                        Email
+                      </button>
+                      <button
+                        onClick={() => setAuthMethod('phone')}
+                        className={`flex-1 py-2 rounded-lg font-semibold transition ${
+                          authMethod === 'phone' ? 'bg-[#33a29b] text-white' : 'bg-gray-100 text-gray-600'
+                        }`}
+                        style={{ fontFamily: '"Courier New", monospace' }}
+                      >
+                        Phone
+                      </button>
+                    </div>
+
+                    {!otpSent ? (
+                      /* Step 1: Get email/phone to send OTP */
+                      <>
+                        {/* Username (for signup only) */}
+                        {authMode === 'signup' && (
+                          <div>
+                            <label className="block text-sm font-semibold mb-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                              username
+                            </label>
+                            <input
+                              type="text"
+                              value={authUsername}
+                              onChange={(e) => setAuthUsername(e.target.value)}
+                              placeholder="yourusername"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-[#33a29b]"
+                              style={{ fontFamily: '"Courier New", monospace' }}
+                            />
+                          </div>
+                        )}
+
+                        {/* Email or Phone Input */}
+                        {authMethod === 'email' ? (
+                          <div>
+                            <label className="block text-sm font-semibold mb-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                              email
+                            </label>
+                            <input
+                              type="email"
+                              value={authEmail}
+                              onChange={(e) => setAuthEmail(e.target.value)}
+                              placeholder="your@email.com"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-[#33a29b]"
+                              style={{ fontFamily: '"Courier New", monospace' }}
+                            />
+                            <p className="text-xs text-gray-500 mt-1" style={{ fontFamily: '"Courier New", monospace' }}>
+                              We'll send you a 6-digit code
+                            </p>
+                          </div>
+                        ) : (
+                          <div>
+                            <label className="block text-sm font-semibold mb-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                              phone
+                            </label>
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={authCountryCode}
+                                onChange={(e) => setAuthCountryCode(e.target.value)}
+                                className="w-20 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-[#33a29b] text-center"
+                                style={{ fontFamily: '"Courier New", monospace' }}
+                                placeholder="+1"
+                              />
+                              <input
+                                type="tel"
+                                value={authPhone}
+                                onChange={(e) => {
+                                  const formatted = formatPhoneNumber(e.target.value);
+                                  setAuthPhone(formatted);
+                                }}
+                                placeholder="555-123-4567"
+                                maxLength={12}
+                                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-[#33a29b]"
+                                style={{ fontFamily: '"Courier New", monospace' }}
+                              />
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1" style={{ fontFamily: '"Courier New", monospace' }}>
+                              We'll send you a code via SMS
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Error Display */}
+                        {authError && (
+                          <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                            <p className="text-sm text-red-600 font-semibold" style={{ fontFamily: '"Courier New", monospace' }}>
+                              {authError}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Send OTP Button */}
+                        <button
+                          onClick={async () => {
+                            setAuthFormLoading(true);
+                            
+                            try {
+                              if (authMethod === 'email') {
+                                const { data, error } = await supabase.auth.signInWithOtp({
+                                  email: authEmail,
+                                  options: {
+                                    data: {
+                                      username: authMode === 'signup' ? authUsername : authEmail.split('@')[0]
+                                    }
+                                  }
+                                });
+                                
+                                if (error) throw error;
+                                setOtpSent(true);
+                                setOtpEmail(authEmail);
+                              } else {
+                                // Phone OTP
+                                const cleanPhone = authPhone.replace(/[^0-9]/g, '');
+                                const fullPhone = authCountryCode + cleanPhone;
+                                
+                                const { data, error } = await supabase.auth.signInWithOtp({
+                                  phone: fullPhone,
+                                  options: {
+                                    data: {
+                                      username: authMode === 'signup' ? authUsername : 'user' + cleanPhone.slice(-4)
+                                    }
+                                  }
+                                });
+                                
+                                if (error) throw error;
+                                setOtpSent(true);
+                                setOtpPhone(fullPhone);
+                              }
+                            } catch (error) {
+                              console.error('Send OTP error:', error);
+                            }
+                            
+                            setAuthFormLoading(false);
+                          }}
+                          disabled={
+                            authFormLoading || 
+                            (authMethod === 'email' && !authEmail) || 
+                            (authMethod === 'phone' && !authPhone) ||
+                            (authMode === 'signup' && !authUsername)
+                          }
+                          className="w-full bg-[#33a29b] text-white py-3 rounded-lg font-bold hover:bg-[#2a8a84] transition disabled:bg-gray-400 disabled:cursor-not-allowed"
+                          style={{ fontFamily: '"Courier New", monospace' }}
+                        >
+                          {authFormLoading ? 'sending code...' : 'send verification code'}
+                        </button>
+
+                        {/* Toggle signin/signup */}
+                        <button
+                          onClick={() => setAuthMode(authMode === 'signin' ? 'signup' : 'signin')}
+                          className="w-full text-sm text-gray-600 hover:text-[#33a29b] transition"
+                          style={{ fontFamily: '"Courier New", monospace' }}
+                        >
+                          {authMode === 'signin' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+                        </button>
+                      </>
+                    ) : (
+                      /* Step 2: Enter OTP code */
+                      <>
+                        <div className="text-center mb-4">
+                          <div className="text-sm text-gray-600 mb-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                            Code sent to
+                          </div>
+                          <div className="text-sm font-bold text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>
+                            {authMethod === 'email' ? otpEmail : otpPhone}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-semibold mb-2 text-center" style={{ fontFamily: '"Courier New", monospace' }}>
+                            enter verification code
+                          </label>
+                          <input
+                            type="text"
+                            value={otpCode}
+                            onChange={(e) => {
+                              const code = e.target.value.replace(/[^0-9]/g, '').slice(0, 6);
+                              setOtpCode(code);
+                            }}
+                            placeholder="123456"
+                            maxLength={6}
+                            className="w-full px-3 py-4 text-center text-3xl tracking-widest border-2 border-gray-300 rounded-lg focus:outline-none focus:border-[#33a29b]"
+                            style={{ fontFamily: '"Courier New", monospace' }}
+                            autoFocus
+                          />
+                        </div>
+
+                        {/* Error Display */}
+                        {authError && (
+                          <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                            <p className="text-sm text-red-600 font-semibold" style={{ fontFamily: '"Courier New", monospace' }}>
+                              {authError}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Verify OTP Button */}
+                        <button
+                          onClick={async () => {
+                            setAuthFormLoading(true);
+                            
+                            try {
+                              const { data, error } = await supabase.auth.verifyOtp({
+                                [authMethod === 'email' ? 'email' : 'phone']: authMethod === 'email' ? otpEmail : otpPhone,
+                                token: otpCode,
+                                type: authMethod === 'email' ? 'email' : 'sms'
+                              });
+                              
+                              if (error) throw error;
+                              
+                              if (data.user) {
+                                // Success! User is authenticated
+                                // Profile created by database trigger
+                                setYouView('profile');
+                                // Reset states
+                                setOtpSent(false);
+                                setOtpCode('');
+                                setAuthEmail('');
+                                setAuthPhone('');
+                                setAuthUsername('');
+                              }
+                            } catch (error) {
+                              console.error('Verify OTP error:', error);
+                            }
+                            
+                            setAuthFormLoading(false);
+                          }}
+                          disabled={authFormLoading || otpCode.length !== 6}
+                          className="w-full bg-[#33a29b] text-white py-3 rounded-lg font-bold hover:bg-[#2a8a84] transition disabled:bg-gray-400 disabled:cursor-not-allowed"
+                          style={{ fontFamily: '"Courier New", monospace' }}
+                        >
+                          {authFormLoading ? 'verifying...' : 'verify & sign in'}
+                        </button>
+
+                        {/* Back button */}
+                        <button
+                          onClick={() => {
+                            setOtpSent(false);
+                            setOtpCode('');
+                          }}
+                          className="w-full text-sm text-gray-600 hover:text-[#33a29b] transition"
+                          style={{ fontFamily: '"Courier New", monospace' }}
+                        >
+                          ← back to enter {authMethod === 'email' ? 'email' : 'phone'}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {youView === 'profile' && (
                 <div className="space-y-4">
                   <div className="bg-white rounded-lg p-4 shadow-sm">
@@ -1314,7 +1766,7 @@ const HuntersFindsApp = () => {
                       + new list
                     </button>
                   </div>
-                  {mockMyLists.map(list => (
+                  {[].map(list => (
                     <div key={list.id} className="bg-white rounded-lg p-4 shadow-sm">
                       <div className="flex items-center gap-2 mb-2">
                         <span className="text-lg">{list.isPublic ? '🌐' : '🔒'}</span>
@@ -1339,11 +1791,11 @@ const HuntersFindsApp = () => {
                       + create group
                     </button>
                   </div>
-                  {mockMyGroups.map(group => (
+                  {[].map(group => (
                     <div 
                       key={group.id} 
                       onClick={() => {
-                        const fullGroup = mockGroups.find(g => g.name === group.name) || mockGroups[0];
+                        const fullGroup = [].find(g => g.name === group.name) || [][0];
                         setSelectedGroup(fullGroup);
                       }}
                       className="bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition"
@@ -1409,7 +1861,7 @@ const HuntersFindsApp = () => {
               {youView === 'friends' && (
                 <div className="space-y-3">
                   <h2 className="text-lg font-bold mb-4" style={{ fontFamily: '"Courier New", monospace' }}>friends</h2>
-                  {mockUsers.slice(0, 5).map(user => (
+                  {[].slice(0, 5).map(user => (
                     <div 
                       key={user.id}
                       onClick={() => setSelectedUser(user)}
@@ -1448,9 +1900,10 @@ const HuntersFindsApp = () => {
               )}
             </div>
           </div>
+        
         )}
-      </div>
 
+      </div>
       {/* Bottom Nav - Updated per requirements */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200">
         <div className="flex justify-around items-center h-16 px-2">
@@ -1459,7 +1912,7 @@ const HuntersFindsApp = () => {
             { id: 'rankings', icon: TrendingUp, label: 'rankings' },
             { id: 'add', icon: Plus, label: '', isAction: true },
             { id: 'explore', icon: Compass, label: 'explore' },
-            { id: 'you', icon: User, label: 'you' },
+          { id: 'you', icon: User, label: 'you' },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -1470,11 +1923,18 @@ const HuntersFindsApp = () => {
                 key={tab.id}
                 onClick={() => {
                   if (isActionButton) {
-                    setIsSubmissionModalOpen(true);
-                  } else {
-                    setActiveTab(tab.id);
+                     setIsSubmissionModalOpen(true);
+                   } else if (tab.id === 'you') {
+                      // Handle You/Login tab
+                     if (user) {
+                       setActiveTab('you');
+                    } else {
+                      { setActiveTab('you'); setYouView('login'); };
                   }
-                }}
+               } else {
+                   setActiveTab(tab.id);
+               }
+              }}
                 className={`flex flex-col items-center justify-center gap-1 relative flex-1 py-2 transition-all ${
                   isActionButton ? 'text-[#33a29b] scale-110' : isActive ? 'text-[#33a29b]' : 'text-gray-500/60'
                 }`}
@@ -1499,22 +1959,61 @@ const HuntersFindsApp = () => {
           <div onClick={handleCloseSubmission} className={`fixed inset-0 bg-black/40 z-50 ${isSubmissionClosing ? 'animate-fade-out' : 'animate-fade-in'}`} />
           <div className={`fixed left-1/2 -translate-x-1/2 z-50 bg-white rounded-2xl shadow-xl overflow-hidden ${isSubmissionClosing ? 'animate-slide-down-fade' : 'animate-slide-up-fade'}`} style={{ top: '15%', width: '80%', maxWidth: '1000px', maxHeight: '75vh' }}>
             <div className="sticky top-0 z-10 bg-white border-b px-4 py-3 flex justify-center items-center relative">
-              <h2 className="text-lg font-bold text-center" style={{ fontFamily: '"Courier New", monospace' }}>rate a dish</h2>
+              <h2 className="text-lg font-bold text-center" style={{ fontFamily: '"Courier New", monospace' }}>add rating</h2>
               <button onClick={handleCloseSubmission} className="absolute right-4"><X size={24} /></button>
             </div>
             <div className="overflow-y-auto h-full pb-4 p-4">
               <div className="max-w-xl mx-auto space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>place</label>
-                    <input 
-                      type="text" 
-                      value={restaurant} 
-                      onChange={(e) => setRestaurant(e.target.value)} 
-                      placeholder="e.g., taco palace" 
-                      className="w-full px-2 py-1.5 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
-                      style={{ fontFamily: '"Courier New", monospace' }}
-                    />
+                    <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>restaurant</label>
+                    <div className="relative">
+                      <input 
+                        type="text" 
+                        value={restaurantSearch} 
+                        onChange={(e) => {
+                          setRestaurantSearch(e.target.value);
+                          setShowRestaurantDropdown(true);
+                          searchRestaurants(e.target.value);
+                        }} 
+                        onFocus={() => setShowRestaurantDropdown(true)}
+                        placeholder="e.g., taco palace" 
+                        className="w-full px-2 py-1.5 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
+                        style={{ fontFamily: '"Courier New", monospace' }}
+                      />
+                      {showRestaurantDropdown && restaurantSearch.length >= 2 && (
+                        <div className="absolute z-20 w-full mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                          {restaurantSuggestions.map((rest) => (
+                            <div 
+                              key={rest.id} 
+                              onClick={() => {
+                                setSelectedRestaurant(rest);
+                                setRestaurantSearch(rest.name);
+                                setRestaurant(rest.name);
+                                setShowRestaurantDropdown(false);
+                              }} 
+                              className="px-2 py-2 hover:bg-orange-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                            >
+                              <div className="font-medium text-xs text-gray-800" style={{ fontFamily: '"Courier New", monospace' }}>{rest.name}</div>
+                              <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
+                                {rest.cuisine} • {rest.address || 'No address'}
+                              </div>
+                            </div>
+                          ))}
+                          <div 
+                            onClick={() => {
+                              setShowCreateRestaurant(true);
+                              setShowRestaurantDropdown(false);
+                            }}
+                            className="px-2 py-2 hover:bg-green-50 cursor-pointer bg-green-50 border-t-2 border-green-200"
+                          >
+                            <div className="font-bold text-xs text-green-700" style={{ fontFamily: '"Courier New", monospace' }}>
+                              + Create new restaurant "{restaurantSearch}"
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div>
@@ -1537,13 +2036,11 @@ const HuntersFindsApp = () => {
                       type="text"
                       value={categoryInput}
                       onChange={(e) => {
-                        setCategoryInput(e.target.value);
+                        const inputValue = e.target.value;
+                        setCategoryInput(inputValue);
                         setShowCategorySuggestions(true);
-                        if (categoryAverages[e.target.value.toLowerCase()]) {
-                          setDishCategory(e.target.value.toLowerCase());
-                        } else {
-                          setDishCategory('');
-                        }
+                        // ALWAYS accept category (existing or new) - no restrictions!
+                        setDishCategory(inputValue.toLowerCase().trim());
                       }}
                       onFocus={() => setShowCategorySuggestions(true)}
                       placeholder="start typing..."
@@ -1823,7 +2320,7 @@ const HuntersFindsApp = () => {
                 {/* Shared Groups */}
                 <div className="bg-white rounded-lg p-4 border border-gray-200">
                   <h3 className="text-sm font-semibold mb-3" style={{ fontFamily: '"Courier New", monospace' }}>shared groups (2)</h3>
-                  {mockGroups.slice(0, 2).map((group, idx) => (
+                  {[].slice(0, 2).map((group, idx) => (
                     <div 
                       key={idx} 
                       onClick={() => {
@@ -2143,8 +2640,8 @@ const HuntersFindsApp = () => {
                   <div className="space-y-2">
                     <h3 className="text-sm font-bold mb-3" style={{ fontFamily: '"Courier New", monospace' }}>group members</h3>
                     {selectedGroup.membersList.map((member, idx) => {
-                      // Find full user data from mockUsers
-                      const fullUser = mockUsers.find(u => u.username === member.username) || {
+                      // Find full user data from []
+                      const fullUser = [].find(u => u.username === member.username) || {
                         id: idx,
                         username: member.username,
                         location: 'Oakland, CA',
@@ -2445,7 +2942,7 @@ const HuntersFindsApp = () => {
                       <div className="space-y-2">
                         <h3 className="text-sm font-bold mb-3" style={{ fontFamily: '"Courier New", monospace' }}>group members</h3>
                         {topModal.data.membersList.map((member, idx) => {
-                          const fullUser = mockUsers.find(u => u.username === member.username) || {
+                          const fullUser = [].find(u => u.username === member.username) || {
                             id: idx,
                             username: member.username,
                             location: 'Oakland, CA',
@@ -2532,7 +3029,7 @@ const HuntersFindsApp = () => {
               <div className="bg-white rounded-xl p-3 shadow-lg">
                 <div className="text-gray-600 text-xs font-semibold mb-1" style={{ fontFamily: '"Courier New", monospace' }}>OVERALL SCORE</div>
                 <div className={`text-5xl font-bold ${getSRRColor(submittedRating.finalSRR)}`} style={{ fontFamily: '"Courier New", monospace' }}>
-                  {submittedRating.finalSRR}
+                  {submittedRating.finalSRR.toFixed(2)}
                 </div>
               </div>
             </div>
@@ -2631,6 +3128,7 @@ const HuntersFindsApp = () => {
           </div>
         </>
       )}
+      
     </div>
   );
 };
