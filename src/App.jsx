@@ -98,7 +98,17 @@ const HuntersFindsApp = () => {
   // Real-time data
   const { dishes = [], restaurants = [], userRatings = [], loading: dataLoading } = useRealTimeData(user);
   
-  const [rankingMode, setRankingMode] = useState('global');
+  // Filter out deleted ratings from dishes
+  const activeDishes = dishes.filter(dish => !dish.is_deleted);
+  const activeUserRatings = userRatings.filter(rating => !rating.is_deleted);
+  
+  const [rankingMode, setRankingMode] = useState(() => {
+    return localStorage.getItem('rankingMode') || 'global';
+  });
+  
+  React.useEffect(() => {
+    localStorage.setItem('rankingMode', rankingMode);
+  }, [rankingMode]);
   
   // Fetch ALL ratings from ALL users for global rankings
   const [allRatings, setAllRatings] = useState([]);
@@ -127,6 +137,55 @@ const HuntersFindsApp = () => {
   const [userLocation, setUserLocation] = useState(null); // { lat, lng }
   const [nearMeEnabled, setNearMeEnabled] = useState(false);
   
+  // Detect password reset redirect using Supabase's auth state listener
+  React.useEffect(() => {
+    console.log('Setting up password reset detection...');
+    
+    // IMMEDIATE CHECK: See if we're on a password reset link RIGHT NOW
+    const immediateCheck = async () => {
+      const hash = window.location.hash;
+      console.log('Current URL hash:', hash);
+      
+      if (hash && hash.includes('type=recovery')) {
+        console.log('RECOVERY LINK DETECTED! Checking session...');
+        
+        // Give Supabase a moment to process the hash
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Check for existing session
+        const { data: { session }, error } = await supabase.auth.getSession();
+        console.log('Current session:', session?.user?.email || 'No session');
+        console.log('Session error:', error);
+        
+        if (session) {
+          console.log('Session exists! Opening password reset modal NOW...');
+          setShowNewPasswordModal(true);
+        } else {
+          console.log('No session found, waiting for PASSWORD_RECOVERY event...');
+        }
+      }
+    };
+    
+    immediateCheck();
+    
+    // ALSO set up the event listener for future events
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state change event:', event);
+      console.log('Session from event:', session?.user?.email);
+      
+      if (event === 'PASSWORD_RECOVERY') {
+        console.log('PASSWORD_RECOVERY event fired! Opening modal...');
+        setShowNewPasswordModal(true);
+      }
+    });
+    
+    // Cleanup subscription
+    return () => {
+      console.log('Cleaning up password reset listener');
+      subscription?.unsubscribe();
+    };
+  }, []);
+  
   // Fetch all ratings when component mounts or when dishes change
   React.useEffect(() => {
     const newCount = ratingsCallCount + 1;
@@ -143,12 +202,13 @@ const HuntersFindsApp = () => {
             *,
             dish:dishes(*)
           `)
+          .eq('is_deleted', false)
           .order('created_at', { ascending: false });
 
         if (error) {
           console.error('❌ Error fetching all ratings:', error);
         } else {
-          console.log('✅ Fetched', data?.length || 0, 'total ratings from all users');
+          console.log('✅ Fetched', data?.length || 0, 'total ratings from all users (excluding deleted)');
           setAllRatings(data || []);
         }
       } catch (error) {
@@ -159,7 +219,7 @@ const HuntersFindsApp = () => {
     };
 
     fetchAllRatings();
-  }, [dishes]); // Refetch when dishes change
+  }, [dishes]);
   
   // Fetch user's groups and all public groups
   const [hasAttemptedGroupFetch, setHasAttemptedGroupFetch] = React.useState(false);
@@ -271,19 +331,57 @@ const HuntersFindsApp = () => {
   const [errorModal, setErrorModal] = useState({ show: false, title: '', message: '' });
   
   const [isMapLoaded, setIsMapLoaded] = React.useState(false);
-  const [activeTab, setActiveTab] = useState('rankings');
+  const [activeTab, setActiveTab] = useState(() => {
+    return localStorage.getItem('activeTab') || 'rankings';
+  });
+  
+  // Save tab changes to localStorage
+  React.useEffect(() => {
+    localStorage.setItem('activeTab', activeTab);
+  }, [activeTab]);
   const [selectedDish, setSelectedDish] = useState(null);
   const [dishModalView, setDishModalView] = useState('scores'); // 'scores', 'photos', 'comments'
   const [restaurantModalView, setRestaurantModalView] = useState('scores'); // 'scores', 'photos', 'comments'
-  const [rankingView, setRankingView] = useState('dishes');
+  const [rankingView, setRankingView] = useState(() => {
+    return localStorage.getItem('rankingView') || 'dishes';
+  });
+  
+  React.useEffect(() => {
+    localStorage.setItem('rankingView', rankingView);
+  }, [rankingView]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState({ dishes: [], restaurants: [] });
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const [googlePlacesSearchResults, setGooglePlacesSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [googleSearchError, setGoogleSearchError] = useState(false);
+  
+  // Google Places optimization state
+  const [showNearbyToggle, setShowNearbyToggle] = useState(false);
+  const [includeNearby, setIncludeNearby] = useState(false);
+  const [showMapFindNearby, setShowMapFindNearby] = useState(true);
+  
   const [isSubmissionModalOpen, setIsSubmissionModalOpen] = useState(false);
-  const [exploreView, setExploreView] = useState('for-you');
-  const [youView, setYouView] = useState('profile');
+  const [exploreView, setExploreView] = useState(() => {
+    return localStorage.getItem('exploreView') || 'for-you';
+  });
+  
+  React.useEffect(() => {
+    localStorage.setItem('exploreView', exploreView);
+  }, [exploreView]);
+  const [youView, setYouView] = useState(() => {
+    return localStorage.getItem('youView') || 'profile';
+  });
+  
+  // Save youView changes
+  React.useEffect(() => {
+    localStorage.setItem('youView', youView);
+  }, [youView]);
   const [isNewListModalOpen, setIsNewListModalOpen] = useState(false);
   const [isNewGroupModalOpen, setIsNewGroupModalOpen] = useState(false);
+  const [isEditProfileModalOpen, setIsEditProfileModalOpen] = useState(false);
+  const [editUsername, setEditUsername] = useState('');
+  const [editLocation, setEditLocation] = useState('');
   const [newListName, setNewListName] = useState('');
   const [newListItems, setNewListItems] = useState([]);
   const [newListCollaborators, setNewListCollaborators] = useState([]);
@@ -305,6 +403,7 @@ const HuntersFindsApp = () => {
   const [isGroupModalClosing, setIsGroupModalClosing] = useState(false);
   const [groupModalView, setGroupModalView] = useState('members');
   const [savedItems, setSavedItems] = useState([]);
+  const [userLists, setUserLists] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [isUserModalClosing, setIsUserModalClosing] = useState(false);
   const [modalStack, setModalStack] = useState([]);
@@ -319,21 +418,941 @@ const HuntersFindsApp = () => {
   const [priceScore, setPriceScore] = useState(50);
   const [comment, setComment] = useState('');
   
+  // Google Places search for rating modal
+  const [showRestaurantSearch, setShowRestaurantSearch] = useState(false);
+  const [restaurantSearchResults, setRestaurantSearchResults] = useState([]);
+  const [restaurantSearchLoading, setRestaurantSearchLoading] = useState(false);
+  const [selectedGooglePlace, setSelectedGooglePlace] = useState(null);
+  
+  
   // Photo upload state
   const [dishPhotos, setDishPhotos] = useState([]);
   const [photoPreview, setPhotoPreview] = useState([]);
+  
+  // Enhanced Map State
+  const [mapSearchQuery, setMapSearchQuery] = useState('');
+  const [mapInstance, setMapInstance] = useState(null);
+  const [mapFilterCuisine, setMapFilterCuisine] = useState('all');
+  const [mapShowHighRatedOnly, setMapShowHighRatedOnly] = useState(false);
+  const [showMapFilters, setShowMapFilters] = useState(false);
+  const [mapFilters, setMapFilters] = useState({
+    popularity: [],
+    quality: [],
+    recency: [],
+    social: [],
+    distance: []
+  });
+  const [googlePlacesResults, setGooglePlacesResults] = useState([]);
+  
+  // Phase 5: Photo Gallery State
+  const [selectedDishPhotos, setSelectedDishPhotos] = useState([]);
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+  const [loadingPhotos, setLoadingPhotos] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   
   // Auth form states
   const [authMode, setAuthMode] = useState('signin'); // 'signin' or 'signup'
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authFormLoading, setAuthFormLoading] = useState(false);
+  
+  // Password reset states
+  const [showPasswordReset, setShowPasswordReset] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetSent, setResetSent] = useState(false);
+  const [showNewPasswordModal, setShowNewPasswordModal] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordResetLoading, setPasswordResetLoading] = useState(false);
+  const [stayLoggedIn, setStayLoggedIn] = useState(true);
+  
+  // Success toast
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
 
   // Mock groups data (temporary - empty array until backend ready)
   const mockGroups = [];
   
   // Mock users for friend search (temporary - until backend ready)
   const mockUsers = [];
+  
+  // ADMIN SYSTEM STATES
+  const [userRole, setUserRole] = useState('user'); // 'admin', 'moderator', or 'user'
+  const [showAdminDashboard, setShowAdminDashboard] = useState(false);
+  const [showDeletedItems, setShowDeletedItems] = useState(false);
+  const [showMergeRestaurants, setShowMergeRestaurants] = useState(false);
+  const [deletedItemsCount, setDeletedItemsCount] = useState(0);
+  
+  // Merge Restaurants states
+  const [mergeFromRestaurant, setMergeFromRestaurant] = useState('');
+  const [mergeToRestaurant, setMergeToRestaurant] = useState('');
+  const [mergeLoading, setMergeLoading] = useState(false);
+  const [mergePreview, setMergePreview] = useState(null);
+  
+  // Deleted Items states
+  const [deletedItems, setDeletedItems] = useState([]);
+  const [deletedItemsLoading, setDeletedItemsLoading] = useState(false);
+  
+  // Restaurant Linking states
+  const [showLinkRestaurants, setShowLinkRestaurants] = useState(false);
+  const [unlinkedRestaurants, setUnlinkedRestaurants] = useState([]);
+  const [linkingRestaurant, setLinkingRestaurant] = useState(null);
+  const [placeSearchResults, setPlaceSearchResults] = useState([]);
+  const [placeSearchLoading, setPlaceSearchLoading] = useState(false);
+  
+  // Edit/Delete states
+  const [editingRating, setEditingRating] = useState(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editDishName, setEditDishName] = useState('');
+  const [editRestaurant, setEditRestaurant] = useState('');
+  const [showEditRestaurantSearch, setShowEditRestaurantSearch] = useState(false);
+  const [editRestaurantSearchResults, setEditRestaurantSearchResults] = useState([]);
+  const [editTaste, setEditTaste] = useState(50);
+  const [editPortion, setEditPortion] = useState(50);
+  const [editPriceValue, setEditPriceValue] = useState(50);
+  const [editPrice, setEditPrice] = useState('');
+  const [editComment, setEditComment] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletingRating, setDeletingRating] = useState(null);
+  
+  // Fetch user role (admin, moderator, or user)
+  React.useEffect(() => {
+    const fetchUserRole = async () => {
+      if (!user) {
+        console.log('No user logged in, defaulting to user role');
+        setUserRole('user');
+        return;
+      }
+      
+      console.log('🔍 Fetching role for user:', user.email);
+      
+      try {
+        const { data, error } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', user.id)
+          .single();
+        
+        if (data) {
+          console.log('✅ User role found:', data.role);
+          setUserRole(data.role);
+        } else {
+          console.log('ℹ️ No role found in database, defaulting to user');
+          setUserRole('user');
+        }
+        
+        if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+          console.error('❌ Error fetching user role:', error);
+        }
+      } catch (error) {
+        console.error('❌ Error in fetchUserRole:', error);
+        setUserRole('user');
+      }
+    };
+    
+    fetchUserRole();
+  }, [user]);
+  
+  // Fetch deleted items count for admin
+  React.useEffect(() => {
+    const fetchDeletedCount = async () => {
+      if (!user || userRole !== 'admin') return;
+      
+      const { count } = await supabase
+        .from('deleted_ratings')
+        .select('*', { count: 'exact', head: true })
+        .gte('can_restore_until', new Date().toISOString());
+      
+      setDeletedItemsCount(count || 0);
+    };
+    
+    fetchDeletedCount();
+  }, [user, userRole]);
+  
+  // PASSWORD RESET FUNCTIONS
+  const handlePasswordReset = async () => {
+    if (!resetEmail) {
+      setErrorModal({
+        show: true,
+        title: 'Email Required',
+        message: 'Please enter your email address.'
+      });
+      return;
+    }
+    
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(
+        resetEmail,
+        { redirectTo: window.location.origin }
+      );
+      
+      if (error) {
+        // Check for rate limiting
+        if (error.message && error.message.includes('seconds')) {
+          throw new Error('Please wait a moment before requesting another reset link.');
+        }
+        throw error;
+      }
+      
+      setResetSent(true);
+      setTimeout(() => {
+        setShowPasswordReset(false);
+        setResetSent(false);
+        setResetEmail('');
+      }, 3000);
+    } catch (error) {
+      console.error('Password reset error:', error);
+      setErrorModal({
+        show: true,
+        title: 'Reset Failed',
+        message: error.message || 'Unable to send reset email. Please try again.'
+      });
+    }
+  };
+  
+  const handleSetNewPassword = async () => {
+    console.log('===== PASSWORD RESET FUNCTION CALLED =====');
+    console.log('newPassword:', newPassword);
+    console.log('confirmPassword:', confirmPassword);
+    
+    // Validation
+    if (newPassword !== confirmPassword) {
+      console.log('ERROR: Passwords do not match');
+      setErrorModal({
+        show: true,
+        title: 'Passwords Don\'t Match',
+        message: 'Please make sure both passwords match.'
+      });
+      return;
+    }
+    
+    if (newPassword.length < 6) {
+      console.log('ERROR: Password too short');
+      setErrorModal({
+        show: true,
+        title: 'Password Too Short',
+        message: 'Password must be at least 6 characters long.'
+      });
+      return;
+    }
+    
+    console.log('Validation passed. Starting password update...');
+    
+    // Start loading
+    setPasswordResetLoading(true);
+    console.log('Loading state set to true');
+    
+    try {
+      console.log('Calling supabase.auth.updateUser...');
+      
+      // Update password
+      const { data, error } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+      
+      if (error) {
+        console.error('SUPABASE ERROR:', error);
+        throw error;
+      }
+      
+      console.log('SUCCESS! Password updated:', data);
+      
+      // Close modal
+      console.log('Closing modal...');
+      setShowNewPasswordModal(false);
+      setNewPassword('');
+      setConfirmPassword('');
+      setPasswordResetLoading(false);
+      
+      // Clear hash from URL
+      window.location.hash = '';
+      console.log('Hash cleared from URL');
+      
+      // Wait a moment for modal to close
+      console.log('Waiting 300ms before redirect...');
+      setTimeout(() => {
+        console.log('Switching to rankings tab...');
+        setActiveTab('rankings');
+        
+        // Show success toast
+        console.log('Showing success toast...');
+        setSuccessMessage('Password updated! You are now logged in.');
+        setShowSuccessToast(true);
+        
+        // Hide toast after 2 seconds
+        setTimeout(() => {
+          console.log('Hiding toast...');
+          setShowSuccessToast(false);
+        }, 2000);
+      }, 300);
+      
+    } catch (error) {
+      console.error('CATCH BLOCK - Error in handleSetNewPassword:', error);
+      console.error('Error message:', error.message);
+      console.error('Error code:', error.code);
+      setPasswordResetLoading(false);
+      
+      // Better error messages
+      let errorMessage = 'Unable to update password. Please try again.';
+      
+      if (error.message && error.message.includes('same')) {
+        errorMessage = 'New password must be different from your current password.';
+      } else if (error.message && error.message.includes('session')) {
+        errorMessage = 'Session expired. Please request a new reset link.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      console.log('Showing error modal:', errorMessage);
+      setErrorModal({
+        show: true,
+        title: 'Update Failed',
+        message: errorMessage
+      });
+    }
+    
+    console.log('===== PASSWORD RESET FUNCTION COMPLETE =====');
+  };
+  
+  // SOCIAL LOGIN FUNCTION
+  const handleGoogleLogin = async () => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin
+        }
+      });
+      
+      if (error) throw error;
+    } catch (error) {
+      setErrorModal({
+        show: true,
+        title: 'Login Error',
+        message: error.message
+      });
+    }
+  };
+  
+  // ADMIN PERMISSION FUNCTIONS
+  const canEditRating = (rating) => {
+    // Admin and moderator can edit anything
+    if (userRole === 'admin' || userRole === 'moderator') return true;
+    
+    // User can edit their own ratings
+    return rating.user_id === user?.id;
+  };
+  
+  const canDeleteRating = (rating) => {
+    // Admin can delete anything
+    if (userRole === 'admin') return true;
+    
+    // Moderator can delete any rating
+    if (userRole === 'moderator') return true;
+    
+    // User can delete own rating within 1 hour
+    if (rating.user_id === user?.id) {
+      const oneHourAgo = Date.now() - (60 * 60 * 1000);
+      const ratingTime = new Date(rating.created_at).getTime();
+      return ratingTime > oneHourAgo;
+    }
+    
+    return false;
+  };
+  
+  // EDIT RATING HANDLER
+  const handleEditRating = (rating) => {
+    console.log('Editing rating:', rating);
+    setEditingRating(rating);
+    setEditDishName(rating.dish?.name || rating.dish_name || '');
+    setEditRestaurant(rating.restaurant_name || '');
+    setEditTaste(rating.taste_score || 50);
+    setEditPortion(rating.portion_score || 50);
+    setEditPriceValue(rating.price_value_score || 50);
+    setEditPrice(rating.price?.toString() || '');
+    setEditComment(rating.comment || '');
+    setShowEditModal(true);
+  };
+  
+  // SAVE EDITED RATING
+  const saveEditedRating = async () => {
+    if (!editingRating) return;
+    
+    try {
+      console.log('Saving edited rating (complex mode)...');
+      console.log('Original rating:', editingRating);
+      console.log('New values:', {
+        dishName: editDishName,
+        restaurant: editRestaurant,
+        taste: editTaste,
+        portion: editPortion,
+        priceValue: editPriceValue,
+        price: editPrice,
+        comment: editComment
+      });
+      
+      // Step 1: Check if dish name or restaurant changed
+      const dishNameChanged = editDishName !== (editingRating.dish?.name || editingRating.dish_name);
+      const restaurantChanged = editRestaurant !== editingRating.restaurantName;
+      const priceChanged = parseFloat(editPrice) !== editingRating.price;
+      
+      let dishId = editingRating.dish_id || editingRating.id;
+      
+      // Step 2: If dish name, restaurant, or price changed, update or create dish
+      if (dishNameChanged || restaurantChanged || priceChanged) {
+        console.log('Dish/Restaurant/Price changed, updating dishes table...');
+        
+        // Find the restaurant ID - use raw DB restaurants, not computed allRestaurants
+        // This ensures we can find restaurants even if they have no active ratings
+        const targetRestaurant = restaurants.find(r => 
+          r.name.toLowerCase() === editRestaurant.toLowerCase()
+        );
+        const restaurantId = targetRestaurant?.id;
+        
+        if (!restaurantId) {
+          console.error('Restaurant not found in DB. Available:', restaurants.map(r => r.name));
+          console.error('Looking for:', editRestaurant);
+          throw new Error(`Restaurant "${editRestaurant}" not found in database.`);
+        }
+        
+        // Update the dish
+        const { error: dishError } = await supabase
+          .from('dishes')
+          .update({
+            name: editDishName,
+            restaurant_id: restaurantId,
+            price: parseFloat(editPrice) || null
+          })
+          .eq('id', dishId);
+        
+        if (dishError) {
+          console.error('Error updating dish:', dishError);
+          throw dishError;
+        }
+        
+        console.log('Dish updated successfully!');
+      }
+      
+      // Step 3: Update the rating (scores and comment only)
+      const { error: ratingError } = await supabase
+        .from('ratings')
+        .update({
+          taste_score: editTaste,
+          portion_score: editPortion,
+          price_score: editPriceValue,
+          comment: editComment,
+          edited_at: new Date().toISOString(),
+          edit_count: (editingRating.edit_count || 0) + 1
+        })
+        .eq('id', editingRating.id);
+      
+      if (ratingError) {
+        console.error('Error updating rating:', ratingError);
+        throw ratingError;
+      }
+      
+      console.log('Rating updated successfully!');
+      
+      // Close modal
+      setShowEditModal(false);
+      setEditingRating(null);
+      
+      // Show success
+      setErrorModal({
+        show: true,
+        title: 'Rating Updated',
+        message: 'Your changes have been saved!'
+      });
+      
+      // Refresh ratings
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+      
+    } catch (error) {
+      console.error('Error saving rating:', error);
+      setErrorModal({
+        show: true,
+        title: 'Edit Failed',
+        message: error.message || 'Failed to save changes'
+      });
+    }
+  };
+  
+  // DELETE RATING HANDLER
+  const handleDeleteRating = (rating) => {
+    console.log('Delete requested for:', rating);
+    setDeletingRating(rating);
+    setShowDeleteConfirm(true);
+  };
+  
+  // CONFIRM DELETE (SOFT DELETE)
+  const confirmDeleteRating = async () => {
+    if (!deletingRating) return;
+    
+    try {
+      console.log('Soft deleting rating...');
+      console.log('Deleting rating object:', deletingRating);
+      
+      // 1. Copy to deleted_ratings table (simplified structure)
+      const { error: insertError } = await supabase
+        .from('deleted_ratings')
+        .insert({
+          original_rating_id: deletingRating.id,
+          user_id: deletingRating.user_id || user.id,
+          dish_id: deletingRating.dish_id || null,
+          dish_name: deletingRating.dish?.name || deletingRating.dish_name,
+          taste_score: deletingRating.taste_score || deletingRating.taste,
+          portion_score: deletingRating.portion_score || deletingRating.portion,
+          price_value_score: deletingRating.price_value_score || deletingRating.priceValue,
+          price: deletingRating.price,
+          comment: deletingRating.comment || '',
+          deleted_by: user.id,
+          deleted_at: new Date().toISOString(),
+          can_restore_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          created_at: deletingRating.created_at || new Date().toISOString()
+        });
+      
+      if (insertError) {
+        console.error('Insert error:', insertError);
+        throw insertError;
+      }
+      
+      console.log('Successfully copied to deleted_ratings');
+      
+      // 2. Mark as deleted in ratings table
+      const { error: updateError } = await supabase
+        .from('ratings')
+        .update({
+          is_deleted: true,
+          deleted_at: new Date().toISOString(),
+          deleted_by: user.id
+        })
+        .eq('id', deletingRating.id);
+      
+      if (updateError) {
+        console.error('Update error:', updateError);
+        throw updateError;
+      }
+      
+      console.log('Rating soft deleted successfully!');
+      
+      // Close modal
+      setShowDeleteConfirm(false);
+      setDeletingRating(null);
+      
+      // Show success message
+      setErrorModal({
+        show: true,
+        title: 'Rating Deleted',
+        message: 'Rating moved to trash. Can be restored within 30 days.'
+      });
+      
+      // Refresh ratings
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+      
+    } catch (error) {
+      console.error('Error deleting rating:', error);
+      setErrorModal({
+        show: true,
+        title: 'Delete Failed',
+        message: error.message || 'Failed to delete rating'
+      });
+    }
+  };
+  
+  // MERGE RESTAURANTS FUNCTIONS
+  const previewMerge = () => {
+    if (!mergeFromRestaurant || !mergeToRestaurant) {
+      setErrorModal({
+        show: true,
+        title: 'Missing Information',
+        message: 'Please select both restaurants to merge'
+      });
+      return;
+    }
+    
+    if (mergeFromRestaurant === mergeToRestaurant) {
+      setErrorModal({
+        show: true,
+        title: 'Invalid Merge',
+        message: 'Cannot merge a restaurant with itself'
+      });
+      return;
+    }
+    
+    // Count ratings that will be moved
+    const ratingsToMove = allRatings.filter(r => {
+      // Check if rating's restaurant matches the "from" restaurant
+      const ratingRestaurant = restaurants.find(rest => rest.id === r.restaurant_id)?.name;
+      return ratingRestaurant === mergeFromRestaurant;
+    });
+    
+    setMergePreview({
+      from: mergeFromRestaurant,
+      to: mergeToRestaurant,
+      ratingsCount: ratingsToMove.length
+    });
+  };
+  
+  const confirmMerge = async () => {
+    if (!mergePreview) return;
+    
+    setMergeLoading(true);
+    
+    try {
+      console.log('Merging restaurants:', mergePreview);
+      
+      // Get the restaurant IDs
+      const fromRestaurant = restaurants.find(r => r.name === mergePreview.from);
+      const toRestaurant = restaurants.find(r => r.name === mergePreview.to);
+      
+      if (!fromRestaurant || !toRestaurant) {
+        throw new Error('Restaurant not found');
+      }
+      
+      // Update all DISHES from old restaurant to new restaurant
+      // (Ratings are linked to dishes, dishes are linked to restaurants)
+      const { error: updateError } = await supabase
+        .from('dishes')
+        .update({ restaurant_id: toRestaurant.id })
+        .eq('restaurant_id', fromRestaurant.id);
+      
+      if (updateError) {
+        console.error('Error updating dishes:', updateError);
+        throw updateError;
+      }
+      
+      console.log(`Moved all dishes from "${mergePreview.from}" to "${mergePreview.to}"`);
+      
+      // Log the merge in a merge history table (if it exists)
+      try {
+        await supabase.from('restaurant_merges').insert({
+          from_restaurant_id: fromRestaurant.id,
+          from_restaurant_name: mergePreview.from,
+          to_restaurant_id: toRestaurant.id,
+          to_restaurant_name: mergePreview.to,
+          merged_by: user.id,
+          dishes_moved: mergePreview.ratingsCount,
+          merged_at: new Date().toISOString()
+        });
+      } catch (logError) {
+        console.log('Could not log merge (table may not exist):', logError);
+      }
+      
+      console.log('Merge successful!');
+      
+      // Close modal and reset
+      setShowMergeRestaurants(false);
+      setMergePreview(null);
+      setMergeFromRestaurant('');
+      setMergeToRestaurant('');
+      
+      // Show success
+      setErrorModal({
+        show: true,
+        title: 'Merge Complete',
+        message: `Successfully moved all dishes from "${mergePreview.from}" to "${mergePreview.to}". All ratings will now appear under the correct restaurant!`
+      });
+      
+      // Refresh
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
+      
+    } catch (error) {
+      console.error('Error merging restaurants:', error);
+      setErrorModal({
+        show: true,
+        title: 'Merge Failed',
+        message: error.message || 'Failed to merge restaurants'
+      });
+    } finally {
+      setMergeLoading(false);
+    }
+  };
+  
+  // FETCH DELETED ITEMS
+  const fetchDeletedItems = async () => {
+    if (!user || userRole === 'user') return;
+    
+    setDeletedItemsLoading(true);
+    
+    try {
+      const { data, error } = await supabase
+        .from('deleted_ratings')
+        .select('*')
+        .gte('can_restore_until', new Date().toISOString())
+        .order('deleted_at', { ascending: false });
+      
+      if (error) throw error;
+      
+      console.log('Fetched deleted items:', data);
+      setDeletedItems(data || []);
+      
+    } catch (error) {
+      console.error('Error fetching deleted items:', error);
+      setErrorModal({
+        show: true,
+        title: 'Error',
+        message: 'Failed to load deleted items'
+      });
+    } finally {
+      setDeletedItemsLoading(false);
+    }
+  };
+  
+  // RESTORE DELETED ITEM
+  const restoreDeletedItem = async (deletedItem) => {
+    try {
+      console.log('Restoring item:', deletedItem);
+      
+      // 1. Unmark as deleted in ratings table
+      const { error: restoreError } = await supabase
+        .from('ratings')
+        .update({
+          is_deleted: false,
+          deleted_at: null,
+          deleted_by: null
+        })
+        .eq('id', deletedItem.original_rating_id);
+      
+      if (restoreError) throw restoreError;
+      
+      // 2. Remove from deleted_ratings table
+      const { error: deleteError } = await supabase
+        .from('deleted_ratings')
+        .delete()
+        .eq('id', deletedItem.id);
+      
+      if (deleteError) throw deleteError;
+      
+      console.log('Item restored successfully!');
+      
+      // Show success
+      setErrorModal({
+        show: true,
+        title: 'Restored!',
+        message: `"${deletedItem.dish_name}" has been restored`
+      });
+      
+      // Refresh deleted items list
+      fetchDeletedItems();
+      
+      // Update count
+      setDeletedItemsCount(prev => Math.max(0, prev - 1));
+      
+    } catch (error) {
+      console.error('Error restoring item:', error);
+      setErrorModal({
+        show: true,
+        title: 'Restore Failed',
+        message: error.message || 'Failed to restore item'
+      });
+    }
+  };
+  
+  // PERMANENTLY DELETE ITEM
+  const permanentlyDeleteItem = async (deletedItem) => {
+    if (!window.confirm(`Permanently delete "${deletedItem.dish_name}"? This cannot be undone!`)) {
+      return;
+    }
+    
+    try {
+      // Remove from deleted_ratings table
+      const { error } = await supabase
+        .from('deleted_ratings')
+        .delete()
+        .eq('id', deletedItem.id);
+      
+      if (error) throw error;
+      
+      console.log('Item permanently deleted');
+      
+      setErrorModal({
+        show: true,
+        title: 'Deleted Permanently',
+        message: `"${deletedItem.dish_name}" has been permanently removed`
+      });
+      
+      // Refresh list
+      fetchDeletedItems();
+      setDeletedItemsCount(prev => Math.max(0, prev - 1));
+      
+    } catch (error) {
+      console.error('Error permanently deleting:', error);
+      setErrorModal({
+        show: true,
+        title: 'Delete Failed',
+        message: error.message || 'Failed to delete permanently'
+      });
+    }
+  };
+  
+  // Fetch deleted items when modal opens
+  React.useEffect(() => {
+    if (showDeletedItems) {
+      fetchDeletedItems();
+    }
+  }, [showDeletedItems]);
+  
+  // RESTAURANT LINKING FUNCTIONS
+  // Fetch unlinked restaurants when modal opens
+  React.useEffect(() => {
+    if (showLinkRestaurants) {
+      fetchUnlinkedRestaurants();
+    }
+  }, [showLinkRestaurants]);
+  
+  const fetchUnlinkedRestaurants = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('restaurants')
+        .select('*')
+        .is('google_place_id', null)
+        .order('name');
+      
+      if (error) throw error;
+      
+      console.log('Unlinked restaurants:', data);
+      setUnlinkedRestaurants(data || []);
+      
+    } catch (error) {
+      console.error('Error fetching restaurants:', error);
+    }
+  };
+  
+  const searchGooglePlaces = async (restaurantName) => {
+    setPlaceSearchLoading(true);
+    setPlaceSearchResults([]);
+    
+    try {
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(restaurantName)}&key=${GOOGLE_PLACES_API_KEY}`
+      );
+      
+      const data = await response.json();
+      
+      if (data.results) {
+        console.log('Found places:', data.results);
+        setPlaceSearchResults(data.results.slice(0, 5)); // Top 5 results
+      }
+      
+    } catch (error) {
+      console.error('Error searching places:', error);
+      setErrorModal({
+        show: true,
+        title: 'Search Failed',
+        message: 'Could not search Google Places'
+      });
+    } finally {
+      setPlaceSearchLoading(false);
+    }
+  };
+  
+  const linkRestaurantToPlace = async (restaurant, place) => {
+    try {
+      console.log('Linking restaurant:', restaurant.name, 'to place:', place.name);
+      
+      const { error } = await supabase
+        .from('restaurants')
+        .update({
+          google_place_id: place.place_id,
+          latitude: place.geometry.location.lat,
+          longitude: place.geometry.location.lng,
+          address: place.formatted_address,
+          google_data: place
+        })
+        .eq('id', restaurant.id);
+      
+      if (error) throw error;
+      
+      console.log('Restaurant linked successfully!');
+      
+      setErrorModal({
+        show: true,
+        title: 'Linked!',
+        message: `"${restaurant.name}" is now linked to Google Places and will appear on the map!`
+      });
+      
+      // Refresh list
+      fetchUnlinkedRestaurants();
+      setLinkingRestaurant(null);
+      setPlaceSearchResults([]);
+      
+    } catch (error) {
+      console.error('Error linking restaurant:', error);
+      setErrorModal({
+        show: true,
+        title: 'Link Failed',
+        message: error.message || 'Failed to link restaurant'
+      });
+    }
+  };
+  
+  // Search Google Places for rating modal
+  const searchRestaurantForRating = async (query) => {
+    if (!query || query.length < 3) {
+      setRestaurantSearchResults([]);
+      setShowRestaurantSearch(false);
+      return;
+    }
+    
+    setRestaurantSearchLoading(true);
+    
+    // Search database
+    const matchingRestaurants = (restaurants || []).filter(restaurant =>
+      restaurant.name.toLowerCase().includes(query.toLowerCase())
+    );
+    
+    let results = matchingRestaurants.map(r => ({
+      name: r.name,
+      formatted_address: r.address || 'No address',
+      rating: null,
+      place_id: r.google_place_id,
+      geometry: r.latitude && r.longitude ? {
+        location: { lat: r.latitude, lng: r.longitude }
+      } : null,
+      isDatabase: true
+    }));
+    
+    // Search Google via proxy
+    try {
+      const location = userLocation || { lat: 37.8044, lng: -122.2712 };
+      const proxyUrl = `http://localhost:3001/api/places/search?query=${encodeURIComponent(query)}&lat=${location.lat}&lng=${location.lng}`;
+      
+      const response = await fetch(proxyUrl);
+      const data = await response.json();
+      
+      if (data.status === 'OK' && data.results) {
+        const googleResults = data.results.slice(0, 5).map(r => ({
+          name: r.name,
+          formatted_address: r.formatted_address || r.vicinity,
+          rating: r.rating,
+          user_ratings_total: r.user_ratings_total,
+          place_id: r.place_id,
+          geometry: r.geometry,
+          isDatabase: false
+        }));
+        results = [...results, ...googleResults];
+      }
+    } catch (error) {
+      console.log('Google search skipped (proxy offline)');
+    }
+    
+    setRestaurantSearchResults(results.slice(0, 8));
+    setRestaurantSearchLoading(false);
+  };
+  
+  const selectGooglePlaceForRating = (place) => {
+    setSelectedGooglePlace(place);
+    setRestaurant(place.name);
+    setShowRestaurantSearch(false);
+    setRestaurantSearchResults([]);
+    console.log('Selected place:', place);
+  };
   
   // Friend search state
   const [friendSearchQuery, setFriendSearchQuery] = useState('');
@@ -388,6 +1407,25 @@ const HuntersFindsApp = () => {
     script.async = false; // Load synchronously to ensure it's available
     script.onload = () => {
       console.log('Leaflet loaded successfully');
+      
+      // Load Leaflet MarkerCluster plugin
+      const clusterCSS = document.createElement('link');
+      clusterCSS.rel = 'stylesheet';
+      clusterCSS.href = 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css';
+      document.head.appendChild(clusterCSS);
+
+      const clusterDefaultCSS = document.createElement('link');
+      clusterDefaultCSS.rel = 'stylesheet';
+      clusterDefaultCSS.href = 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css';
+      document.head.appendChild(clusterDefaultCSS);
+
+      const clusterScript = document.createElement('script');
+      clusterScript.src = 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js';
+      clusterScript.onload = () => {
+        console.log('Leaflet MarkerCluster loaded successfully');
+      };
+      document.head.appendChild(clusterScript);
+      
       setIsMapLoaded(true);
     };
     script.onerror = (error) => {
@@ -407,9 +1445,9 @@ const HuntersFindsApp = () => {
 
   const getTierBadge = (score) => {
     if (score >= 96) return { label: '💎', color: 'bg-purple-100 text-purple-700' };
-    if (score >= 89) return { label: '🥇', color: 'bg-yellow-100 text-yellow-700' };
-    if (score >= 81) return { label: '🏆', color: 'bg-gray-100 text-gray-700' };
-    return { label: '✅', color: 'bg-green-100 text-green-700' };
+    if (score >= 89) return { label: 'A+', color: 'bg-yellow-100 text-yellow-700' };
+    if (score >= 81) return { label: 'A', color: 'bg-gray-100 text-gray-700' };
+    return { label: 'B+', color: 'bg-green-100 text-green-700' };
   };
 
   // Dynamic Price Score Calculation
@@ -442,9 +1480,9 @@ const HuntersFindsApp = () => {
   };
 
   const getAllDishes = () => {
-    if (rankingMode === 'personal' && user && userRatings) {
-      // Personal mode: show only user's own ratings
-      return userRatings.map(rating => {
+    if (rankingMode === 'personal' && user && activeUserRatings) {
+      // Personal mode: show only user's own non-deleted ratings
+      return activeUserRatings.map(rating => {
         const calculatedSRR = rating.overall_score || Math.round((rating.taste_score + rating.portion_score + rating.price_score) / 3);
         return {
           id: rating.dish?.id || rating.id,
@@ -458,15 +1496,18 @@ const HuntersFindsApp = () => {
           price_score: rating.price_score,
           numRatings: 1,
           photos: 0,
-          comments: 0
+          comments: 0,
+          created_at: rating.created_at,
+          edit_count: rating.edit_count,
+          edited_at: rating.edited_at
         };
       });
     }
     
-    // Global mode: Calculate averages from ALL users' ratings
-    return (dishes || []).map(dish => {
-      // Find ALL ratings for this dish (from all users)
-      const dishRatings = allRatings.filter(r => r.dish_id === dish.id);
+    // Global mode: Calculate averages from ALL users' non-deleted ratings
+    return (activeDishes || []).map(dish => {
+      // Find ALL non-deleted ratings for this dish (from all users)
+      const dishRatings = allRatings.filter(r => r.dish_id === dish.id && !r.is_deleted);
       
       let calculatedSRR = 0;
       let avgTaste = 0;
@@ -498,15 +1539,18 @@ const HuntersFindsApp = () => {
         price_score: avgPrice,
         numRatings: dishRatings.length,
         photos: 0,
-        comments: 0
+        comments: 0,
+        created_at: dish.created_at,
+        edit_count: dish.edit_count,
+        edited_at: dish.edited_at
       };
-    });
+    }).filter(dish => dish.numRatings > 0); // ✅ FILTER OUT DISHES WITH 0 ACTIVE RATINGS!
   };
 
   // Memoize allDishes to prevent re-calculation on every render
   const allDishes = React.useMemo(() => {
     return getAllDishes();
-  }, [rankingMode, user, userRatings, dishes, allRatings]);
+  }, [rankingMode, user, activeUserRatings, activeDishes, allRatings]);
   
   // Generate restaurants dynamically from rated dishes
   const allRestaurants = React.useMemo(() => {
@@ -514,7 +1558,15 @@ const HuntersFindsApp = () => {
     
     // First, add restaurants from database
     (restaurants || []).forEach(restaurant => {
-      restaurantMap[restaurant.name] = restaurant;
+      restaurantMap[restaurant.name] = {
+        ...restaurant,
+        // Map latitude/longitude to location object for map compatibility
+        location: restaurant.latitude && restaurant.longitude ? {
+          lat: restaurant.latitude,
+          lng: restaurant.longitude,
+          address: restaurant.address
+        } : null
+      };
     });
     
     // Then, add/update restaurants from rated dishes
@@ -528,7 +1580,8 @@ const HuntersFindsApp = () => {
           cuisine: dish.cuisine,
           avgSRR: dish.srr,
           dishCount: 1,
-          topDishes: [dish]
+          topDishes: [dish],
+          location: null
         };
       } else {
         // Update existing restaurant
@@ -614,6 +1667,15 @@ const HuntersFindsApp = () => {
   const getFilteredRestaurants = () => {
     let filtered = allRestaurants || [];
     
+    // Filter out restaurants with no active ratings
+    filtered = filtered.filter(restaurant => {
+      // Check if restaurant has any active (non-deleted) ratings
+      const hasActiveRatings = allRatings.some(rating => 
+        rating.dish?.restaurant_id === restaurant.id && !rating.is_deleted
+      );
+      return hasActiveRatings;
+    });
+    
     // Filter by cuisine
     if (selectedCuisine !== 'all') {
       filtered = filtered.filter(restaurant => restaurant.cuisine.toLowerCase() === selectedCuisine.toLowerCase());
@@ -638,41 +1700,267 @@ const HuntersFindsApp = () => {
   
   const availableCuisines = getAvailableCuisines();
   
-  // Search function - searches both dishes and restaurants
-  const performSearch = (query) => {
-    if (!query || query.length < 2) {
-      setSearchResults({ dishes: [], restaurants: [] });
+  // Search Google Places API
+  const searchGooglePlacesAPI = async (query, location, options = {}) => {
+    try {
+      const searchLocation = location || userLocation || { lat: 37.8044, lng: -122.2712 };
+      const limit = options.limit || 3; // Limit to 3 results (cost optimization)
+      
+      // Check cache first (COST OPTIMIZATION #1)
+      const cached = getCachedResults(query, searchLocation);
+      if (cached) {
+        return cached.slice(0, limit);
+      }
+      
+      console.log('🔎 Searching Google Places:', query, 'near', searchLocation);
+      
+      // Use local proxy server to avoid CORS
+      const proxyUrl = 'http://localhost:3001/api/places/search';
+      const params = new URLSearchParams({
+        query: query,
+        lat: searchLocation.lat,
+        lng: searchLocation.lng,
+        radius: 5000
+      });
+      
+      const response = await fetch(`${proxyUrl}?${params}`);
+      
+      if (!response.ok) {
+        throw new Error('Proxy server request failed');
+      }
+      
+      const data = await response.json();
+      
+      if (data.status === 'REQUEST_DENIED') {
+        console.error('Google Places API: Request denied. Check API key and billing.');
+        setGoogleSearchError(true);
+        return [];
+      }
+      
+      if (data.status === 'OK' && data.results) {
+        console.log('✅ Found', data.results.length, 'Google Places results');
+        
+        const results = data.results.map(place => ({
+          place_id: place.place_id,
+          name: place.name,
+          address: place.formatted_address || place.vicinity,
+          lat: place.geometry.location.lat,
+          lng: place.geometry.location.lng,
+          rating: place.rating,
+          types: place.types,
+          opening_hours: place.opening_hours,
+          user_ratings_total: place.user_ratings_total,
+          photo: place.photos?.[0] ? 
+            `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${place.photos[0].photo_reference}&key=${GOOGLE_PLACES_API_KEY}` 
+            : null
+        }));
+        
+        // Cache results
+        setCachedResults(query, searchLocation, results);
+        
+        return results.slice(0, limit);
+      }
+      
+      console.log('ℹ️ No Google Places results found');
+      return [];
+      
+    } catch (error) {
+      console.error('Google Places search error:', error);
+      
+      // Proxy server not running
+      if (error.message.includes('Failed to fetch')) {
+        console.warn('⚠️ Proxy server not running. Start it with: node proxy-server.js');
+        setGoogleSearchError(true);
+      }
+      
+      return [];
+    }
+  };
+  
+  // Merge and deduplicate results
+  const mergeSearchResults = (dbRestaurants, dbDishes, googlePlaces) => {
+    const merged = [];
+    const seenNames = new Set();
+    
+    // Add database dishes first (with restaurant context)
+    dbDishes.forEach(dish => {
+      const key = `${dish.restaurantName}-${dish.name}`.toLowerCase();
+      if (!seenNames.has(key)) {
+        seenNames.add(key);
+        merged.push({
+          type: 'dish',
+          id: dish.id,
+          name: dish.name,
+          restaurantName: dish.restaurantName,
+          address: '',
+          yourRating: user && dish.user_id === user.id ? dish.srr : null,
+          communityRating: dish.srr,
+          distance: null,
+          photo: null,
+          source: 'database'
+        });
+      }
+    });
+    
+    // Add database restaurants
+    dbRestaurants.forEach(restaurant => {
+      const key = restaurant.name.toLowerCase();
+      if (!seenNames.has(key)) {
+        seenNames.add(key);
+        
+        // Check if Google has additional info
+        const googleMatch = googlePlaces.find(g => 
+          g.name.toLowerCase() === key
+        );
+        
+        merged.push({
+          type: 'restaurant',
+          id: restaurant.id,
+          name: restaurant.name,
+          address: restaurant.location?.address || '',
+          yourRating: null,
+          communityRating: restaurant.avgSRR,
+          distance: userLocation && restaurant.location ? calculateDistance(
+            userLocation.lat,
+            userLocation.lng,
+            restaurant.location.lat,
+            restaurant.location.lng
+          ) : null,
+          photo: googleMatch?.photo || restaurant.photo,
+          googleRating: googleMatch?.rating,
+          source: 'database'
+        });
+      }
+    });
+    
+    // Add Google Places not in database
+    googlePlaces.forEach(place => {
+      const key = place.name.toLowerCase();
+      if (!seenNames.has(key)) {
+        seenNames.add(key);
+        merged.push({
+          type: 'restaurant',
+          id: place.place_id,
+          name: place.name,
+          address: place.address,
+          googleRating: place.rating,
+          distance: userLocation ? calculateDistance(
+            userLocation.lat,
+            userLocation.lng,
+            place.lat,
+            place.lng
+          ) : null,
+          photo: place.photo,
+          source: 'google',
+          googlePlaceData: place
+        });
+      }
+    });
+    
+    // Sort by relevance: your ratings > community ratings > distance
+    merged.sort((a, b) => {
+      if (a.yourRating && !b.yourRating) return -1;
+      if (!a.yourRating && b.yourRating) return 1;
+      if (a.yourRating && b.yourRating) return b.yourRating - a.yourRating;
+      if (a.communityRating && !b.communityRating) return -1;
+      if (!a.communityRating && b.communityRating) return 1;
+      if (a.communityRating && b.communityRating) return b.communityRating - a.communityRating;
+      if (a.distance !== null && b.distance !== null) return a.distance - b.distance;
+      return 0;
+    });
+    
+    return merged.slice(0, 10); // Top 10 results
+  };
+
+  // Enhanced search function - searches dishes, restaurants, AND Google Places
+  const performSearch = async (query) => {
+    if (!query || query.length < 3) {
+      setSearchResults({ dishes: [], restaurants: [], merged: [] });
+      setGooglePlacesSearchResults([]);
       setShowSearchDropdown(false);
+      setSearchLoading(false);
+      setShowNearbyToggle(false);
       return;
     }
 
+    setSearchLoading(true);
+    setGoogleSearchError(false);
     const lowerQuery = query.toLowerCase();
 
-    // Search dishes
+    // Search database first
     const matchingDishes = allDishes.filter(dish => 
       dish.name.toLowerCase().includes(lowerQuery) ||
       dish.restaurantName.toLowerCase().includes(lowerQuery) ||
       dish.cuisine.toLowerCase().includes(lowerQuery)
-    ).slice(0, 5); // Limit to 5 results
+    );
 
-    // Search restaurants
-    const matchingRestaurants = (restaurants || []).filter(restaurant =>
+    const matchingRestaurants = (allRestaurants || []).filter(restaurant =>
       restaurant.name.toLowerCase().includes(lowerQuery) ||
-      restaurant.cuisine.toLowerCase().includes(lowerQuery)
-    ).slice(0, 5); // Limit to 5 results
-
-    setSearchResults({ dishes: matchingDishes, restaurants: matchingRestaurants });
+      restaurant.cuisine?.toLowerCase().includes(lowerQuery)
+    );
+    
+    const totalDbResults = matchingDishes.length + matchingRestaurants.length;
+    
+    // Determine if this is a cuisine search
+    const cuisineKeywords = ['italian', 'japanese', 'chinese', 'mexican', 'thai', 'indian', 
+                            'american', 'french', 'korean', 'vietnamese', 'sushi', 'pizza', 
+                            'burger', 'taco', 'pho', 'ramen', 'bbq', 'seafood', 'steak'];
+    const isCuisineSearch = cuisineKeywords.some(c => lowerQuery.includes(c));
+    
+    let googleResults = [];
+    
+    // SMART GOOGLE SEARCH LOGIC (COST OPTIMIZATION)
+    if (totalDbResults === 0) {
+      // No database results - search Google immediately
+      console.log('📊 No database results - searching Google');
+      googleResults = await searchGooglePlacesAPI(query, userLocation, { limit: 3 });
+    } else if (isCuisineSearch && totalDbResults < 5) {
+      // Cuisine search with < 5 results - show toggle
+      console.log('📊 Cuisine search with', totalDbResults, 'results - showing nearby toggle');
+      setShowNearbyToggle(true);
+      
+      if (includeNearby) {
+        googleResults = await searchGooglePlacesAPI(query, userLocation, { limit: 3 });
+      }
+    } else if (!isCuisineSearch && totalDbResults < 3) {
+      // Restaurant name search with few results - 1 second delay
+      console.log('📊 Restaurant search - waiting 1 second before Google');
+      
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      googleResults = await searchGooglePlacesAPI(query, userLocation, { limit: 3 });
+    } else {
+      // Enough database results - don't search Google (SAVE MONEY!)
+      console.log('📊 Sufficient database results (', totalDbResults, ') - skipping Google ✅');
+      setShowNearbyToggle(false);
+    }
+    
+    // Merge results
+    const mergedResults = mergeSearchResults(matchingRestaurants, matchingDishes, googleResults);
+    
+    setSearchResults({ 
+      dishes: matchingDishes, 
+      restaurants: matchingRestaurants,
+      merged: mergedResults
+    });
+    setGooglePlacesSearchResults(googleResults);
     setShowSearchDropdown(true);
+    setSearchLoading(false);
   };
 
-  // Live search effect
+  // Live search effect with debounce
   React.useEffect(() => {
     const timeoutId = setTimeout(() => {
-      performSearch(searchQuery);
+      if (searchQuery.length >= 3) {
+        performSearch(searchQuery);
+      } else if (searchQuery.length === 0) {
+        setSearchResults({ dishes: [], restaurants: [], merged: [] });
+        setGooglePlacesSearchResults([]);
+        setShowSearchDropdown(false);
+      }
     }, 300); // Debounce 300ms
 
     return () => clearTimeout(timeoutId);
-  }, [searchQuery, allDishes, restaurants]);
+  }, [searchQuery, allDishes, allRestaurants, userLocation, activeTab]);
   
   // Friend search function
   const searchFriends = async (query) => {
@@ -798,6 +2086,10 @@ const HuntersFindsApp = () => {
   // Fetch suggested friends
   const fetchSuggestedFriends = async () => {
     if (!user) return;
+    
+    // Skip for now - function may not exist
+    setSuggestedFriends([]);
+    return;
     
     try {
       const { data, error } = await supabase
@@ -1002,6 +2294,863 @@ const HuntersFindsApp = () => {
     }
   }, [user]);
   
+  // Phase 5: Load photos when PHOTOS tab is opened
+  React.useEffect(() => {
+    if (selectedDish && dishModalView === 'photos') {
+      fetchDishPhotos(selectedDish.id);
+    }
+  }, [selectedDish, dishModalView]);
+  
+  // Fetch user lists
+  React.useEffect(() => {
+    const fetchUserLists = async () => {
+      if (!user) {
+        setUserLists([]);
+        return;
+      }
+      
+      try {
+        const { data, error } = await supabase
+          .from('lists')
+          .select('*')
+          .eq('creator_id', user.id)
+          .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        setUserLists(data || []);
+      } catch (error) {
+        console.error('Error fetching lists:', error);
+        setUserLists([]);
+      }
+    };
+    
+    if (user && youView === 'lists') {
+      fetchUserLists();
+    }
+  }, [user, youView]);
+  
+  // Refresh groups when groups tab is opened
+  React.useEffect(() => {
+    const refreshGroups = async () => {
+      if (!user) return;
+      
+      try {
+        const { data: memberData, error: memberError } = await supabase
+          .from('group_members')
+          .select('group_id')
+          .eq('user_id', user.id);
+
+        if (memberError) throw memberError;
+        
+        const groupIds = memberData?.map(m => m.group_id) || [];
+        
+        if (groupIds.length > 0) {
+          const { data: groupsData, error: groupsError } = await supabase
+            .from('groups')
+            .select('*')
+            .in('id', groupIds)
+            .order('created_at', { ascending: false });
+
+          if (groupsError) throw groupsError;
+          setUserGroups(groupsData || []);
+        } else {
+          setUserGroups([]);
+        }
+      } catch (error) {
+        console.error('Error refreshing groups:', error);
+      }
+    };
+    
+    if (user && youView === 'groups') {
+      refreshGroups();
+    }
+  }, [user, youView]);
+  
+  // ============================================
+  // PHASE 4B: @ MENTIONS
+  // ============================================
+  
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [mentionResults, setMentionResults] = useState([]);
+  const [showMentionDropdown, setShowMentionDropdown] = useState(false);
+  const [mentionCursorPosition, setMentionCursorPosition] = useState(0);
+  const [activeMentionField, setActiveMentionField] = useState(null); // 'message', 'comment', 'rating'
+  
+  // Search users for mentions
+  const searchUsersForMention = async (query) => {
+    if (!query || query.length < 1) {
+      setMentionResults([]);
+      return;
+    }
+    
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, email, username')
+        .ilike('username', `%${query}%`)
+        .limit(5);
+      
+      if (error) throw error;
+      
+      setMentionResults(data || []);
+    } catch (error) {
+      console.error('Error searching for mentions:', error);
+      setMentionResults([]);
+    }
+  };
+  
+  // Handle text input for mentions
+  const handleMentionInput = (text, cursorPosition, fieldType) => {
+    setActiveMentionField(fieldType);
+    setMentionCursorPosition(cursorPosition);
+    
+    // Find last @ symbol before cursor
+    const lastAtSymbol = text.lastIndexOf('@', cursorPosition - 1);
+    
+    if (lastAtSymbol !== -1) {
+      const textAfterAt = text.substring(lastAtSymbol + 1, cursorPosition);
+      
+      // Check if there's a space after @ (means mention is finished)
+      if (textAfterAt.includes(' ')) {
+        setShowMentionDropdown(false);
+        return;
+      }
+      
+      // Search for users
+      if (textAfterAt.length >= 1) {
+        setMentionQuery(textAfterAt);
+        searchUsersForMention(textAfterAt);
+        setShowMentionDropdown(true);
+      } else if (textAfterAt.length === 0) {
+        // Just typed @, show all recent users
+        searchUsersForMention('');
+        setShowMentionDropdown(true);
+      }
+    } else {
+      setShowMentionDropdown(false);
+    }
+  };
+  
+  // Insert mention into text
+  const insertMention = (username, currentText, fieldSetter) => {
+    const lastAtSymbol = currentText.lastIndexOf('@', mentionCursorPosition - 1);
+    const beforeMention = currentText.substring(0, lastAtSymbol);
+    const afterMention = currentText.substring(mentionCursorPosition);
+    const newText = `${beforeMention}@${username} ${afterMention}`;
+    
+    fieldSetter(newText);
+    setShowMentionDropdown(false);
+    setMentionQuery('');
+  };
+  
+  // Create mention notification
+  const createMentionNotification = async (mentionedUsername, contextType, contextId) => {
+    if (!user) return;
+    
+    try {
+      // Get mentioned user ID
+      const { data: mentionedUser } = await supabase
+        .from('users')
+        .select('id')
+        .eq('username', mentionedUsername)
+        .single();
+      
+      if (!mentionedUser) return;
+      
+      // Create mention record
+      await supabase
+        .from('mentions')
+        .insert({
+          mention_by: user.id,
+          mention_to: mentionedUser.id,
+          context_type: contextType,
+          context_id: contextId
+        });
+      
+      // Create notification
+      await supabase
+        .from('notifications')
+        .insert({
+          user_id: mentionedUser.id,
+          type: 'mention',
+          content: {
+            mentioner: user.user_metadata?.username || user.email?.split('@')[0],
+            mentioner_id: user.id,
+            context_type: contextType,
+            context_id: contextId
+          }
+        });
+    } catch (error) {
+      console.error('Error creating mention:', error);
+    }
+  };
+  
+  // Extract mentions from text
+  const extractMentions = (text) => {
+    const mentionRegex = /@(\w+)/g;
+    const mentions = [];
+    let match;
+    
+    while ((match = mentionRegex.exec(text)) !== null) {
+      mentions.push(match[1]); // Username without @
+    }
+    
+    return mentions;
+  };
+  
+  // ============================================
+  // PHASE 5: PHOTO UPLOAD & MANAGEMENT
+  // ============================================
+  
+  // Compress image to reduce file size
+  const compressImage = async (file, maxSizeMB = 5) => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          // Max dimensions
+          const MAX_WIDTH = 1920;
+          const MAX_HEIGHT = 1080;
+          
+          // Calculate new dimensions
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          // Convert to blob with quality 0.85
+          canvas.toBlob((blob) => {
+            resolve(new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() }));
+          }, 'image/jpeg', 0.85);
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+  
+  // Upload photo to Supabase Storage
+  const uploadPhotoToStorage = async (file, dishId) => {
+    if (!user) return null;
+    
+    try {
+      // Check file size and compress if needed
+      let fileToUpload = file;
+      const sizeMB = file.size / (1024 * 1024);
+      
+      if (sizeMB > 5) {
+        setErrorModal({
+          show: true,
+          title: 'File Too Large',
+          message: 'Compressing image...'
+        });
+        fileToUpload = await compressImage(file);
+      }
+      
+      // Create unique filename: userId/dishId/timestamp_filename
+      const fileExt = fileToUpload.name.split('.').pop();
+      const fileName = `${user.id}/${dishId}/${Date.now()}.${fileExt}`;
+      
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('photos')
+        .upload(fileName, fileToUpload, {
+          cacheControl: '3600',
+          upsert: false
+        });
+      
+      if (uploadError) throw uploadError;
+      
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('photos')
+        .getPublicUrl(fileName);
+      
+      return urlData.publicUrl;
+    } catch (error) {
+      console.error('Error uploading photo:', error);
+      throw error;
+    }
+  };
+  
+  // Save photo metadata to database
+  const savePhotoToDatabase = async (url, dishId, caption = null) => {
+    if (!user) return null;
+    
+    try {
+      const { data, error } = await supabase
+        .from('photos')
+        .insert({
+          user_id: user.id,
+          dish_id: dishId,
+          url: url,
+          caption: caption
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      return data;
+    } catch (error) {
+      console.error('Error saving photo to database:', error);
+      throw error;
+    }
+  };
+  
+  // Handle photo upload (complete flow)
+  const handlePhotoUpload = async (file, dishId) => {
+    if (!user) {
+      setErrorModal({
+        show: true,
+        title: 'Login Required',
+        message: 'Please log in to upload photos.'
+      });
+      return;
+    }
+    
+    setUploadingPhoto(true);
+    
+    try {
+      // Upload to storage
+      const photoUrl = await uploadPhotoToStorage(file, dishId);
+      if (!photoUrl) throw new Error('Upload failed');
+      
+      // Save to database
+      await savePhotoToDatabase(photoUrl, dishId);
+      
+      // Refresh dish photos
+      if (selectedDish?.id === dishId) {
+        await fetchDishPhotos(dishId);
+      }
+      
+      setErrorModal({
+        show: true,
+        title: 'Photo Uploaded!',
+        message: 'Your photo has been added to this dish.'
+      });
+      
+    } catch (error) {
+      console.error('Error uploading photo:', error);
+      setErrorModal({
+        show: true,
+        title: 'Upload Failed',
+        message: 'Could not upload photo. Please try again.'
+      });
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+  
+  // Fetch photos for a dish
+  const fetchDishPhotos = async (dishId) => {
+    setLoadingPhotos(true);
+    try {
+      const { data, error } = await supabase
+        .rpc('get_dish_photos', {
+          target_dish_id: dishId,
+          limit_count: 20
+        });
+      
+      if (error) throw error;
+      setSelectedDishPhotos(data || []);
+      setCurrentPhotoIndex(0);
+    } catch (error) {
+      console.error('Error fetching photos:', error);
+      setSelectedDishPhotos([]);
+    } finally {
+      setLoadingPhotos(false);
+    }
+  };
+  
+  // Like/unlike photo
+  const handlePhotoLike = async (photoId) => {
+    if (!user) {
+      setErrorModal({
+        show: true,
+        title: 'Login Required',
+        message: 'Please log in to like photos.'
+      });
+      return;
+    }
+    
+    try {
+      // Check if already liked
+      const { data: existingLike } = await supabase
+        .from('photo_likes')
+        .select('id')
+        .eq('photo_id', photoId)
+        .eq('user_id', user.id)
+        .single();
+      
+      if (existingLike) {
+        // Unlike
+        await supabase
+          .from('photo_likes')
+          .delete()
+          .eq('id', existingLike.id);
+      } else {
+        // Like
+        await supabase
+          .from('photo_likes')
+          .insert({
+            photo_id: photoId,
+            user_id: user.id
+          });
+      }
+      
+      // Refresh photos
+      if (selectedDish) {
+        await fetchDishPhotos(selectedDish.id);
+      }
+      
+    } catch (error) {
+      console.error('Error liking photo:', error);
+    }
+  };
+  
+  // Upload profile picture
+  const uploadProfilePicture = async (file) => {
+    if (!user) return;
+    
+    try {
+      // Compress if needed
+      let fileToUpload = file;
+      const sizeMB = file.size / (1024 * 1024);
+      if (sizeMB > 5) {
+        fileToUpload = await compressImage(file);
+      }
+      
+      // Upload to storage (overwrite existing)
+      const fileName = `profiles/${user.id}`;
+      const { error: uploadError } = await supabase.storage
+        .from('photos')
+        .upload(fileName, fileToUpload, {
+          cacheControl: '3600',
+          upsert: true // Overwrite existing
+        });
+      
+      if (uploadError) throw uploadError;
+      
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('photos')
+        .getPublicUrl(fileName);
+      
+      // Update user metadata
+      await supabase.auth.updateUser({
+        data: { 
+          profile_picture_url: urlData.publicUrl + '?t=' + Date.now() // Cache bust
+        }
+      });
+      
+      setErrorModal({
+        show: true,
+        title: 'Profile Picture Updated!',
+        message: 'Your new profile picture has been saved.'
+      });
+      
+    } catch (error) {
+      console.error('Error uploading profile picture:', error);
+      setErrorModal({
+        show: true,
+        title: 'Upload Failed',
+        message: 'Could not upload profile picture. Please try again.'
+      });
+    }
+  };
+  
+  // ============================================
+  // ENHANCED MAP FUNCTIONS
+  // ============================================
+  
+  const GOOGLE_PLACES_API_KEY = 'AIzaSyBGGhB8PW32hCyC6mdLGVy1pxSKrDjfEJc';
+  
+  // Cache management (24 hour cache)
+  const CACHE_DURATION = 24 * 60 * 60 * 1000;
+  
+  const getCachedResults = (query, location) => {
+    try {
+      const cacheKey = `google-${query}-${location.lat.toFixed(2)}-${location.lng.toFixed(2)}`;
+      const cached = localStorage.getItem(cacheKey);
+      
+      if (cached) {
+        const data = JSON.parse(cached);
+        const age = Date.now() - data.timestamp;
+        
+        if (age < CACHE_DURATION) {
+          console.log('✅ Using cached results (age:', Math.floor(age / 1000 / 60), 'min)');
+          return data.results;
+        } else {
+          localStorage.removeItem(cacheKey);
+        }
+      }
+    } catch (error) {
+      console.error('Cache read error:', error);
+    }
+    return null;
+  };
+  
+  const setCachedResults = (query, location, results) => {
+    try {
+      const cacheKey = `google-${query}-${location.lat.toFixed(2)}-${location.lng.toFixed(2)}`;
+      localStorage.setItem(cacheKey, JSON.stringify({
+        results,
+        timestamp: Date.now(),
+        query
+      }));
+      console.log('💾 Cached results for:', query);
+    } catch (error) {
+      console.error('Cache write error:', error);
+    }
+  };
+  
+  const trackGooglePlaceView = (placeId, placeName) => {
+    try {
+      const viewsKey = `views-${placeId}`;
+      const views = JSON.parse(localStorage.getItem(viewsKey) || '{"count": 0, "name": ""}');
+      views.count++;
+      views.name = placeName;
+      localStorage.setItem(viewsKey, JSON.stringify(views));
+      
+      if (views.count >= 3) {
+        console.log('🔥 Popular place:', placeName, '- Auto-add to database');
+      }
+    } catch (error) {
+      console.error('View tracking error:', error);
+    }
+  };
+  
+  // Create castle-shaped pin SVG
+  const createCastlePin = (color, size) => {
+    const shadowId = `shadow-${color.replace('#', '')}`;
+    return `
+      <svg width="${size}" height="${size * 1.2}" viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <filter id="${shadowId}">
+            <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.4"/>
+          </filter>
+        </defs>
+        <g filter="url(#${shadowId})">
+          <path d="M 30,90 L 30,40 L 25,40 L 25,30 L 20,30 L 20,20 L 30,20 L 30,30 L 40,30 L 40,20 L 50,20 L 50,30 L 60,30 L 60,20 L 70,20 L 70,30 L 75,30 L 75,40 L 70,40 L 70,90 Z" 
+                fill="${color}" stroke="white" stroke-width="4"/>
+          <rect x="42" y="65" width="16" height="25" fill="white" opacity="0.3" rx="2"/>
+          <circle cx="50" cy="105" r="8" fill="${color}" stroke="white" stroke-width="3"/>
+        </g>
+      </svg>
+    `;
+  };
+  
+  // Determine restaurant category
+  const getRestaurantCategory = (restaurant) => {
+    if (user && restaurant.rated_by_user) return 'user';
+    if (restaurant.avgSRR >= 85) return 'high_rated';
+    if (restaurant.avgSRR) return 'others';
+    return 'google';
+  };
+  
+  // Pin styles configuration
+  const pinConfig = {
+    user: { color: '#10b981', size: 40 },
+    high_rated: { color: '#f59e0b', size: 36 },
+    others: { color: '#3b82f6', size: 32 },
+    google: { color: '#9ca3af', size: 28 }
+  };
+  
+  // Get user's current location
+  const getUserLocation = () => {
+    return new Promise((resolve) => {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const location = {
+              lat: position.coords.latitude,
+              lng: position.coords.longitude
+            };
+            setUserLocation(location);
+            resolve(location);
+          },
+          (error) => {
+            console.log('Location permission denied or error:', error.message);
+            const defaultLocation = { lat: 37.8044, lng: -122.2712 };
+            setUserLocation(defaultLocation);
+            resolve(defaultLocation);
+          }
+        );
+      } else {
+        const defaultLocation = { lat: 37.8044, lng: -122.2712 };
+        setUserLocation(defaultLocation);
+        resolve(defaultLocation);
+      }
+    });
+  };
+  
+  // Update map markers
+  // Distance helper
+  const getDistanceInMiles = (lat1, lon1, lat2, lon2) => {
+    const R = 3959; // Earth radius in miles
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
+  
+  // Update map when filters change
+  React.useEffect(() => {
+    if (mapInstance && activeTab === 'map') {
+      updateMapMarkers(allRestaurants);
+    }
+  }, [mapFilters, mapInstance, activeTab]);
+  
+  const updateMapMarkers = (restaurants) => {
+    if (!mapInstance || !window.L) return;
+    
+    // Clear existing marker layers
+    mapInstance.eachLayer(layer => {
+      if (layer instanceof window.L.Marker || layer instanceof window.L.MarkerClusterGroup) {
+        mapInstance.removeLayer(layer);
+      }
+    });
+    
+    // Create marker cluster group
+    const markers = window.L.markerClusterGroup ? window.L.markerClusterGroup({
+      maxClusterRadius: 50,
+      spiderfyOnMaxZoom: true,
+      showCoverageOnHover: false,
+      zoomToBoundsOnClick: true,
+      iconCreateFunction: (cluster) => {
+        const count = cluster.getChildCount();
+        return window.L.divIcon({
+          html: `<div style="
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #33a29b 0%, #2a8a84 100%);
+            border: 3px solid white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 14px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+          ">${count}</div>`,
+          className: 'marker-cluster',
+          iconSize: [40, 40]
+        });
+      }
+    }) : window.L.layerGroup();
+    
+    // Filter restaurants
+    let filteredRestaurants = restaurants;
+    
+    // Apply new filters
+    const filters = mapFilters;
+    
+    // Popularity filters
+    if (filters.popularity.length > 0) {
+      filteredRestaurants = filteredRestaurants.filter(r => {
+        const ratingCount = r.ratingCount || 0;
+        return filters.popularity.some(f => {
+          if (f === '3+') return ratingCount >= 3;
+          if (f === '5+') return ratingCount >= 5;
+          if (f === '10+') return ratingCount >= 10;
+          return false;
+        });
+      });
+    }
+    
+    // Quality filters
+    if (filters.quality.length > 0) {
+      filteredRestaurants = filteredRestaurants.filter(r => {
+        const score = r.avgSRR || 0;
+        return filters.quality.some(f => {
+          if (f === '80+') return score >= 80;
+          if (f === '90+') return score >= 90;
+          if (f === 'top') {
+            // Your top rated - check if user rated this
+            const userRating = userRatings.find(rating => 
+              rating.dish?.restaurant_id === r.id
+            );
+            return userRating && userRating.overall_score >= 85;
+          }
+          return false;
+        });
+      });
+    }
+    
+    // Social filters
+    if (filters.social.length > 0) {
+      filteredRestaurants = filteredRestaurants.filter(r => {
+        return filters.social.some(f => {
+          if (f === 'you') {
+            // Check if you rated this restaurant
+            return userRatings.some(rating => 
+              rating.dish?.restaurant_id === r.id
+            );
+          }
+          if (f === 'friends') {
+            // Check if friends rated (would need friends data)
+            return false; // TODO: implement when friends data available
+          }
+          if (f === 'groups') {
+            // Check if group members rated
+            return false; // TODO: implement when group data available
+          }
+          return false;
+        });
+      });
+    }
+    
+    // Distance filters
+    if (filters.distance.length > 0 && userLocation) {
+      filteredRestaurants = filteredRestaurants.filter(r => {
+        if (!r.location?.lat || !r.location?.lng) return false;
+        
+        const distance = getDistanceInMiles(
+          userLocation.lat, userLocation.lng,
+          r.location.lat, r.location.lng
+        );
+        
+        return filters.distance.some(f => {
+          if (f === '1mi') return distance <= 1;
+          if (f === '5mi') return distance <= 5;
+          if (f === '10mi') return distance <= 10;
+          return false;
+        });
+      });
+    }
+    
+    // Legacy filters (keep for compatibility)
+    if (mapFilterCuisine !== 'all') {
+      filteredRestaurants = filteredRestaurants.filter(r => 
+        r.cuisine?.toLowerCase() === mapFilterCuisine.toLowerCase()
+      );
+    }
+    if (mapShowHighRatedOnly) {
+      filteredRestaurants = filteredRestaurants.filter(r => r.avgSRR >= 85);
+    }
+    
+    // Add markers
+    filteredRestaurants.forEach(restaurant => {
+      if (!restaurant.location || !restaurant.location.lat || !restaurant.location.lng) return;
+      
+      const category = getRestaurantCategory(restaurant);
+      const config = pinConfig[category];
+      
+      const icon = window.L.divIcon({
+        className: 'custom-castle-marker',
+        html: createCastlePin(config.color, config.size),
+        iconSize: [config.size, config.size * 1.2],
+        iconAnchor: [config.size / 2, config.size * 1.2]
+      });
+      
+      const marker = window.L.marker(
+        [restaurant.location.lat, restaurant.location.lng],
+        { icon, title: restaurant.name }
+      );
+      
+      // Create rich popup with Google Places data
+      const popupContent = `
+        <div style="font-family: 'Courier New', monospace; min-width: 240px; max-width: 320px;">
+          ${restaurant.googleData?.photo || restaurant.photo ? `
+            <img 
+              src="${restaurant.googleData?.photo || restaurant.photo}" 
+              style="width: 100%; height: 140px; object-fit: cover; border-radius: 8px; margin-bottom: 10px;"
+              onerror="this.style.display='none'"
+            />
+          ` : ''}
+          
+          <h3 style="font-weight: bold; margin: 0 0 6px 0; font-size: 15px;">${restaurant.name}</h3>
+          <p style="margin: 0 0 6px 0; font-size: 11px; color: #666;">${restaurant.cuisine || restaurant.googleData?.types?.slice(0,2).join(', ') || 'establishment, food, point_of_interest, restaurant'}</p>
+          <p style="margin: 0 0 8px 0; font-size: 10px; color: #999;">${restaurant.location?.address || ''}</p>
+          
+          ${restaurant.googleData?.rating ? `
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding: 6px; background: #fef3c7; border-radius: 6px;">
+              <span style="font-size: 18px;">⭐</span>
+              <span style="font-weight: bold; font-size: 15px;">${restaurant.googleData.rating}</span>
+              <span style="font-size: 10px; color: #666;">(${restaurant.googleData.user_ratings_total || 0} reviews)</span>
+            </div>
+          ` : ''}
+          
+          ${restaurant.googleData?.opening_hours ? `
+            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 11px;">
+              <span style="font-size: 14px;">🕐</span>
+              <span style="font-weight: bold; color: ${restaurant.googleData.opening_hours.open_now ? '#10b981' : '#ef4444'};">
+                ${restaurant.googleData.opening_hours.open_now ? 'Open now' : 'Closed'}
+              </span>
+            </div>
+          ` : ''}
+          
+          ${category === 'user' ? `
+            <div style="background: #10b981; color: white; padding: 8px; border-radius: 6px; margin: 8px 0; text-align: center;">
+              <strong>Your Rating:</strong> ${restaurant.avgSRR}
+            </div>
+          ` : ''}
+          
+          ${restaurant.avgSRR && restaurant.dishCount >= 3 ? `
+            <div style="border-top: 1px solid #eee; padding-top: 8px; margin-top: 8px;">
+              <div style="font-size: 10px; color: #666; text-transform: uppercase; margin-bottom: 4px;">Top Rated Dishes</div>
+              ${(restaurant.topDishes || []).slice(0, 2).map(dish => `
+                <div style="font-size: 11px; padding: 4px 0; display: flex; justify-content: space-between;">
+                  <span>${dish.name}</span>
+                  <span style="font-weight: bold; color: #33a29b;">${dish.srr}</span>
+                </div>
+              `).join('')}
+            </div>
+          ` : restaurant.avgSRR ? `
+            <div style="display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid #eee;">
+              <span style="font-size: 11px; color: #666;">Community:</span>
+              <span style="font-weight: bold; font-size: 14px; color: ${config.color};">${restaurant.avgSRR}</span>
+            </div>
+          ` : ''}
+          
+          <button 
+            onclick="window.openRestaurantFromMap('${restaurant.id}')" 
+            style="width: 100%; padding: 10px; background: #33a29b; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 8px; font-size: 12px;"
+          >
+            ${category === 'google' || !restaurant.avgSRR ? 'Rate a Dish' : 'View Details'}
+          </button>
+        </div>
+      `;
+      
+      marker.bindPopup(popupContent, { maxWidth: 320 });
+      markers.addLayer(marker);
+    });
+    
+    mapInstance.addLayer(markers);
+  };
+  
+  // Add window function for popup buttons
+  if (typeof window !== 'undefined') {
+    window.openRestaurantFromMap = (restaurantId) => {
+      const restaurant = allRestaurants.find(r => r.id === restaurantId);
+      if (restaurant) {
+        setSelectedRestaurant(restaurant);
+      }
+    };
+  }
+  
   // Close search dropdown when clicking outside
   React.useEffect(() => {
     if (!showSearchDropdown) return; // Only add listener when dropdown is showing
@@ -1090,11 +3239,80 @@ const HuntersFindsApp = () => {
       // So we don't need to create/check restaurants table at all
       
       // PART 6: DUPLICATE HANDLING FOR DISHES
-      // Check if this exact dish already exists (using restaurant_name, not restaurant_id)
+      // First, create or find restaurant (with Google Places data if selected)
+      let restaurantId;
+      
+      if (selectedGooglePlace) {
+        // User selected from Google Places - create/update restaurant with full data
+        console.log('Creating restaurant with Google Places data:', selectedGooglePlace);
+        
+        const { data: existingRestaurant } = await supabase
+          .from('restaurants')
+          .select('id')
+          .eq('google_place_id', selectedGooglePlace.place_id)
+          .maybeSingle();
+        
+        if (existingRestaurant) {
+          restaurantId = existingRestaurant.id;
+          console.log('✅ Using existing Google-linked restaurant');
+        } else {
+          // Create new restaurant with Google data
+          const { data: newRestaurant, error: restaurantError } = await supabase
+            .from('restaurants')
+            .insert([{
+              name: selectedGooglePlace.name,
+              google_place_id: selectedGooglePlace.place_id,
+              latitude: selectedGooglePlace.geometry.location.lat,
+              longitude: selectedGooglePlace.geometry.location.lng,
+              address: selectedGooglePlace.formatted_address,
+              google_data: selectedGooglePlace
+            }])
+            .select()
+            .single();
+          
+          if (restaurantError) {
+            console.error('Error creating restaurant:', restaurantError);
+            throw restaurantError;
+          }
+          
+          restaurantId = newRestaurant.id;
+          console.log('✅ New Google-linked restaurant created');
+        }
+      } else {
+        // Manual entry - create simple restaurant without Google data
+        const { data: existingRestaurant } = await supabase
+          .from('restaurants')
+          .select('id')
+          .eq('name', restaurant.trim())
+          .maybeSingle();
+        
+        if (existingRestaurant) {
+          restaurantId = existingRestaurant.id;
+          console.log('✅ Using existing restaurant');
+        } else {
+          const { data: newRestaurant, error: restaurantError } = await supabase
+            .from('restaurants')
+            .insert([{
+              name: restaurant.trim()
+            }])
+            .select()
+            .single();
+          
+          if (restaurantError) {
+            console.error('Error creating restaurant:', restaurantError);
+            throw restaurantError;
+          }
+          
+          restaurantId = newRestaurant.id;
+          console.log('✅ New restaurant created (manual entry)');
+        }
+      }
+      
+      // Now check if this exact dish already exists
       const { data: existingDishes, error: dishCheckError } = await supabase
         .from('dishes')
         .select('id, name')
-        .eq('restaurant_name', restaurant.trim())
+        .eq('restaurant_id', restaurantId)
         .ilike('name', dishName.trim());
 
       let dishId;
@@ -1150,12 +3368,13 @@ const HuntersFindsApp = () => {
           return;
         }
       } else {
-        // Create new dish (using restaurant_name instead of restaurant_id)
+        // Create new dish (linked to restaurant via restaurant_id)
         const { data: newDish, error: dishError } = await supabase
           .from('dishes')
           .insert([{
             name: dishName.trim(),
-            restaurant_name: restaurant.trim(),
+            restaurant_id: restaurantId,
+            restaurant_name: restaurant.trim(), // Backward compatibility
             cuisine_type: dishCategory,
             price: parseFloat(price)
           }])
@@ -1199,6 +3418,31 @@ const HuntersFindsApp = () => {
       }
 
       console.log('✅ Rating saved to database!');
+      
+      // PHASE 4B: Handle mentions in comment
+      if (comment) {
+        const mentions = extractMentions(comment);
+        if (mentions.length > 0) {
+          // Create mention notifications for each mentioned user
+          for (const mentionedUsername of mentions) {
+            await createMentionNotification(mentionedUsername, 'rating', ratingData[0].id);
+          }
+        }
+      }
+      
+      // Create activity feed entry
+      await supabase
+        .from('activity_feed')
+        .insert({
+          user_id: user.id,
+          activity_type: 'rating',
+          content: {
+            dish_name: dishName,
+            restaurant_name: restaurant,
+            score: finalSRR
+          }
+        });
+      
     } catch (error) {
       console.error('Unexpected error:', error);
       setErrorModal({
@@ -1219,6 +3463,10 @@ const HuntersFindsApp = () => {
     setTimeout(() => {
       setIsSubmissionModalOpen(false);
       setIsSubmissionClosing(false);
+      // Reset Google Places selection
+      setSelectedGooglePlace(null);
+      setShowRestaurantSearch(false);
+      setRestaurantSearchResults([]);
     }, 300); // Match animation duration
   };
 
@@ -1255,17 +3503,58 @@ const HuntersFindsApp = () => {
   // Group creation handler
   const handleCreateGroup = async (groupData) => {
     try {
+      console.log('🔍 DEBUG - Current user:', user);
+      console.log('🔍 DEBUG - User ID:', user?.id);
+      console.log('🔍 DEBUG - User ID type:', typeof user?.id);
+      console.log('🔍 DEBUG - Group data received:', groupData);
+      console.log('🔍 DEBUG - creator_id in groupData:', groupData.creator_id);
+      console.log('🔍 DEBUG - creator_id type:', typeof groupData.creator_id);
+      console.log('🔍 DEBUG - Are they equal?', user?.id === groupData.creator_id);
+      
+      // Try manual test first
+      console.log('🧪 Testing if user exists in public.users...');
+      const { data: userCheck, error: userCheckError } = await supabase
+        .from('users')
+        .select('id, email')
+        .eq('id', user.id)
+        .single();
+      
+      if (userCheckError) {
+        console.error('❌ USER CHECK FAILED:', userCheckError);
+      } else {
+        console.log('✅ User exists in public.users:', userCheck);
+      }
+      
+      console.log('🔍 Attempting insert with data:', JSON.stringify(groupData, null, 2));
+      
       const { data, error } = await supabase
         .from('groups')
         .insert([groupData])
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ INSERT ERROR:', error);
+        console.error('❌ ERROR DETAILS:', JSON.stringify(error, null, 2));
+        throw error;
+      }
 
       console.log('✅ Group created:', data);
       
-      // Refresh user groups using same approach as useEffect
+      // Add creator as member
+      const { error: memberError } = await supabase
+        .from('group_members')
+        .insert([{
+          group_id: data.id,
+          user_id: user.id,
+          role: 'admin'
+        }]);
+      
+      if (memberError) {
+        console.error('Error adding creator as member:', memberError);
+      }
+      
+      // Refresh user groups
       const { data: memberData } = await supabase
         .from('group_members')
         .select('group_id')
@@ -1817,6 +4106,21 @@ const HuntersFindsApp = () => {
           50% { transform: translateY(-3px); }
         }
         
+        @keyframes fadeInScale {
+          0% { 
+            opacity: 0;
+            transform: scale(0.8);
+          }
+          100% { 
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+        
+        .animate-fade-in-scale {
+          animation: fadeInScale 0.3s ease-out;
+        }
+        
         .float-badge {
           animation: float 3s ease-in-out infinite;
         }
@@ -2094,84 +4398,146 @@ const HuntersFindsApp = () => {
             onFocus={() => {
               if (searchQuery.length >= 2) setShowSearchDropdown(true);
             }}
+            onBlur={() => {
+              setTimeout(() => setShowSearchDropdown(false), 200);
+            }}
             placeholder="search restaurants or dishes..."
             className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-[#33a29b]"
             style={{ fontFamily: '"Courier New", monospace' }}
           />
           
-          {/* Search Results Dropdown */}
-          {showSearchDropdown && (searchResults.dishes.length > 0 || searchResults.restaurants.length > 0) && (
+          {/* Search Results Dropdown - Enhanced with Google Places */}
+          {showSearchDropdown && (
             <div className="absolute z-50 w-full mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-lg max-h-96 overflow-y-auto">
-              {/* Dishes Section */}
-              {searchResults.dishes.length > 0 && (
+              {searchLoading ? (
+                <div className="p-4 text-center text-gray-500 text-sm" style={{ fontFamily: '"Courier New", monospace' }}>
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#33a29b] mx-auto mb-2"></div>
+                  Searching...
+                </div>
+              ) : googleSearchError ? (
+                <div className="p-4 text-center" style={{ fontFamily: '"Courier New", monospace' }}>
+                  <div className="text-yellow-600 text-sm mb-2">⚠️ Google search unavailable</div>
+                  <div className="text-xs text-gray-500">Showing database results only</div>
+                </div>
+              ) : searchResults.merged && searchResults.merged.length > 0 ? (
                 <div className="p-2">
-                  <div className="text-xs font-bold text-gray-500 px-2 py-1 uppercase" style={{ fontFamily: '"Courier New", monospace' }}>
-                    dishes ({searchResults.dishes.length})
-                  </div>
-                  {searchResults.dishes.map((dish, idx) => (
+                  {searchResults.merged.map((result, idx) => (
                     <div
-                      key={`dish-${idx}`}
+                      key={`result-${idx}`}
                       onClick={() => {
-                        setSelectedDish(dish);
-                        setShowSearchDropdown(false);
-                        setSearchQuery('');
+                        if (result.source === 'database') {
+                          // Database item: switch to map and show pin
+                          setActiveTab('map');
+                          setShowSearchDropdown(false);
+                          setSearchQuery('');
+                          // TODO: Zoom map to this location
+                        } else {
+                          // Google Place: open modal with "Rate Now"
+                          setSelectedRestaurant({
+                            id: result.id,
+                            name: result.name,
+                            location: { address: result.address },
+                            cuisine: result.googlePlaceData?.types?.join(', ') || '',
+                            avgSRR: null,
+                            googleData: result.googlePlaceData,
+                            isGooglePlace: true
+                          });
+                          setShowSearchDropdown(false);
+                          setSearchQuery('');
+                        }
                       }}
-                      className="flex items-center justify-between p-2 hover:bg-gray-50 rounded cursor-pointer transition"
+                      className="flex items-start gap-3 p-2 hover:bg-gray-50 rounded cursor-pointer transition"
                     >
-                      <div className="flex-1">
-                        <div className="text-sm font-semibold" style={{ fontFamily: '"Courier New", monospace' }}>
-                          {dish.name}
-                        </div>
-                        <div className="text-xs text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
-                          {dish.restaurantName} • {dish.cuisine}
-                        </div>
+                      {/* Photo Thumbnail */}
+                      <div className="w-12 h-12 flex-shrink-0 bg-gray-200 rounded overflow-hidden">
+                        {result.photo ? (
+                          <img src={result.photo} alt={result.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-gray-400">
+                            <MapPin size={20} />
+                          </div>
+                        )}
                       </div>
-                      <div className={`text-lg font-bold ${getSRRColor(dish.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>
-                        {dish.srr}
+                      
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-semibold truncate" style={{ fontFamily: '"Courier New", monospace' }}>
+                              {result.name}
+                              {result.type === 'dish' && (
+                                <span className="text-xs font-normal text-gray-500 ml-1">
+                                  @ {result.restaurantName}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-500 truncate" style={{ fontFamily: '"Courier New", monospace' }}>
+                              {result.address}
+                              {result.distance !== null && (
+                                <span className="ml-1">• {result.distance.toFixed(1)} mi</span>
+                              )}
+                            </div>
+                          </div>
+                          
+                          {/* Ratings */}
+                          <div className="flex-shrink-0 text-right">
+                            {result.yourRating && (
+                              <div className="text-xs font-bold text-green-600" style={{ fontFamily: '"Courier New", monospace' }}>
+                                ✓ {result.yourRating}
+                              </div>
+                            )}
+                            {result.communityRating && (
+                              <div className={`text-sm font-bold ${getSRRColor(result.communityRating)}`} style={{ fontFamily: '"Courier New", monospace' }}>
+                                {result.communityRating}
+                              </div>
+                            )}
+                            {result.source === 'google' && result.googleRating && (
+                              <div className="text-xs text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
+                                ⭐ {result.googleRating}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        
+                        {/* Source badge */}
+                        {result.source === 'google' && (
+                          <div className="text-xs text-blue-600 mt-1" style={{ fontFamily: '"Courier New", monospace' }}>
+                            🔎 Google Places (not rated yet)
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
-                </div>
-              )}
-              
-              {/* Restaurants Section */}
-              {searchResults.restaurants.length > 0 && (
-                <div className="p-2 border-t border-gray-100">
-                  <div className="text-xs font-bold text-gray-500 px-2 py-1 uppercase" style={{ fontFamily: '"Courier New", monospace' }}>
-                    restaurants ({searchResults.restaurants.length})
-                  </div>
-                  {searchResults.restaurants.map((restaurant, idx) => (
-                    <div
-                      key={`restaurant-${idx}`}
-                      onClick={() => {
-                        setSelectedRestaurant(restaurant);
-                        setShowSearchDropdown(false);
-                        setSearchQuery('');
-                      }}
-                      className="flex items-center justify-between p-2 hover:bg-gray-50 rounded cursor-pointer transition"
-                    >
-                      <div className="flex-1">
-                        <div className="text-sm font-semibold" style={{ fontFamily: '"Courier New", monospace' }}>
-                          {restaurant.name}
-                        </div>
-                        <div className="text-xs text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
-                          {restaurant.cuisine}
-                        </div>
-                      </div>
-                      <div className={`text-lg font-bold ${getSRRColor(restaurant.avgSRR)}`} style={{ fontFamily: '"Courier New", monospace' }}>
-                        {restaurant.avgSRR}
-                      </div>
+                  
+                  {/* Show Nearby Toggle */}
+                  {showNearbyToggle && (
+                    <div className="p-2 border-t border-gray-100 mt-2">
+                      <label className="flex items-center gap-2 cursor-pointer text-sm" style={{ fontFamily: '"Courier New", monospace' }}>
+                        <input
+                          type="checkbox"
+                          checked={includeNearby}
+                          onChange={(e) => {
+                            setIncludeNearby(e.target.checked);
+                            if (e.target.checked) {
+                              performSearch(searchQuery);
+                            }
+                          }}
+                          className="cursor-pointer"
+                        />
+                        <span className="text-gray-700">🔎 Include nearby restaurants</span>
+                      </label>
                     </div>
-                  ))}
+                  )}
                 </div>
-              )}
-              
-              {/* No Results */}
-              {searchQuery.length >= 2 && searchResults.dishes.length === 0 && searchResults.restaurants.length === 0 && (
+              ) : searchQuery.length >= 3 ? (
                 <div className="p-4 text-center text-gray-500 text-sm" style={{ fontFamily: '"Courier New", monospace' }}>
                   No results found for "{searchQuery}"
                 </div>
-              )}
+              ) : searchQuery.length > 0 && searchQuery.length < 3 ? (
+                <div className="p-4 text-center text-gray-400 text-xs" style={{ fontFamily: '"Courier New", monospace' }}>
+                  Type at least 3 characters to search...
+                </div>
+              ) : null}
             </div>
           )}
         </div>
@@ -2179,88 +4545,49 @@ const HuntersFindsApp = () => {
 
       {/* Main Content */}
       <div className="flex-1 overflow-y-auto pb-16">
-        {/* MAP TAB */}
+        {/* MAP TAB - ENHANCED */}
         {activeTab === 'map' && (
           <div className="h-full relative">
             {isMapLoaded ? (
               <div className="h-full w-full relative">
+                {/* Map Container */}
                 <div 
                   ref={(el) => {
                     if (el && window.L && !el.dataset.initialized) {
                       el.dataset.initialized = 'true';
                       
                       try {
-                        // Initialize Leaflet map
-                        const map = window.L.map(el, {
-                          center: [37.8044, -122.2712],
-                          zoom: 14,
-                          zoomControl: true
-                        });
-
-                        // Add OpenStreetMap tile layer
-                        window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                          attribution: '© OpenStreetMap contributors',
-                          maxZoom: 19
-                        }).addTo(map);
-
-                        // Add markers for each restaurant
-                        (restaurants || []).forEach(restaurant => {
-                          // Determine marker color based on SRR score
-                          const markerColor = restaurant.avgSRR >= 90 ? '#a855f7' : 
-                                            restaurant.avgSRR >= 85 ? '#eab308' : '#33a29b';
-                          
-                          // Create custom icon
-                          const icon = window.L.divIcon({
-                            className: 'custom-marker',
-                            html: `
-                              <div style="
-                                width: 30px;
-                                height: 30px;
-                                background-color: ${markerColor};
-                                border: 3px solid white;
-                                border-radius: 50%;
-                                box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-                                display: flex;
-                                align-items: center;
-                                justify-content: center;
-                                font-weight: bold;
-                                color: white;
-                                font-size: 12px;
-                                cursor: pointer;
-                              ">${restaurant.avgSRR}</div>
-                            `,
-                            iconSize: [30, 30],
-                            iconAnchor: [15, 15]
+                        // Get user location first
+                        getUserLocation().then(location => {
+                          // Initialize map with CartoDB Voyager tiles (Apple Maps style)
+                          const map = window.L.map(el, {
+                            center: [location.lat, location.lng],
+                            zoom: 14,
+                            zoomControl: true
                           });
 
-                          // Create marker
-                          const marker = window.L.marker([restaurant.location.lat, restaurant.location.lng], {
-                            icon: icon,
-                            title: restaurant.name
+                          // Add CartoDB Voyager tile layer (clean, modern, muted colors)
+                          window.L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+                            attribution: '© CartoDB © OpenStreetMap',
+                            maxZoom: 19,
+                            tileSize: 512,
+                            zoomOffset: -1,
+                            detectRetina: true
                           }).addTo(map);
 
-                          // Create popup content
-                          const popupContent = `
-                            <div style="font-family: 'Courier New', monospace; padding: 4px; min-width: 180px;">
-                              <h3 style="font-weight: bold; margin: 0 0 4px 0; font-size: 14px;">${restaurant.name}</h3>
-                              <p style="margin: 0 0 4px 0; font-size: 11px; color: #666;">${restaurant.cuisine}</p>
-                              <p style="margin: 0 0 8px 0; font-size: 10px; color: #999;">${restaurant.location.address}</p>
-                              <div style="display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid #eee;">
-                                <span style="font-size: 20px; font-weight: bold; color: ${markerColor};">${restaurant.avgSRR}</span>
-                                <span style="font-size: 11px; color: #666;">SRR Score</span>
-                              </div>
-                            </div>
-                          `;
-
-                          marker.bindPopup(popupContent);
-
-                          // Click marker to open restaurant modal
-                          marker.on('click', () => {
-                            setSelectedRestaurant(restaurant);
-                          });
+                          setMapInstance(map);
+                          
+                          // Initial load: show nearby restaurants
+                          const initialRestaurants = allRestaurants.filter(r => 
+                            r.location && r.location.lat && r.location.lng &&
+                            Math.abs(r.location.lat - location.lat) < 0.1 &&
+                            Math.abs(r.location.lng - location.lng) < 0.1
+                          );
+                          
+                          updateMapMarkers(initialRestaurants);
+                          
+                          console.log('✨ Enhanced map initialized successfully');
                         });
-                        
-                        console.log('Map initialized successfully');
                       } catch (error) {
                         console.error('Error initializing map:', error);
                       }
@@ -2270,54 +4597,297 @@ const HuntersFindsApp = () => {
                   style={{ zIndex: 0 }}
                 />
                 
-                {/* Map Legend */}
-                <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-lg p-3 z-10" style={{ fontFamily: '"Courier New", monospace' }}>
-                  <h4 className="text-xs font-bold mb-2">Score Legend</h4>
-                  <div className="space-y-1 text-xs">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-purple-500 border-2 border-white"></div>
-                      <span>90+ (Elite)</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-yellow-500 border-2 border-white"></div>
-                      <span>85-89 (Great)</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-[#33a29b] border-2 border-white"></div>
-                      <span>&lt;85 (Good)</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Search Box */}
+                {/* Search Bar */}
                 <div className="absolute top-4 left-1/2 -translate-x-1/2 w-[90%] max-w-md z-10">
                   <div className="relative">
                     <Search size={16} className="absolute left-3 top-3 text-gray-400" />
                     <input
                       type="text"
-                      placeholder="Search for restaurants or dishes..."
+                      value={mapSearchQuery}
+                      onChange={(e) => setMapSearchQuery(e.target.value)}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter' && mapSearchQuery) {
+                          // Filter restaurants by search
+                          const filtered = allRestaurants.filter(r =>
+                            r.name.toLowerCase().includes(mapSearchQuery.toLowerCase()) ||
+                            r.cuisine?.toLowerCase().includes(mapSearchQuery.toLowerCase())
+                          );
+                          updateMapMarkers(filtered);
+                        }
+                      }}
+                      placeholder="Search restaurants or cuisine..."
                       className="w-full pl-9 pr-3 py-2.5 text-sm border-2 border-gray-200 rounded-lg focus:outline-none focus:border-[#33a29b] bg-white shadow-lg"
                       style={{ fontFamily: '"Courier New", monospace' }}
                     />
                   </div>
                 </div>
+                
+                {/* Filters Panel */}
+                <div className="absolute top-20 right-4 z-10">
+                  <button
+                    onClick={() => setShowMapFilters(!showMapFilters)}
+                    className="bg-white rounded-lg shadow-lg px-4 py-2 text-sm font-bold hover:bg-gray-50 flex items-center gap-2"
+                    style={{ fontFamily: '"Courier New", monospace' }}
+                  >
+                    📊 Filters
+                    <span className="text-xs">▾</span>
+                  </button>
+                  
+                  {showMapFilters && (
+                    <div className="absolute right-0 mt-2 bg-white rounded-lg shadow-xl p-4 w-72 max-h-96 overflow-y-auto" style={{ fontFamily: '"Courier New", monospace' }}>
+                      {/* Popularity */}
+                      <div className="mb-4">
+                        <h5 className="text-xs font-bold mb-2 text-gray-700">Popularity</h5>
+                        <label className="flex items-center gap-2 text-xs mb-1">
+                          <input type="checkbox" checked={mapFilters.popularity.includes('3+')} 
+                            onChange={(e) => {
+                              const val = '3+';
+                              setMapFilters(prev => ({
+                                ...prev,
+                                popularity: e.target.checked ? [...prev.popularity, val] : prev.popularity.filter(v => v !== val)
+                              }));
+                            }} />
+                          <span>3+ ratings</span>
+                        </label>
+                        <label className="flex items-center gap-2 text-xs mb-1">
+                          <input type="checkbox" checked={mapFilters.popularity.includes('5+')}
+                            onChange={(e) => {
+                              const val = '5+';
+                              setMapFilters(prev => ({
+                                ...prev,
+                                popularity: e.target.checked ? [...prev.popularity, val] : prev.popularity.filter(v => v !== val)
+                              }));
+                            }} />
+                          <span>5+ ratings</span>
+                        </label>
+                        <label className="flex items-center gap-2 text-xs">
+                          <input type="checkbox" checked={mapFilters.popularity.includes('10+')}
+                            onChange={(e) => {
+                              const val = '10+';
+                              setMapFilters(prev => ({
+                                ...prev,
+                                popularity: e.target.checked ? [...prev.popularity, val] : prev.popularity.filter(v => v !== val)
+                              }));
+                            }} />
+                          <span>10+ ratings</span>
+                        </label>
+                      </div>
+                      
+                      {/* Quality */}
+                      <div className="mb-4 border-t pt-3">
+                        <h5 className="text-xs font-bold mb-2 text-gray-700">Quality</h5>
+                        <label className="flex items-center gap-2 text-xs mb-1">
+                          <input type="checkbox" checked={mapFilters.quality.includes('80+')}
+                            onChange={(e) => {
+                              const val = '80+';
+                              setMapFilters(prev => ({
+                                ...prev,
+                                quality: e.target.checked ? [...prev.quality, val] : prev.quality.filter(v => v !== val)
+                              }));
+                            }} />
+                          <span>80+ score</span>
+                        </label>
+                        <label className="flex items-center gap-2 text-xs mb-1">
+                          <input type="checkbox" checked={mapFilters.quality.includes('90+')}
+                            onChange={(e) => {
+                              const val = '90+';
+                              setMapFilters(prev => ({
+                                ...prev,
+                                quality: e.target.checked ? [...prev.quality, val] : prev.quality.filter(v => v !== val)
+                              }));
+                            }} />
+                          <span>90+ score</span>
+                        </label>
+                        <label className="flex items-center gap-2 text-xs">
+                          <input type="checkbox" checked={mapFilters.quality.includes('top')}
+                            onChange={(e) => {
+                              const val = 'top';
+                              setMapFilters(prev => ({
+                                ...prev,
+                                quality: e.target.checked ? [...prev.quality, val] : prev.quality.filter(v => v !== val)
+                              }));
+                            }} />
+                          <span>Your top rated</span>
+                        </label>
+                      </div>
+                      
+                      {/* Social */}
+                      <div className="mb-4 border-t pt-3">
+                        <h5 className="text-xs font-bold mb-2 text-gray-700">Social</h5>
+                        <label className="flex items-center gap-2 text-xs mb-1">
+                          <input type="checkbox" checked={mapFilters.social.includes('you')}
+                            onChange={(e) => {
+                              const val = 'you';
+                              setMapFilters(prev => ({
+                                ...prev,
+                                social: e.target.checked ? [...prev.social, val] : prev.social.filter(v => v !== val)
+                              }));
+                            }} />
+                          <span>You rated</span>
+                        </label>
+                        <label className="flex items-center gap-2 text-xs mb-1">
+                          <input type="checkbox" checked={mapFilters.social.includes('friends')}
+                            onChange={(e) => {
+                              const val = 'friends';
+                              setMapFilters(prev => ({
+                                ...prev,
+                                social: e.target.checked ? [...prev.social, val] : prev.social.filter(v => v !== val)
+                              }));
+                            }} />
+                          <span>Friends rated</span>
+                        </label>
+                        <label className="flex items-center gap-2 text-xs">
+                          <input type="checkbox" checked={mapFilters.social.includes('groups')}
+                            onChange={(e) => {
+                              const val = 'groups';
+                              setMapFilters(prev => ({
+                                ...prev,
+                                social: e.target.checked ? [...prev.social, val] : prev.social.filter(v => v !== val)
+                              }));
+                            }} />
+                          <span>Group members rated</span>
+                        </label>
+                      </div>
+                      
+                      {/* Distance */}
+                      <div className="border-t pt-3">
+                        <h5 className="text-xs font-bold mb-2 text-gray-700">Distance</h5>
+                        <label className="flex items-center gap-2 text-xs mb-1">
+                          <input type="checkbox" checked={mapFilters.distance.includes('1mi')}
+                            onChange={(e) => {
+                              const val = '1mi';
+                              setMapFilters(prev => ({
+                                ...prev,
+                                distance: e.target.checked ? [...prev.distance, val] : prev.distance.filter(v => v !== val)
+                              }));
+                            }} />
+                          <span>Within 1 mile</span>
+                        </label>
+                        <label className="flex items-center gap-2 text-xs mb-1">
+                          <input type="checkbox" checked={mapFilters.distance.includes('5mi')}
+                            onChange={(e) => {
+                              const val = '5mi';
+                              setMapFilters(prev => ({
+                                ...prev,
+                                distance: e.target.checked ? [...prev.distance, val] : prev.distance.filter(v => v !== val)
+                              }));
+                            }} />
+                          <span>Within 5 miles</span>
+                        </label>
+                        <label className="flex items-center gap-2 text-xs">
+                          <input type="checkbox" checked={mapFilters.distance.includes('10mi')}
+                            onChange={(e) => {
+                              const val = '10mi';
+                              setMapFilters(prev => ({
+                                ...prev,
+                                distance: e.target.checked ? [...prev.distance, val] : prev.distance.filter(v => v !== val)
+                              }));
+                            }} />
+                          <span>Within 10 miles</span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Legend */}
+                <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-lg p-3 z-10" style={{ fontFamily: '"Courier New", monospace' }}>
+                  <h4 className="text-xs font-bold mb-2">Legend</h4>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex items-center gap-2">
+                      <div style={{
+                        width: 16,
+                        height: 16,
+                        background: '#10b981',
+                        borderRadius: '50%',
+                        border: '2px solid white',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+                      }}></div>
+                      <span>Your Restaurants</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div style={{
+                        width: 16,
+                        height: 16,
+                        background: '#f59e0b',
+                        borderRadius: '50%',
+                        border: '2px solid white',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+                      }}></div>
+                      <span>High Rated (85+)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div style={{
+                        width: 16,
+                        height: 16,
+                        background: '#3b82f6',
+                        borderRadius: '50%',
+                        border: '2px solid white',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+                      }}></div>
+                      <span>Community Rated</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div style={{
+                        width: 16,
+                        height: 16,
+                        background: '#9ca3af',
+                        borderRadius: '50%',
+                        border: '2px solid white',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+                      }}></div>
+                      <span>Unrated</span>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Find Nearby Button */}
+                {showMapFindNearby && (
+                  <button
+                    onClick={async () => {
+                      if (!mapInstance) return;
+                      
+                      const center = mapInstance.getCenter();
+                      const location = { lat: center.lat, lng: center.lng };
+                      
+                      setShowMapFindNearby(false);
+                      
+                      // Search Google Places for visible area
+                      const results = await searchGooglePlacesAPI('restaurants', location, { limit: 5 });
+                      
+                      // Add pins to map
+                      if (results.length > 0) {
+                        const googleRestaurants = results.map(r => ({
+                          id: r.place_id,
+                          name: r.name,
+                          location: { lat: r.lat, lng: r.lng, address: r.address },
+                          avgSRR: null,
+                          cuisine: r.types?.join(', ') || '',
+                          isGooglePlace: true,
+                          googleData: r
+                        }));
+                        
+                        updateMapMarkers([...allRestaurants, ...googleRestaurants]);
+                      }
+                      
+                      // Show button again after 10 seconds
+                      setTimeout(() => setShowMapFindNearby(true), 10000);
+                    }}
+                    className="absolute bottom-20 right-4 px-4 py-2 bg-[#33a29b] text-white rounded-lg font-bold hover:bg-[#2a8a84] transition shadow-lg z-10 text-sm"
+                    style={{ fontFamily: '"Courier New", monospace' }}
+                  >
+                    🔎 Find Nearby Restaurants
+                  </button>
+                )}
               </div>
             ) : (
               <div className="h-full flex flex-col items-center justify-center bg-gray-100 p-4">
                 <div className="text-center max-w-md">
                   <MapPin size={48} className="mx-auto mb-4 text-gray-400 animate-pulse" />
-                  <p className="text-sm text-gray-600 mb-2" style={{ fontFamily: '"Courier New", monospace' }}>Loading map...</p>
-                  <p className="text-xs text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>Using free OpenStreetMap (no API key needed)</p>
-                  <p className="text-xs text-gray-400 mt-2" style={{ fontFamily: '"Courier New", monospace' }}>Check browser console for any errors</p>
-                  <button 
-                    onClick={() => {
-                      console.log('Leaflet status:', window.L ? 'Loaded' : 'Not loaded');
-                      console.log('Map state:', isMapLoaded);
-                    }}
-                    className="mt-4 px-4 py-2 bg-[#33a29b] text-white rounded text-xs hover:bg-[#2a8a84]"
-                  >
-                    Debug Map Status
-                  </button>
+                  <p className="text-sm text-gray-600 mb-2" style={{ fontFamily: '"Courier New", monospace' }}>Loading enhanced map...</p>
+                  <p className="text-xs text-gray-400 mt-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                    ✨ Modern tiles, custom castle pins, clustering!
+                  </p>
                 </div>
               </div>
             )}
@@ -2952,6 +5522,21 @@ const HuntersFindsApp = () => {
                 {!user && <Lock size={10} className="absolute top-1 right-1 text-gray-500" />}
               </button>
               <button 
+                onClick={() => setYouView('lists')} 
+                disabled={!user}
+                className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition relative ${
+                  youView === 'lists' 
+                    ? 'bg-gray-700 text-white' 
+                    : !user
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`} 
+                style={{ fontFamily: '"Courier New", monospace' }}
+              >
+                <List size={18} />
+                {!user && <Lock size={10} className="absolute top-1 right-1 text-gray-500" />}
+              </button>
+              <button 
                 onClick={() => setYouView('friends')} 
                 disabled={!user}
                 className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition relative ${
@@ -3027,6 +5612,19 @@ const HuntersFindsApp = () => {
                       />
                     </div>
                     
+                    {/* Forgot Password Link */}
+                    {authMode === 'signin' && (
+                      <div className="text-right">
+                        <button
+                          onClick={() => setShowPasswordReset(true)}
+                          className="text-sm text-blue-600 hover:text-blue-700"
+                          style={{ fontFamily: '"Courier New", monospace' }}
+                        >
+                          forgot password?
+                        </button>
+                      </div>
+                    )}
+                    
                     {authError && (
                       <p className="text-sm text-red-500" style={{ fontFamily: '"Courier New", monospace' }}>
                         {authError}
@@ -3054,12 +5652,36 @@ const HuntersFindsApp = () => {
                       {authFormLoading ? 'loading...' : (authMode === 'signin' ? 'sign in' : 'sign up')}
                     </button>
                     
+                    {/* OR Divider */}
+                    <div className="flex items-center my-4">
+                      <div className="flex-1 border-t border-gray-300"></div>
+                      <span className="px-4 text-xs text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
+                        or continue with
+                      </span>
+                      <div className="flex-1 border-t border-gray-300"></div>
+                    </div>
+                    
+                    {/* Google Login Button */}
                     <button
-                      onClick={() => setAuthMode(authMode === 'signin' ? 'signup' : 'signin')}
-                      className="w-full text-sm text-gray-600 hover:text-[#33a29b] transition"
+                      onClick={handleGoogleLogin}
+                      className="w-full py-3 bg-white border-2 border-gray-300 rounded-lg flex items-center justify-center gap-3 hover:bg-gray-50 transition"
                       style={{ fontFamily: '"Courier New", monospace' }}
                     >
-                      {authMode === 'signin' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+                      <svg className="w-5 h-5" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                      </svg>
+                      <span className="font-medium text-sm">Continue with Google</span>
+                    </button>
+                    
+                    <button
+                      onClick={() => setAuthMode(authMode === 'signin' ? 'signup' : 'signin')}
+                      className="w-full text-sm text-gray-600 hover:text-[#33a29b] transition mt-4"
+                      style={{ fontFamily: '"Courier New", monospace' }}
+                    >
+                      {authMode === 'signin' ? "don't have an account? sign up" : 'already have an account? sign in'}
                     </button>
                   </div>
                 </div>
@@ -3072,11 +5694,9 @@ const HuntersFindsApp = () => {
                       <h2 className="text-xl font-bold">@{user?.user_metadata?.username || user?.email?.split('@')[0] || 'user'}</h2>
                       <button 
                         onClick={() => {
-                          setErrorModal({
-                            show: true,
-                            title: 'Coming Soon',
-                            message: 'Edit profile will be available soon!'
-                          });
+                          setEditUsername(user?.user_metadata?.username || '');
+                          setEditLocation(user?.user_metadata?.location || '');
+                          setIsEditProfileModalOpen(true);
                         }}
                         className="text-sm text-[#33a29b] hover:text-[#2a8a84] font-semibold"
                         style={{ fontFamily: '"Courier New", monospace' }}
@@ -3125,20 +5745,82 @@ const HuntersFindsApp = () => {
                   {allDishes.map((dish, idx) => (
                     <div 
                       key={idx} 
-                      onClick={() => setSelectedDish(dish)}
-                      className="bg-white rounded-lg p-3 shadow-sm cursor-pointer hover:shadow-md transition"
+                      className="bg-white rounded-lg p-3 shadow-sm"
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
-                          <Image size={24} className="text-gray-400" />
+                      <div 
+                        onClick={() => setSelectedDish(dish)}
+                        className="cursor-pointer hover:bg-gray-50 -m-3 p-3 rounded-lg"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <Image size={24} className="text-gray-400" />
+                          </div>
+                          <div className="flex-1">
+                            <div className="font-semibold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>{dish.name}</div>
+                            <div className="text-xs text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
+                              {dish.restaurantName} • ${dish.price.toFixed(2)}
+                              {dish.edited_at && (
+                                <span className="text-gray-400 ml-2">(edited)</span>
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-400 mt-1" style={{ fontFamily: '"Courier New", monospace' }}>rated 2 days ago</div>
+                          </div>
+                          <div className={`text-2xl font-bold ${getSRRColor(dish.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{dish.srr}</div>
                         </div>
-                        <div className="flex-1">
-                          <div className="font-semibold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>{dish.name}</div>
-                          <div className="text-xs text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>{dish.restaurantName} • ${dish.price.toFixed(2)}</div>
-                          <div className="text-xs text-gray-400 mt-1" style={{ fontFamily: '"Courier New", monospace' }}>rated 2 days ago</div>
-                        </div>
-                        <div className={`text-2xl font-bold ${getSRRColor(dish.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{dish.srr}</div>
                       </div>
+                      
+                      {/* Edit/Delete Buttons */}
+                      {user && canEditRating({user_id: user.id, created_at: dish.created_at || new Date().toISOString()}) && (
+                        <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditRating({
+                                id: dish.id,
+                                dish_name: dish.name,
+                                dish: {name: dish.name},
+                                restaurant_name: dish.restaurantName,
+                                taste_score: dish.taste,
+                                portion_score: dish.portion,
+                                price_value_score: dish.priceValue,
+                                price: dish.price,
+                                comment: dish.comment || '',
+                                created_at: dish.created_at,
+                                edit_count: dish.edit_count || 0
+                              });
+                            }}
+                            className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100 border border-blue-200 font-medium"
+                            style={{ fontFamily: '"Courier New", monospace' }}
+                          >
+                            Edit
+                          </button>
+                          
+                          {canDeleteRating({user_id: user.id, created_at: dish.created_at || new Date().toISOString()}) && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteRating({
+                                  id: dish.id,
+                                  dish_name: dish.name,
+                                  dish: {name: dish.name},
+                                  restaurant_name: dish.restaurantName,
+                                  user_id: user.id,
+                                  taste_score: dish.taste,
+                                  portion_score: dish.portion,
+                                  price_value_score: dish.priceValue,
+                                  price: dish.price,
+                                  comment: dish.comment || '',
+                                  created_at: dish.created_at
+                                });
+                              }}
+                              className="px-3 py-1.5 text-xs bg-red-50 text-red-700 rounded hover:bg-red-100 border border-red-200 font-medium"
+                              style={{ fontFamily: '"Courier New", monospace' }}
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -3156,19 +5838,54 @@ const HuntersFindsApp = () => {
                       + create group
                     </button>
                   </div>
-                  {[].map(group => (
-                    <div 
-                      key={group.id} 
-                      onClick={() => {
-                        const fullGroup = mockGroups.find(g => g.name === group.name) || mockGroups[0];
-                        setSelectedGroup(fullGroup);
-                      }}
-                      className="bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition"
-                    >
-                      <h3 className="font-bold" style={{ fontFamily: '"Courier New", monospace' }}>{group.name}</h3>
-                      <p className="text-xs text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>{group.members} members • {group.rankedItems} ranked items</p>
+                  
+                  {user ? (
+                    userGroups.length === 0 ? (
+                      <EmptyState
+                        icon={Users}
+                        title="no groups yet"
+                        message="Create or join a group to share rankings with friends!"
+                        actionText="create group"
+                        onAction={() => setIsNewGroupModalOpen(true)}
+                      />
+                    ) : (
+                      <div className="space-y-2">
+                        {userGroups.map(group => (
+                          <div 
+                            key={group.id} 
+                            onClick={() => setSelectedGroup(group)}
+                            className="bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1">
+                                <h3 className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>{group.name}</h3>
+                                <p className="text-xs text-gray-500 mt-1" style={{ fontFamily: '"Courier New", monospace' }}>
+                                  {group.member_count || 0} members
+                                  {group.type === 'broadcast' && ' • broadcast channel'}
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <Users size={20} className="text-gray-400" />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  ) : (
+                    <div className="bg-white rounded-lg p-6 shadow-sm text-center">
+                      <p className="text-gray-600 mb-4" style={{ fontFamily: '"Courier New", monospace' }}>
+                        Please log in to see your groups
+                      </p>
+                      <button
+                        onClick={() => setYouView('login')}
+                        className="bg-[#33a29b] text-white px-6 py-2 rounded-lg font-semibold hover:bg-[#2a8a84] transition"
+                        style={{ fontFamily: '"Courier New", monospace' }}
+                      >
+                        go to login
+                      </button>
                     </div>
-                  ))}
+                  )}
                 </div>
               )}
 
@@ -3218,6 +5935,79 @@ const HuntersFindsApp = () => {
                           </div>
                         </div>
                       ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {youView === 'lists' && (
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-lg font-bold" style={{ fontFamily: '"Courier New", monospace' }}>my lists</h2>
+                    <button
+                      onClick={() => setIsNewListModalOpen(true)}
+                      className="px-3 py-1.5 bg-[#33a29b] text-white text-sm rounded-lg font-semibold hover:bg-[#2a8a84] transition"
+                      style={{ fontFamily: '"Courier New", monospace' }}
+                    >
+                      + new list
+                    </button>
+                  </div>
+                  
+                  {user ? (
+                    userLists.length === 0 ? (
+                      <EmptyState
+                        icon={List}
+                        title="no lists yet"
+                        message="Create your first list to organize dishes and restaurants!"
+                        actionText="create list"
+                        onAction={() => setIsNewListModalOpen(true)}
+                      />
+                    ) : (
+                      <div className="space-y-2">
+                        {userLists.map((list) => (
+                          <div 
+                            key={list.id}
+                            className="bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition"
+                            onClick={() => {
+                              // TODO: Open list detail view
+                              setErrorModal({
+                                show: true,
+                                title: list.name,
+                                message: `This list has ${list.items?.length || 0} items`
+                              });
+                            }}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1">
+                                <div className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>
+                                  {list.name}
+                                </div>
+                                <div className="text-xs text-gray-500 mt-1" style={{ fontFamily: '"Courier New", monospace' }}>
+                                  {list.items?.length || 0} items
+                                  {list.is_shared && ' • shared'}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Users size={16} className="text-gray-400" />
+                                <span className="text-xs text-gray-500">{list.collaborators?.length || 1}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  ) : (
+                    <div className="bg-white rounded-lg p-6 shadow-sm text-center">
+                      <p className="text-gray-600 mb-4" style={{ fontFamily: '"Courier New", monospace' }}>
+                        Please log in to see your lists
+                      </p>
+                      <button
+                        onClick={() => setYouView('login')}
+                        className="bg-[#33a29b] text-white px-6 py-2 rounded-lg font-semibold hover:bg-[#2a8a84] transition"
+                        style={{ fontFamily: '"Courier New", monospace' }}
+                      >
+                        go to login
+                      </button>
                     </div>
                   )}
                 </div>
@@ -3466,7 +6256,11 @@ const HuntersFindsApp = () => {
                             <span className="text-gray-500">username:</span> {user.user_metadata?.username || 'Not set'}
                           </div>
                           <button 
-                            onClick={() => alert('Edit profile coming soon!')}
+                            onClick={() => {
+                              setEditUsername(user?.user_metadata?.username || '');
+                              setEditLocation(user?.user_metadata?.location || '');
+                              setIsEditProfileModalOpen(true);
+                            }}
                             className="w-full text-left text-sm py-2 hover:text-[#33a29b] transition" 
                             style={{ fontFamily: '"Courier New", monospace' }}
                           >
@@ -3478,20 +6272,142 @@ const HuntersFindsApp = () => {
                       <div className="bg-white rounded-lg p-4 shadow-sm">
                         <h3 className="text-sm font-semibold mb-3" style={{ fontFamily: '"Courier New", monospace' }}>privacy</h3>
                         <button 
-                          onClick={() => alert('Profile visibility settings coming soon!')}
+                          onClick={() => {
+                            setErrorModal({
+                              show: true,
+                              title: 'Coming Soon',
+                              message: 'Profile visibility settings will be available soon!'
+                            });
+                          }}
                           className="w-full text-left text-sm py-2 hover:text-[#33a29b] transition" 
                           style={{ fontFamily: '"Courier New", monospace' }}
                         >
                           profile visibility
                         </button>
                         <button 
-                          onClick={() => alert('Rating privacy settings coming soon!')}
+                          onClick={() => {
+                            setErrorModal({
+                              show: true,
+                              title: 'Coming Soon',
+                              message: 'Rating privacy settings will be available soon!'
+                            });
+                          }}
                           className="w-full text-left text-sm py-2 hover:text-[#33a29b] transition" 
                           style={{ fontFamily: '"Courier New", monospace' }}
                         >
                           who can see my ratings
                         </button>
                       </div>
+
+                      {/* ADMIN TOOLS SECTION */}
+                      {(userRole === 'admin' || userRole === 'moderator') && (
+                        <div className="bg-gradient-to-r from-red-50 to-orange-50 rounded-lg p-4 shadow-sm border-2 border-red-200">
+                          <h3 className="text-sm font-bold mb-3 text-red-700 flex items-center gap-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                            {userRole === 'admin' ? 'ADMIN TOOLS' : 'MODERATOR TOOLS'}
+                          </h3>
+                          
+                          <div className="space-y-2">
+                            <button
+                              onClick={() => {
+                                console.log('Admin Dashboard clicked - coming soon!');
+                                setErrorModal({
+                                  show: true,
+                                  title: 'Admin Dashboard',
+                                  message: 'Dashboard with stats and analytics coming soon!'
+                                });
+                              }}
+                              className="w-full text-left text-sm py-3 px-3 bg-white hover:bg-red-50 rounded-lg transition border border-red-200 font-medium"
+                              style={{ fontFamily: '"Courier New", monospace' }}
+                            >
+                              Admin Dashboard
+                            </button>
+                            
+                            <button
+                              onClick={() => {
+                                console.log('Deleted Items clicked');
+                                setShowDeletedItems(true);
+                              }}
+                              className="w-full text-left text-sm py-3 px-3 bg-white hover:bg-yellow-50 rounded-lg transition border border-yellow-200 font-medium flex justify-between items-center"
+                              style={{ fontFamily: '"Courier New", monospace' }}
+                            >
+                              <span>Deleted Items</span>
+                              {deletedItemsCount > 0 && (
+                                <span className="bg-yellow-200 text-yellow-800 px-2 py-0.5 rounded-full text-xs font-bold">
+                                  {deletedItemsCount}
+                                </span>
+                              )}
+                            </button>
+                            
+                            <button
+                              onClick={() => {
+                                console.log('Merge Restaurants clicked');
+                                setShowMergeRestaurants(true);
+                              }}
+                              className="w-full text-left text-sm py-3 px-3 bg-white hover:bg-blue-50 rounded-lg transition border border-blue-200 font-medium"
+                              style={{ fontFamily: '"Courier New", monospace' }}
+                            >
+                              Merge Restaurants
+                            </button>
+                            
+                            <button
+                              onClick={() => {
+                                console.log('Link Restaurants clicked');
+                                setShowLinkRestaurants(true);
+                              }}
+                              className="w-full text-left text-sm py-3 px-3 bg-white hover:bg-green-50 rounded-lg transition border border-green-200 font-medium"
+                              style={{ fontFamily: '"Courier New", monospace' }}
+                            >
+                              Link Restaurants to Map
+                            </button>
+                            
+                            {userRole === 'admin' && (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    console.log('Manage Moderators clicked - coming soon!');
+                                    setErrorModal({
+                                      show: true,
+                                      title: 'Manage Moderators',
+                                      message: 'Assign and manage moderator roles coming soon!'
+                                    });
+                                  }}
+                                  className="w-full text-left text-sm py-3 px-3 bg-white hover:bg-purple-50 rounded-lg transition border border-purple-200 font-medium"
+                                  style={{ fontFamily: '"Courier New", monospace' }}
+                                >
+                                  Manage Moderators
+                                </button>
+                                
+                                <button
+                                  onClick={() => {
+                                    console.log('All Ratings clicked - coming soon!');
+                                    setErrorModal({
+                                      show: true,
+                                      title: 'All Ratings',
+                                      message: 'View and manage all ratings from all users coming soon!'
+                                    });
+                                  }}
+                                  className="w-full text-left text-sm py-3 px-3 bg-white hover:bg-green-50 rounded-lg transition border border-green-200 font-medium"
+                                  style={{ fontFamily: '"Courier New", monospace' }}
+                                >
+                                  All Ratings
+                                </button>
+                              </>
+                            )}
+                            
+                            {/* Admin Mode Indicator */}
+                            <div className="mt-3 pt-3 border-t border-red-200">
+                              <div className="flex items-center justify-between text-xs" style={{ fontFamily: '"Courier New", monospace' }}>
+                                <span className="text-gray-600">
+                                  {userRole === 'admin' ? 'Admin Mode' : 'Moderator Mode'}
+                                </span>
+                                <span className={`px-2 py-1 rounded-full font-bold ${userRole === 'admin' ? 'bg-red-500 text-white' : 'bg-yellow-500 text-white'}`}>
+                                  {userRole === 'admin' ? 'ADMIN' : 'MOD'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
                       <div className="bg-white rounded-lg p-4 shadow-sm">
                         <button
@@ -3591,22 +6507,105 @@ const HuntersFindsApp = () => {
           <div onClick={handleCloseSubmission} className={`fixed inset-0 bg-black/40 z-50 ${isSubmissionClosing ? 'animate-fade-out' : 'animate-fade-in'}`} />
           <div className={`fixed left-1/2 -translate-x-1/2 z-50 bg-white rounded-2xl shadow-xl overflow-hidden ${isSubmissionClosing ? 'animate-slide-down-fade' : 'animate-slide-up-fade'}`} style={{ top: '15%', width: '80%', maxWidth: '1000px', maxHeight: '75vh' }}>
             <div className="sticky top-0 z-10 bg-white border-b px-4 py-3 flex justify-center items-center relative">
-              <h2 className="text-lg font-bold text-center" style={{ fontFamily: '"Courier New", monospace' }}>rate a dish</h2>
+              <h2 className="text-lg font-bold text-center" style={{ fontFamily: '"Courier New", monospace' }}>hunter rater</h2>
               <button onClick={handleCloseSubmission} className="absolute right-4"><X size={24} /></button>
             </div>
             <div className="overflow-y-auto h-full pb-4 p-4">
               <div className="max-w-xl mx-auto space-y-3">
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
+                  <div className="relative">
                     <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>restaurant</label>
                     <input 
                       type="text" 
                       value={restaurant} 
-                      onChange={(e) => setRestaurant(e.target.value)} 
+                      onChange={(e) => {
+                        setRestaurant(e.target.value);
+                        if (e.target.value.length >= 3) {
+                          searchRestaurantForRating(e.target.value);
+                          setShowRestaurantSearch(true);
+                        } else {
+                          setShowRestaurantSearch(false);
+                        }
+                      }}
+                      onFocus={() => {
+                        if (restaurant.length >= 3) {
+                          setShowRestaurantSearch(true);
+                        }
+                      }}
+                      onBlur={() => {
+                        setTimeout(() => setShowRestaurantSearch(false), 200);
+                      }}
                       placeholder="e.g., taco palace" 
                       className="w-full px-2 py-1.5 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
                       style={{ fontFamily: '"Courier New", monospace' }}
                     />
+                    {selectedGooglePlace && (
+                      <div className="absolute right-2 top-7 bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                        📍 Linked
+                      </div>
+                    )}
+                    
+                    {/* Restaurant Search Results */}
+                    {showRestaurantSearch && (
+                      <div className="absolute z-50 w-full mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        {restaurantSearchLoading ? (
+                          <div className="px-3 py-2 text-xs text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
+                            Searching...
+                          </div>
+                        ) : restaurantSearchResults.length === 0 ? (
+                          <div className="px-3 py-2 text-xs text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
+                            No results. Enter manually.
+                          </div>
+                        ) : (
+                          <>
+                            {restaurantSearchResults.map((place, idx) => (
+                              <button
+                                key={idx}
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  selectGooglePlaceForRating(place);
+                                }}
+                                className="w-full text-left px-3 py-2 hover:bg-green-50 transition border-b"
+                              >
+                                <div className="flex items-start gap-2">
+                                  {!place.isDatabase && (
+                                    <div className="text-lg mt-0.5">📍</div>
+                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="font-bold text-xs truncate" style={{ fontFamily: '"Courier New", monospace' }}>
+                                      {place.name}
+                                    </div>
+                                    <div className="text-[10px] text-gray-600 truncate" style={{ fontFamily: '"Courier New", monospace' }}>
+                                      {place.formatted_address || 'No address'}
+                                    </div>
+                                    {place.rating && (
+                                      <div className="text-[10px] text-gray-500 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
+                                        ⭐ {place.rating} ({place.user_ratings_total})
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </button>
+                            ))}
+                            <button
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                setShowRestaurantSearch(false);
+                                setSelectedGooglePlace(null);
+                              }}
+                              className="w-full text-left px-3 py-2 hover:bg-gray-50 transition border-t-2 border-gray-300"
+                            >
+                              <div className="flex items-center gap-2">
+                                <div className="text-lg">➕</div>
+                                <div className="text-xs font-bold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>
+                                  Add "{restaurant}" manually
+                                </div>
+                              </div>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -3796,16 +6795,48 @@ const HuntersFindsApp = () => {
                   )}
                 </div>
 
-                <div>
+                <div className="relative">
                   <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>comment (optional)</label>
                   <textarea 
                     value={comment} 
-                    onChange={(e) => setComment(e.target.value)} 
-                    placeholder="share your thoughts..." 
+                    onChange={(e) => {
+                      setComment(e.target.value);
+                      handleMentionInput(e.target.value, e.target.selectionStart, 'rating');
+                    }}
+                    onKeyUp={(e) => {
+                      handleMentionInput(e.target.value, e.target.selectionStart, 'rating');
+                    }}
+                    placeholder="share your thoughts... (use @ to mention friends)" 
                     rows="2" 
                     className="w-full px-2 py-1.5 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none resize-none" 
                     style={{ fontFamily: '"Courier New", monospace' }}
                   />
+                  
+                  {/* Mention Dropdown */}
+                  {showMentionDropdown && activeMentionField === 'rating' && (
+                    <div className="absolute z-50 w-full mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                      {mentionResults.length > 0 ? (
+                        mentionResults.map((user) => (
+                          <button
+                            key={user.id}
+                            onClick={() => insertMention(user.username || user.email?.split('@')[0], comment, setComment)}
+                            className="w-full text-left px-3 py-2 hover:bg-gray-50 transition border-b last:border-b-0"
+                          >
+                            <div className="font-bold text-xs" style={{ fontFamily: '"Courier New", monospace' }}>
+                              @{user.username || user.email?.split('@')[0]}
+                            </div>
+                            <div className="text-xs text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
+                              {user.email}
+                            </div>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="px-3 py-2 text-xs text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
+                          No users found for "@{mentionQuery}"
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <button 
@@ -3868,6 +6899,61 @@ const HuntersFindsApp = () => {
                   >
                     <Bookmark size={16} className={isItemSaved(selectedDish.id, 'dish') ? 'fill-[#33a29b] text-[#33a29b]' : 'text-gray-400'} />
                   </button>
+                  
+                  {/* Edit/Delete Buttons in Modal */}
+                  {user && canEditRating({user_id: user.id, created_at: selectedDish.created_at || new Date().toISOString()}) && (
+                    <div className="flex gap-1 ml-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEditRating({
+                            id: selectedDish.id,
+                            dish_name: selectedDish.name,
+                            dish: {name: selectedDish.name},
+                            restaurant_name: selectedDish.restaurantName,
+                            taste_score: selectedDish.taste,
+                            portion_score: selectedDish.portion,
+                            price_value_score: selectedDish.priceValue,
+                            price: selectedDish.price,
+                            comment: selectedDish.comment || '',
+                            created_at: selectedDish.created_at,
+                            edit_count: selectedDish.edit_count || 0
+                          });
+                          handleCloseDish();
+                        }}
+                        className="px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100 border border-blue-200 font-medium"
+                        style={{ fontFamily: '"Courier New", monospace' }}
+                      >
+                        Edit
+                      </button>
+                      
+                      {canDeleteRating({user_id: user.id, created_at: selectedDish.created_at || new Date().toISOString()}) && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteRating({
+                              id: selectedDish.id,
+                              dish_name: selectedDish.name,
+                              dish: {name: selectedDish.name},
+                              restaurant_name: selectedDish.restaurantName,
+                              user_id: user.id,
+                              taste_score: selectedDish.taste,
+                              portion_score: selectedDish.portion,
+                              price_value_score: selectedDish.priceValue,
+                              price: selectedDish.price,
+                              comment: selectedDish.comment || '',
+                              created_at: selectedDish.created_at
+                            });
+                            handleCloseDish();
+                          }}
+                          className="px-2 py-1 text-xs bg-red-50 text-red-700 rounded hover:bg-red-100 border border-red-200 font-medium"
+                          style={{ fontFamily: '"Courier New", monospace' }}
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <button onClick={handleCloseDish} className="text-gray-500 hover:text-gray-700 flex-shrink-0">
                   <X size={18} />
@@ -4059,24 +7145,126 @@ const HuntersFindsApp = () => {
               {/* Photos View */}
                 {dishModalView === 'photos' && (
                   <div className="space-y-3">
-                    {(!selectedDish.photos || selectedDish.photos === 0) ? (
+                    {/* Photo Upload Button */}
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-xs font-bold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>
+                        PHOTO GALLERY
+                      </h3>
+                      <label className="px-3 py-1 bg-[#33a29b] text-white text-xs rounded-lg font-semibold hover:bg-[#2a8a84] transition cursor-pointer">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files[0];
+                            if (file && selectedDish) {
+                              handlePhotoUpload(file, selectedDish.id);
+                            }
+                          }}
+                        />
+                        {uploadingPhoto ? 'uploading...' : '+ add photo'}
+                      </label>
+                    </div>
+                    
+                    {loadingPhotos ? (
+                      <div className="text-center py-8">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#33a29b] mx-auto"></div>
+                      </div>
+                    ) : selectedDishPhotos.length > 0 ? (
+                      <div className="space-y-3">
+                        {/* Carousel */}
+                        <div className="relative bg-gray-100 rounded-lg overflow-hidden">
+                          <img 
+                            src={selectedDishPhotos[currentPhotoIndex]?.url} 
+                            alt="Dish"
+                            className="w-full h-64 object-cover"
+                          />
+                          
+                          {/* Photo Info Overlay */}
+                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3">
+                            <div className="flex items-center justify-between text-white">
+                              <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">
+                                  {selectedDishPhotos[currentPhotoIndex]?.username?.charAt(0).toUpperCase()}
+                                </div>
+                                <span className="text-xs font-semibold" style={{ fontFamily: '"Courier New", monospace' }}>
+                                  @{selectedDishPhotos[currentPhotoIndex]?.username}
+                                </span>
+                              </div>
+                              <button
+                                onClick={() => handlePhotoLike(selectedDishPhotos[currentPhotoIndex]?.id)}
+                                className="flex items-center gap-1 px-2 py-1 bg-white/20 rounded-full hover:bg-white/30 transition"
+                              >
+                                <Heart 
+                                  size={14} 
+                                  className={selectedDishPhotos[currentPhotoIndex]?.user_liked ? 'fill-red-500 text-red-500' : ''} 
+                                />
+                                <span className="text-xs font-bold">{selectedDishPhotos[currentPhotoIndex]?.likes_count || 0}</span>
+                              </button>
+                            </div>
+                          </div>
+                          
+                          {/* Navigation Arrows */}
+                          {selectedDishPhotos.length > 1 && (
+                            <>
+                              <button 
+                                onClick={() => setCurrentPhotoIndex(i => (i - 1 + selectedDishPhotos.length) % selectedDishPhotos.length)}
+                                className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 rounded-full flex items-center justify-center hover:bg-white transition shadow-lg"
+                              >
+                                ←
+                              </button>
+                              <button 
+                                onClick={() => setCurrentPhotoIndex(i => (i + 1) % selectedDishPhotos.length)}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 rounded-full flex items-center justify-center hover:bg-white transition shadow-lg"
+                              >
+                                →
+                              </button>
+                            </>
+                          )}
+                          
+                          {/* Photo Counter */}
+                          <div className="absolute top-2 right-2 px-2 py-1 bg-black/50 text-white text-xs rounded-full font-semibold">
+                            {currentPhotoIndex + 1} / {selectedDishPhotos.length}
+                          </div>
+                        </div>
+                        
+                        {/* Thumbnail Strip */}
+                        {selectedDishPhotos.length > 1 && (
+                          <div className="flex gap-2 overflow-x-auto pb-2">
+                            {selectedDishPhotos.map((photo, idx) => (
+                              <button
+                                key={photo.id}
+                                onClick={() => setCurrentPhotoIndex(idx)}
+                                className={`flex-shrink-0 w-16 h-16 rounded overflow-hidden border-2 transition ${
+                                  idx === currentPhotoIndex ? 'border-[#33a29b]' : 'border-transparent'
+                                }`}
+                              >
+                                <img 
+                                  src={photo.url} 
+                                  alt={`Photo ${idx + 1}`}
+                                  className="w-full h-full object-cover"
+                                />
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        
+                        {/* Photo Date */}
+                        <div className="text-xs text-gray-500 text-center" style={{ fontFamily: '"Courier New", monospace' }}>
+                          Uploaded {new Date(selectedDishPhotos[currentPhotoIndex]?.created_at).toLocaleDateString()}
+                        </div>
+                      </div>
+                    ) : (
                       <EmptyState
                         icon={Image}
                         title="no photos yet"
                         message="Be the first to add a photo of this dish!"
                         actionText="add photo"
                         onAction={() => {
-                          setErrorModal({
-                            show: true,
-                            title: 'Coming Soon',
-                            message: 'Photo uploads will be available soon!'
-                          });
+                          document.querySelector('input[type="file"][accept="image/*"]').click();
                         }}
                       />
-                    ) : (
-                      <div className="text-sm text-gray-500 text-center py-8" style={{ fontFamily: '"Courier New", monospace' }}>
-                        Photo gallery coming soon!
-                      </div>
                     )}
                   </div>
                 )}
@@ -4226,6 +7414,58 @@ const HuntersFindsApp = () => {
                 </button>
               </div>
               
+              {/* Google Places Info (if applicable) */}
+              {selectedRestaurant?.isGooglePlace && (
+                <div className="p-3 bg-blue-50 border-b space-y-2">
+                  {/* Google Rating */}
+                  {selectedRestaurant.googleData?.rating && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-yellow-500">⭐</span>
+                      <span className="font-bold text-lg">{selectedRestaurant.googleData.rating}</span>
+                      <span className="text-xs text-gray-500">
+                        ({selectedRestaurant.googleData.user_ratings_total || 0} reviews)
+                      </span>
+                    </div>
+                  )}
+                  
+                  {/* Address */}
+                  {selectedRestaurant.location?.address && (
+                    <div className="flex items-start gap-2">
+                      <span className="text-gray-500 mt-0.5">📍</span>
+                      <span className="text-xs text-gray-700">{selectedRestaurant.location.address}</span>
+                    </div>
+                  )}
+                  
+                  {/* Hours */}
+                  {selectedRestaurant.googleData?.opening_hours && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-500">🕐</span>
+                      <span className={`text-xs font-semibold ${
+                        selectedRestaurant.googleData.opening_hours.open_now ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {selectedRestaurant.googleData.opening_hours.open_now ? 'Open now' : 'Closed'}
+                      </span>
+                    </div>
+                  )}
+                  
+                  {/* Rate Now Button */}
+                  <button
+                    onClick={() => {
+                      // Track view
+                      trackGooglePlaceView(selectedRestaurant.id, selectedRestaurant.name);
+                      
+                      // Pre-fill submission modal
+                      setRestaurant(selectedRestaurant.name);
+                      setIsSubmissionModalOpen(true);
+                      setSelectedRestaurant(null);
+                    }}
+                    className="w-full py-2 bg-[#33a29b] text-white rounded-lg font-bold hover:bg-[#2a8a84] transition text-sm"
+                    style={{ fontFamily: '"Courier New", monospace' }}
+                  >
+                    🍽️ Rate a Dish Here
+                  </button>
+                </div>
+              )}
               
               <div className="p-3">
                 {/* Restaurant Info */}
@@ -4497,74 +7737,13 @@ const HuntersFindsApp = () => {
       )}
 
       {/* New Group Modal */}
-      {isNewGroupModalOpen && (
-        <>
-          <div onClick={handleCloseNewGroup} className={`fixed inset-0 bg-black/40 z-50 ${isNewGroupModalClosing ? 'animate-fade-out' : 'animate-fade-in'}`} />
-          <div className={`fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white rounded-2xl shadow-xl w-[90%] max-w-md max-h-[80vh] overflow-hidden ${isNewGroupModalClosing ? 'animate-slide-down-fade' : 'animate-slide-up-fade'}`} style={{ transform: isNewGroupModalClosing ? 'translate(-50%, calc(-50% + 30px))' : 'translate(-50%, -50%)' }}>
-            <div className="sticky top-0 bg-white border-b px-4 py-3 flex justify-between items-center">
-              <h2 className="text-lg font-bold" style={{ fontFamily: '"Courier New", monospace' }}>create new group</h2>
-              <button onClick={handleCloseNewGroup} className="text-gray-500 hover:text-gray-700">
-                <X size={20} />
-              </button>
-            </div>
-            <div className="p-4 overflow-y-auto max-h-[calc(80vh-60px)]">
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>group name</label>
-                  <input 
-                    type="text" 
-                    value={newGroupName}
-                    onChange={(e) => setNewGroupName(e.target.value)}
-                    placeholder="e.g., oakland food lovers"
-                    className="w-full px-3 py-2 text-sm border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
-                    style={{ fontFamily: '"Courier New", monospace' }}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>add members</label>
-                  <div className="relative">
-                    <UserPlus size={16} className="absolute left-3 top-2.5 text-gray-400" />
-                    <input 
-                      type="text"
-                      value={groupMemberSearch}
-                      onChange={(e) => setGroupMemberSearch(e.target.value)}
-                      placeholder="search friends..."
-                      className="w-full pl-9 pr-3 py-2 text-sm border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
-                      style={{ fontFamily: '"Courier New", monospace' }}
-                    />
-                  </div>
-                </div>
-
-                {newGroupMembers.length > 0 && (
-                  <div className="border-t pt-3">
-                    <h3 className="text-xs font-semibold text-gray-700 mb-2" style={{ fontFamily: '"Courier New", monospace' }}>members ({newGroupMembers.length})</h3>
-                    <div className="space-y-2">
-                      {newGroupMembers.map((member, idx) => (
-                        <div key={idx} className="bg-gray-50 rounded-lg p-2 text-xs flex items-center gap-2">
-                          <User size={14} />
-                          <span style={{ fontFamily: '"Courier New", monospace' }}>{member}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <button 
-                  onClick={() => {
-                    handleCloseNewGroup();
-                  }}
-                  disabled={!newGroupName}
-                  className="w-full bg-[#33a29b] text-white py-2.5 rounded-lg font-bold text-sm hover:bg-[#2a8a84] transition disabled:bg-gray-300"
-                  style={{ fontFamily: '"Courier New", monospace' }}
-                >
-                  CREATE GROUP
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
+      {/* You Tab - Create Group Modal (use same as Rankings tab) */}
+      <CreateGroupModal
+        isOpen={isNewGroupModalOpen}
+        onClose={() => setIsNewGroupModalOpen(false)}
+        onSubmit={handleCreateGroup}
+        user={user}
+      />
 
       {/* Group Detail Modal with Modal Stack Support */}
       {/* Modal Stack Renderer - Single Active Modal with Back Navigation */}
@@ -4921,7 +8100,7 @@ const HuntersFindsApp = () => {
                 <div className="bg-yellow-50 rounded-lg p-1.5 mb-1.5 border border-yellow-200">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-sm">👑</span>
+                      <span className="text-sm font-bold">#1</span>
                       <div>
                         <div className="text-[10px] text-gray-600" style={{ fontFamily: '"Courier New", monospace' }}>#1 ranked</div>
                         <div className="text-xs font-bold text-gray-800" style={{ fontFamily: '"Courier New", monospace' }}>{submittedRating.ranking.topRanked.name}</div>
@@ -4995,6 +8174,14 @@ const HuntersFindsApp = () => {
         onDelete={handleDeleteGroup}
         allDishes={allDishes}
         allRatings={allRatings}
+        handleMentionInput={handleMentionInput}
+        insertMention={insertMention}
+        showMentionDropdown={showMentionDropdown}
+        activeMentionField={activeMentionField}
+        mentionResults={mentionResults}
+        mentionQuery={mentionQuery}
+        createMentionNotification={createMentionNotification}
+        extractMentions={extractMentions}
       />
       
       {/* Add Tags Modal */}
@@ -5074,6 +8261,134 @@ const HuntersFindsApp = () => {
         </>
       )}
       
+      {/* Edit Profile Modal */}
+      {isEditProfileModalOpen && (
+        <>
+          <div onClick={() => setIsEditProfileModalOpen(false)} className="fixed inset-0 bg-black/50 z-50 animate-fade-in" />
+          <div className="fixed inset-0 flex items-center justify-center z-50 p-4 pointer-events-none">
+            <div className="bg-white rounded-xl max-w-md w-full p-6 pointer-events-auto animate-slide-up-fade-simple max-h-[80vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-bold" style={{ fontFamily: '"Courier New", monospace' }}>
+                  edit profile
+                </h3>
+                <button onClick={() => setIsEditProfileModalOpen(false)} className="text-gray-500 hover:text-gray-700">
+                  <X size={20} />
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                {/* Profile Picture */}
+                <div className="text-center">
+                  <div className="w-24 h-24 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] mx-auto mb-3 flex items-center justify-center text-white text-3xl font-bold overflow-hidden">
+                    {user?.user_metadata?.profile_picture_url ? (
+                      <img 
+                        src={user.user_metadata.profile_picture_url} 
+                        alt="Profile"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      (user?.user_metadata?.username || user?.email?.split('@')[0] || 'U').charAt(0).toUpperCase()
+                    )}
+                  </div>
+                  <label className="inline-block px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-lg font-semibold hover:bg-gray-200 transition cursor-pointer">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                          await uploadProfilePicture(file);
+                          // Force refresh to show new picture
+                          window.location.reload();
+                        }
+                      }}
+                    />
+                    change photo
+                  </label>
+                </div>
+                
+                {/* Username */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>
+                    username
+                  </label>
+                  <input
+                    type="text"
+                    value={editUsername}
+                    onChange={(e) => setEditUsername(e.target.value)}
+                    placeholder="your username"
+                    className="w-full px-3 py-2 text-sm border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
+                    style={{ fontFamily: '"Courier New", monospace' }}
+                  />
+                </div>
+                
+                {/* Location */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>
+                    location (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={editLocation}
+                    onChange={(e) => setEditLocation(e.target.value)}
+                    placeholder="e.g., San Francisco, CA"
+                    className="w-full px-3 py-2 text-sm border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
+                    style={{ fontFamily: '"Courier New", monospace' }}
+                  />
+                </div>
+                
+                {/* Email (read-only) */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>
+                    email
+                  </label>
+                  <div className="w-full px-3 py-2 text-sm bg-gray-100 text-gray-600 rounded-lg" style={{ fontFamily: '"Courier New", monospace' }}>
+                    {user?.email}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1" style={{ fontFamily: '"Courier New", monospace' }}>
+                    email cannot be changed
+                  </p>
+                </div>
+                
+                {/* Save Button */}
+                <button
+                  onClick={async () => {
+                    try {
+                      await supabase.auth.updateUser({
+                        data: {
+                          username: editUsername,
+                          location: editLocation
+                        }
+                      });
+                      
+                      setErrorModal({
+                        show: true,
+                        title: 'Profile Updated!',
+                        message: 'Your profile changes have been saved.'
+                      });
+                      
+                      setIsEditProfileModalOpen(false);
+                    } catch (error) {
+                      console.error('Error updating profile:', error);
+                      setErrorModal({
+                        show: true,
+                        title: 'Update Failed',
+                        message: 'Could not update profile. Please try again.'
+                      });
+                    }
+                  }}
+                  className="w-full py-3 bg-[#33a29b] text-black rounded-lg font-bold hover:bg-[#2a8a84] transition"
+                  style={{ fontFamily: '"Courier New", monospace' }}
+                >
+                  save changes
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+      
       {/* Logout Confirmation Modal */}
       {showLogoutConfirm && (
         <>
@@ -5112,6 +8427,767 @@ const HuntersFindsApp = () => {
         </>
       )}
       
+      {/* Password Reset Modal */}
+      {showPasswordReset && (
+        <>
+          <div onClick={() => !resetSent && setShowPasswordReset(false)} className="fixed inset-0 bg-black/50 z-50 animate-fade-in" />
+          <div className="fixed inset-0 flex items-center justify-center z-50 p-4 pointer-events-none">
+            <div className="bg-white rounded-xl max-w-md w-full p-6 pointer-events-auto animate-slide-up-fade-simple">
+              {resetSent ? (
+                <div className="text-center">
+                  <div className="text-5xl mb-4">✅</div>
+                  <h3 className="text-lg font-bold mb-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                    check your email
+                  </h3>
+                  <p className="text-sm text-gray-600" style={{ fontFamily: '"Courier New", monospace' }}>
+                    We've sent a password reset link to <strong>{resetEmail}</strong>
+                  </p>
+                  <p className="text-xs text-gray-500 mt-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                    (check spam folder if you don't see it)
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <h3 className="text-lg font-bold mb-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                    reset password
+                  </h3>
+                  <p className="text-sm text-gray-600 mb-4" style={{ fontFamily: '"Courier New", monospace' }}>
+                    Enter your email address and we'll send you a link to reset your password.
+                  </p>
+                  
+                  <input
+                    type="email"
+                    placeholder="your@email.com"
+                    value={resetEmail}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg mb-4 focus:outline-none focus:border-[#33a29b]"
+                    style={{ fontFamily: '"Courier New", monospace' }}
+                  />
+                  
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setShowPasswordReset(false)}
+                      className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-lg hover:bg-gray-50"
+                      style={{ fontFamily: '"Courier New", monospace' }}
+                    >
+                      cancel
+                    </button>
+                    <button
+                      onClick={handlePasswordReset}
+                      className="flex-1 px-4 py-3 bg-[#33a29b] text-white rounded-lg hover:bg-[#2a8a84]"
+                      style={{ fontFamily: '"Courier New", monospace' }}
+                    >
+                      send reset link
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Set New Password Modal */}
+      {showNewPasswordModal && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-50" />
+          <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl max-w-md w-full p-6">
+              <h3 className="text-lg font-bold mb-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                set new password
+              </h3>
+              <p className="text-sm text-gray-600 mb-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                Choose a new password for your account.
+              </p>
+              <p className="text-xs text-gray-500 mb-4" style={{ fontFamily: '"Courier New", monospace' }}>
+                Must be at least 6 characters
+              </p>
+              
+              <input
+                type="password"
+                placeholder="new password (min 6 characters)"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg mb-3 focus:outline-none focus:border-[#33a29b]"
+                style={{ fontFamily: '"Courier New", monospace' }}
+              />
+              
+              <input
+                type="password"
+                placeholder="confirm password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg mb-2 focus:outline-none focus:border-[#33a29b]"
+                style={{ fontFamily: '"Courier New", monospace' }}
+                disabled={passwordResetLoading}
+              />
+              
+              {/* Password match indicator */}
+              {newPassword && confirmPassword && newPassword !== confirmPassword && (
+                <p className="text-xs text-red-500 mb-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                  Passwords don't match
+                </p>
+              )}
+              {newPassword && confirmPassword && newPassword === confirmPassword && (
+                <p className="text-xs text-green-600 mb-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                  Passwords match
+                </p>
+              )}
+              
+              {/* Stay logged in checkbox */}
+              <label className="flex items-center gap-2 mb-4 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={stayLoggedIn}
+                  onChange={(e) => setStayLoggedIn(e.target.checked)}
+                  className="cursor-pointer"
+                  disabled={passwordResetLoading}
+                />
+                <span className="text-sm text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>
+                  Stay logged in on this device
+                </span>
+              </label>
+              
+              <button
+                onClick={handleSetNewPassword}
+                disabled={!newPassword || !confirmPassword || newPassword.length < 6 || passwordResetLoading}
+                className="w-full px-4 py-3 bg-[#33a29b] text-white rounded-lg hover:bg-[#2a8a84] disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                style={{ fontFamily: '"Courier New", monospace' }}
+              >
+                {passwordResetLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    updating...
+                  </>
+                ) : (
+                  'update password'
+                )}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+      
+      {/* Success Toast - Center of Screen */}
+      {showSuccessToast && (
+        <div className="fixed inset-0 flex items-center justify-center z-[100] pointer-events-none">
+          <div className="bg-green-500 text-white px-6 py-4 rounded-lg shadow-lg animate-fade-in-scale" style={{ fontFamily: '"Courier New", monospace' }}>
+            <p className="text-center font-bold">{successMessage}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Rating Modal - Matches Rate Modal Design */}
+      {showEditModal && editingRating && (
+        <>
+          <div onClick={() => setShowEditModal(false)} className={`fixed inset-0 bg-black/40 z-50 animate-fade-in`} />
+          <div className={`fixed left-1/2 -translate-x-1/2 z-50 bg-white rounded-2xl shadow-xl overflow-hidden animate-slide-up-fade`} style={{ top: '15%', width: '80%', maxWidth: '1000px', maxHeight: '75vh' }}>
+            <div className="sticky top-0 z-10 bg-white border-b px-4 py-3 flex justify-center items-center relative">
+              <h2 className="text-lg font-bold text-center" style={{ fontFamily: '"Courier New", monospace' }}>edit rating</h2>
+              <button onClick={() => setShowEditModal(false)} className="absolute right-4"><X size={24} /></button>
+            </div>
+            <div className="overflow-y-auto h-full pb-4 p-4">
+              <div className="max-w-xl mx-auto space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="relative">
+                    <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>restaurant</label>
+                    <input 
+                      type="text" 
+                      value={editRestaurant} 
+                      onChange={(e) => {
+                        setEditRestaurant(e.target.value);
+                        if (e.target.value.length >= 2) {
+                          const matches = restaurants.filter(r => 
+                            r.name.toLowerCase().includes(e.target.value.toLowerCase())
+                          );
+                          setEditRestaurantSearchResults(matches.slice(0, 8));
+                          setShowEditRestaurantSearch(true);
+                        } else {
+                          setShowEditRestaurantSearch(false);
+                        }
+                      }}
+                      onFocus={() => {
+                        if (editRestaurant.length >= 2) {
+                          const matches = restaurants.filter(r => 
+                            r.name.toLowerCase().includes(editRestaurant.toLowerCase())
+                          );
+                          setEditRestaurantSearchResults(matches.slice(0, 8));
+                          setShowEditRestaurantSearch(true);
+                        }
+                      }}
+                      onBlur={() => {
+                        setTimeout(() => setShowEditRestaurantSearch(false), 200);
+                      }}
+                      placeholder="e.g., taco palace" 
+                      className="w-full px-2 py-1.5 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
+                      style={{ fontFamily: '"Courier New", monospace' }}
+                    />
+                    
+                    {/* Search Dropdown */}
+                    {showEditRestaurantSearch && editRestaurantSearchResults.length > 0 && (
+                      <div className="absolute z-50 w-full mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                        {editRestaurantSearchResults.map((r, idx) => (
+                          <button
+                            key={idx}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              setEditRestaurant(r.name);
+                              setShowEditRestaurantSearch(false);
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-green-50 transition border-b last:border-b-0"
+                          >
+                            <div className="font-bold text-xs" style={{ fontFamily: '"Courier New", monospace' }}>
+                              {r.name}
+                            </div>
+                            <div className="text-[10px] text-gray-600" style={{ fontFamily: '"Courier New", monospace' }}>
+                              {r.address || r.cuisine || 'Restaurant'}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>food</label>
+                    <input 
+                      type="text" 
+                      value={editDishName} 
+                      onChange={(e) => setEditDishName(e.target.value)} 
+                      placeholder="e.g., carne asada tacos" 
+                      className="w-full px-2 py-1.5 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
+                      style={{ fontFamily: '"Courier New", monospace' }}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>category</label>
+                    <input
+                      type="text"
+                      value={editingRating.dish?.cuisine_type || 'various'}
+                      readOnly
+                      className="w-full px-2 py-1.5 text-xs border-2 border-gray-200 rounded-lg bg-gray-50"
+                      style={{ fontFamily: '"Courier New", monospace' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>price</label>
+                    <div className="relative">
+                      <span className="absolute left-2 top-1 text-gray-500 text-xs" style={{ fontFamily: '"Courier New", monospace' }}>$</span>
+                      <input 
+                        type="number" 
+                        step="0.01" 
+                        value={editPrice} 
+                        onChange={(e) => setEditPrice(e.target.value)} 
+                        placeholder="0.00" 
+                        className="w-full pl-5 pr-2 py-1.5 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
+                        style={{ fontFamily: '"Courier New", monospace' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t-2 border-gray-100 pt-3 mt-3">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-3" style={{ fontFamily: '"Courier New", monospace' }}>rating scores</h3>
+
+                  {/* Taste Slider */}
+                  <div className="mb-3">
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-xs font-semibold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>taste</label>
+                      <span className="text-sm font-bold text-orange-600" style={{ fontFamily: '"Courier New", monospace' }}>{editTaste}</span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="1" 
+                      max="100" 
+                      value={editTaste} 
+                      onChange={(e) => setEditTaste(parseInt(e.target.value))} 
+                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      style={{
+                        background: `linear-gradient(to right, #fb923c 0%, #fb923c ${editTaste}%, #e5e7eb ${editTaste}%, #e5e7eb 100%)`
+                      }}
+                    />
+                  </div>
+
+                  {/* Price Value Display */}
+                  <div className="bg-green-50 border-2 border-green-200 rounded-lg p-2 mb-3">
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-xs font-semibold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>price value</label>
+                      <div className="text-right">
+                        <span className="text-sm font-bold text-green-600" style={{ fontFamily: '"Courier New", monospace' }}>{editPriceValue}</span>
+                      </div>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="1" 
+                      max="100" 
+                      value={editPriceValue} 
+                      onChange={(e) => setEditPriceValue(parseInt(e.target.value))} 
+                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      style={{
+                        background: `linear-gradient(to right, #22c55e 0%, #22c55e ${editPriceValue}%, #e5e7eb ${editPriceValue}%, #e5e7eb 100%)`
+                      }}
+                    />
+                  </div>
+
+                  {/* Portion Slider */}
+                  <div className="mb-3">
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-xs font-semibold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>portion</label>
+                      <span className="text-sm font-bold text-blue-600" style={{ fontFamily: '"Courier New", monospace' }}>{editPortion}</span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="1" 
+                      max="100" 
+                      value={editPortion} 
+                      onChange={(e) => setEditPortion(parseInt(e.target.value))} 
+                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      style={{
+                        background: `linear-gradient(to right, #60a5fa 0%, #60a5fa ${editPortion}%, #e5e7eb ${editPortion}%, #e5e7eb 100%)`
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="relative">
+                  <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>comment (optional)</label>
+                  <textarea 
+                    value={editComment} 
+                    onChange={(e) => setEditComment(e.target.value)}
+                    placeholder="share your thoughts..." 
+                    rows="2" 
+                    className="w-full px-2 py-1.5 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none resize-none" 
+                    style={{ fontFamily: '"Courier New", monospace' }}
+                  />
+                </div>
+
+                <button 
+                  onClick={saveEditedRating} 
+                  className="w-full py-3 rounded-lg font-bold text-base transition-all shadow-lg relative overflow-hidden
+                    bg-[#33a29b] text-black hover:bg-[#2a8a84] hover:shadow-xl hover:scale-[1.02]
+                    active:scale-[0.98] active:shadow-inner active:translate-y-0.5"
+                  style={{ fontFamily: '"Courier New", monospace' }}
+                >
+                  <span className="relative z-10">SAVE CHANGES</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && deletingRating && (
+        <>
+          <div onClick={() => setShowDeleteConfirm(false)} className="fixed inset-0 bg-black/50 z-50" />
+          <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl max-w-md w-full p-6">
+              <h3 className="text-lg font-bold mb-2 text-red-700" style={{ fontFamily: '"Courier New", monospace' }}>
+                Delete Rating?
+              </h3>
+              
+              <p className="text-sm text-gray-600 mb-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                Delete rating for <strong>{deletingRating.dish?.name || deletingRating.dish_name}</strong>?
+              </p>
+              
+              <p className="text-xs text-gray-500 mb-4" style={{ fontFamily: '"Courier New", monospace' }}>
+                This rating will be moved to trash and can be restored within 30 days.
+              </p>
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="flex-1 px-4 py-2 border-2 border-gray-300 rounded-lg hover:bg-gray-50"
+                  style={{ fontFamily: '"Courier New", monospace' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDeleteRating}
+                  className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+                  style={{ fontFamily: '"Courier New", monospace' }}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Merge Restaurants Modal */}
+      {showMergeRestaurants && (
+        <>
+          <div onClick={() => !mergeLoading && setShowMergeRestaurants(false)} className="fixed inset-0 bg-black/50 z-50" />
+          <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
+              <h3 className="text-lg font-bold mb-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                Merge Restaurants
+              </h3>
+              
+              <p className="text-sm text-gray-600 mb-4" style={{ fontFamily: '"Courier New", monospace' }}>
+                Combine duplicate restaurant entries. All ratings from the first restaurant will be moved to the second.
+              </p>
+              
+              {!mergePreview ? (
+                <>
+                  {/* From Restaurant */}
+                  <div className="mb-4">
+                    <label className="block text-sm font-semibold mb-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                      From (will be removed):
+                    </label>
+                    <select
+                      value={mergeFromRestaurant}
+                      onChange={(e) => setMergeFromRestaurant(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-[#33a29b]"
+                      style={{ fontFamily: '"Courier New", monospace' }}
+                      disabled={mergeLoading}
+                    >
+                      <option value="">Select restaurant to merge from...</option>
+                      {allRestaurants.sort((a, b) => a.name.localeCompare(b.name)).map(r => (
+                        <option key={r.name} value={r.name}>{r.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  {/* To Restaurant */}
+                  <div className="mb-4">
+                    <label className="block text-sm font-semibold mb-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                      To (will keep):
+                    </label>
+                    <select
+                      value={mergeToRestaurant}
+                      onChange={(e) => setMergeToRestaurant(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-[#33a29b]"
+                      style={{ fontFamily: '"Courier New", monospace' }}
+                      disabled={mergeLoading}
+                    >
+                      <option value="">Select restaurant to merge into...</option>
+                      {allRestaurants.sort((a, b) => a.name.localeCompare(b.name)).map(r => (
+                        <option key={r.name} value={r.name}>{r.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  {/* Example */}
+                  {mergeFromRestaurant && mergeToRestaurant && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                      <p className="text-xs text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>
+                        Example: "{mergeFromRestaurant}" → "{mergeToRestaurant}"
+                      </p>
+                      <p className="text-xs text-gray-600 mt-1" style={{ fontFamily: '"Courier New", monospace' }}>
+                        All ratings will show under "{mergeToRestaurant}"
+                      </p>
+                    </div>
+                  )}
+                  
+                  {/* Buttons */}
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setShowMergeRestaurants(false)}
+                      className="flex-1 px-4 py-2 border-2 border-gray-300 rounded-lg hover:bg-gray-50"
+                      style={{ fontFamily: '"Courier New", monospace' }}
+                      disabled={mergeLoading}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={previewMerge}
+                      className="flex-1 px-4 py-2 bg-[#33a29b] text-white rounded-lg hover:bg-[#2a8a84]"
+                      style={{ fontFamily: '"Courier New", monospace' }}
+                      disabled={mergeLoading || !mergeFromRestaurant || !mergeToRestaurant}
+                    >
+                      Preview Merge
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Preview */}
+                  <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4 mb-4">
+                    <h4 className="text-sm font-bold text-yellow-800 mb-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                      Confirm Merge:
+                    </h4>
+                    <p className="text-sm text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>
+                      From: <strong>{mergePreview.from}</strong>
+                    </p>
+                    <p className="text-sm text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>
+                      To: <strong>{mergePreview.to}</strong>
+                    </p>
+                    <p className="text-sm text-gray-700 font-bold mt-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                      {mergePreview.ratingsCount} ratings will be moved
+                    </p>
+                  </div>
+                  
+                  <p className="text-xs text-red-600 mb-4" style={{ fontFamily: '"Courier New", monospace' }}>
+                    Warning: This action cannot be undone!
+                  </p>
+                  
+                  {/* Confirm Buttons */}
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => {
+                        setMergePreview(null);
+                        setMergeFromRestaurant('');
+                        setMergeToRestaurant('');
+                      }}
+                      className="flex-1 px-4 py-2 border-2 border-gray-300 rounded-lg hover:bg-gray-50"
+                      style={{ fontFamily: '"Courier New", monospace' }}
+                      disabled={mergeLoading}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={confirmMerge}
+                      className="flex-1 px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 font-bold"
+                      style={{ fontFamily: '"Courier New", monospace' }}
+                      disabled={mergeLoading}
+                    >
+                      {mergeLoading ? 'Merging...' : 'Confirm Merge'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Deleted Items Modal */}
+      {showDeletedItems && (
+        <>
+          <div onClick={() => setShowDeletedItems(false)} className="fixed inset-0 bg-black/50 z-50" />
+          <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-bold" style={{ fontFamily: '"Courier New", monospace' }}>
+                  Deleted Items (Trash)
+                </h3>
+                <button onClick={() => setShowDeletedItems(false)} className="text-gray-500 hover:text-gray-700">
+                  <X size={24} />
+                </button>
+              </div>
+              
+              <p className="text-sm text-gray-600 mb-4" style={{ fontFamily: '"Courier New", monospace' }}>
+                Items can be restored within 30 days of deletion.
+              </p>
+              
+              {deletedItemsLoading ? (
+                <div className="text-center py-8">
+                  <div className="text-gray-500">Loading...</div>
+                </div>
+              ) : deletedItems.length === 0 ? (
+                <div className="text-center py-8">
+                  <div className="text-gray-500 mb-2">🗑️</div>
+                  <div className="text-sm text-gray-600" style={{ fontFamily: '"Courier New", monospace' }}>
+                    No deleted items
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {deletedItems.map((item) => {
+                    const daysLeft = Math.ceil((new Date(item.can_restore_until) - new Date()) / (1000 * 60 * 60 * 24));
+                    
+                    return (
+                      <div key={item.id} className="border-2 border-gray-200 rounded-lg p-3 hover:border-yellow-300 transition">
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <h4 className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>
+                              {item.dish_name}
+                            </h4>
+                            <p className="text-xs text-gray-600" style={{ fontFamily: '"Courier New", monospace' }}>
+                              Deleted: {new Date(item.deleted_at).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <div className={`text-xs px-2 py-1 rounded ${
+                            daysLeft > 7 ? 'bg-green-100 text-green-700' :
+                            daysLeft > 3 ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-red-100 text-red-700'
+                          }`} style={{ fontFamily: '"Courier New", monospace' }}>
+                            {daysLeft} days left
+                          </div>
+                        </div>
+                        
+                        <div className="flex gap-2 text-xs mb-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                          <span className="bg-orange-100 text-orange-700 px-2 py-0.5 rounded">
+                            Taste: {item.taste_score}
+                          </span>
+                          <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
+                            Portion: {item.portion_score}
+                          </span>
+                          <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded">
+                            Price Value: {item.price_value_score}
+                          </span>
+                        </div>
+                        
+                        {item.comment && (
+                          <p className="text-xs text-gray-600 mb-2 italic" style={{ fontFamily: '"Courier New", monospace' }}>
+                            "{item.comment}"
+                          </p>
+                        )}
+                        
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => restoreDeletedItem(item)}
+                            className="flex-1 px-3 py-1.5 bg-green-500 text-white rounded-lg hover:bg-green-600 text-xs font-bold"
+                            style={{ fontFamily: '"Courier New", monospace' }}
+                          >
+                            Restore
+                          </button>
+                          <button
+                            onClick={() => permanentlyDeleteItem(item)}
+                            className="flex-1 px-3 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 text-xs font-bold"
+                            style={{ fontFamily: '"Courier New", monospace' }}
+                          >
+                            Delete Forever
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Link Restaurants to Google Places Modal */}
+      {showLinkRestaurants && (
+        <>
+          <div onClick={() => setShowLinkRestaurants(false)} className="fixed inset-0 bg-black/50 z-50" />
+          <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl max-w-3xl w-full p-6 max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-bold" style={{ fontFamily: '"Courier New", monospace' }}>
+                  Link Restaurants to Map
+                </h3>
+                <button onClick={() => {
+                  setShowLinkRestaurants(false);
+                  setLinkingRestaurant(null);
+                  setPlaceSearchResults([]);
+                }} className="text-gray-500 hover:text-gray-700">
+                  <X size={24} />
+                </button>
+              </div>
+              
+              <p className="text-sm text-gray-600 mb-4" style={{ fontFamily: '"Courier New", monospace' }}>
+                Link your restaurants to Google Places so they appear on the map with correct locations.
+              </p>
+              
+              {!linkingRestaurant ? (
+                /* List of unlinked restaurants */
+                <div className="space-y-2">
+                  {unlinkedRestaurants.length === 0 ? (
+                    <div className="text-center py-8">
+                      <div className="text-4xl mb-2">🎉</div>
+                      <div className="text-sm text-gray-600" style={{ fontFamily: '"Courier New", monospace' }}>
+                        All restaurants are linked!
+                      </div>
+                    </div>
+                  ) : (
+                    unlinkedRestaurants.map((restaurant) => (
+                      <div key={restaurant.id} className="border-2 border-gray-200 rounded-lg p-3 hover:border-green-300 transition flex justify-between items-center">
+                        <div>
+                          <h4 className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>
+                            {restaurant.name}
+                          </h4>
+                          <p className="text-xs text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
+                            Not linked to map
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setLinkingRestaurant(restaurant);
+                            searchGooglePlaces(restaurant.name);
+                          }}
+                          className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 text-sm font-bold"
+                          style={{ fontFamily: '"Courier New", monospace' }}
+                        >
+                          Link
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              ) : (
+                /* Google Places search results */
+                <div>
+                  <button
+                    onClick={() => {
+                      setLinkingRestaurant(null);
+                      setPlaceSearchResults([]);
+                    }}
+                    className="mb-4 text-sm text-gray-600 hover:text-gray-800 flex items-center gap-1"
+                    style={{ fontFamily: '"Courier New", monospace' }}
+                  >
+                    ← Back to list
+                  </button>
+                  
+                  <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-3 mb-4">
+                    <h4 className="font-bold text-sm mb-1" style={{ fontFamily: '"Courier New", monospace' }}>
+                      Linking: {linkingRestaurant.name}
+                    </h4>
+                    <p className="text-xs text-gray-600" style={{ fontFamily: '"Courier New", monospace' }}>
+                      Select the correct location from Google Places:
+                    </p>
+                  </div>
+                  
+                  {placeSearchLoading ? (
+                    <div className="text-center py-8">
+                      <div className="text-gray-500">Searching Google Places...</div>
+                    </div>
+                  ) : placeSearchResults.length === 0 ? (
+                    <div className="text-center py-8">
+                      <div className="text-gray-500 mb-2">No results found</div>
+                      <button
+                        onClick={() => searchGooglePlaces(linkingRestaurant.name)}
+                        className="text-sm text-blue-600 hover:underline"
+                        style={{ fontFamily: '"Courier New", monospace' }}
+                      >
+                        Try again
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {placeSearchResults.map((place, idx) => (
+                        <div key={idx} className="border-2 border-gray-200 rounded-lg p-3 hover:border-green-300 transition">
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="flex-1">
+                              <h4 className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>
+                                {place.name}
+                              </h4>
+                              <p className="text-xs text-gray-600" style={{ fontFamily: '"Courier New", monospace' }}>
+                                {place.formatted_address}
+                              </p>
+                              {place.rating && (
+                                <p className="text-xs text-gray-500 mt-1" style={{ fontFamily: '"Courier New", monospace' }}>
+                                  ⭐ {place.rating} ({place.user_ratings_total} reviews)
+                                </p>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => linkRestaurantToPlace(linkingRestaurant, place)}
+                              className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 text-sm font-bold ml-3"
+                              style={{ fontFamily: '"Courier New", monospace' }}
+                            >
+                              Link This
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };
