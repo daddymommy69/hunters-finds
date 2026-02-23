@@ -1555,28 +1555,36 @@ const HuntersFindsApp = () => {
   // Generate restaurants dynamically from rated dishes
   const allRestaurants = React.useMemo(() => {
     const restaurantMap = {};
+    // Case-insensitive lookup: lowercased name -> canonical DB name
+    const nameLookup = {};
     
     // First, add restaurants from database
     (restaurants || []).forEach(restaurant => {
       restaurantMap[restaurant.name] = {
         ...restaurant,
-        // Map latitude/longitude to location object for map compatibility
         location: restaurant.latitude && restaurant.longitude ? {
           lat: restaurant.latitude,
           lng: restaurant.longitude,
           address: restaurant.address
         } : null,
-        // Map stored google_data to googleData for popup/UI compatibility
         googleData: restaurant.google_data || null
       };
+      nameLookup[restaurant.name.toLowerCase()] = restaurant.name;
     });
     
     // Then, add/update restaurants from rated dishes
     allDishes.forEach(dish => {
       const restaurantName = dish.restaurantName;
-      if (!restaurantMap[restaurantName]) {
-        // Create new restaurant entry
-        restaurantMap[restaurantName] = {
+      // Try exact match first, then case-insensitive DB lookup
+      const canonicalName = restaurantMap[restaurantName]
+        ? restaurantName
+        : nameLookup[restaurantName?.toLowerCase()];
+      
+      const keyToUse = canonicalName || restaurantName;
+      
+      if (!restaurantMap[keyToUse]) {
+        // No DB match - create entry without location
+        restaurantMap[keyToUse] = {
           id: `generated-${restaurantName}`,
           name: restaurantName,
           cuisine: dish.cuisine,
@@ -1586,8 +1594,8 @@ const HuntersFindsApp = () => {
           location: null
         };
       } else {
-        // Update existing restaurant
-        const existing = restaurantMap[restaurantName];
+        // Update existing restaurant (DB or previously created)
+        const existing = restaurantMap[keyToUse];
         if (!existing.dishCount) existing.dishCount = 0;
         if (!existing.topDishes) existing.topDishes = [];
         
