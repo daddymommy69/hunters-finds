@@ -4599,30 +4599,35 @@ const HuntersFindsApp = () => {
                   style={{ zIndex: 0 }}
                 />
                 
-                {/* Search Bar */}
-                <div className="absolute top-4 left-1/2 -translate-x-1/2 w-[90%] max-w-md z-10">
-                  <div className="relative">
-                    <Search size={16} className="absolute left-3 top-3 text-gray-400" />
-                    <input
-                      type="text"
-                      value={mapSearchQuery}
-                      onChange={(e) => setMapSearchQuery(e.target.value)}
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter' && mapSearchQuery) {
-                          // Filter restaurants by search
-                          const filtered = allRestaurants.filter(r =>
-                            r.name.toLowerCase().includes(mapSearchQuery.toLowerCase()) ||
-                            r.cuisine?.toLowerCase().includes(mapSearchQuery.toLowerCase())
-                          );
-                          updateMapMarkers(filtered);
-                        }
-                      }}
-                      placeholder="Search restaurants or cuisine..."
-                      className="w-full pl-9 pr-3 py-2.5 text-sm border-2 border-gray-200 rounded-lg focus:outline-none focus:border-[#33a29b] bg-white shadow-lg"
-                      style={{ fontFamily: '"Courier New", monospace' }}
-                    />
-                  </div>
-                </div>
+                {/* Find Nearby Button - Top Center */}
+                {showMapFindNearby && (
+                  <button
+                    onClick={async () => {
+                      if (!mapInstance) return;
+                      const center = mapInstance.getCenter();
+                      const location = { lat: center.lat, lng: center.lng };
+                      setShowMapFindNearby(false);
+                      const results = await searchGooglePlacesAPI('restaurants', location, { limit: 5 });
+                      if (results.length > 0) {
+                        const googleRestaurants = results.map(r => ({
+                          id: r.place_id,
+                          name: r.name,
+                          location: { lat: r.lat, lng: r.lng, address: r.address },
+                          avgSRR: null,
+                          cuisine: r.types?.join(', ') || '',
+                          isGooglePlace: true,
+                          googleData: r
+                        }));
+                        updateMapMarkers([...allRestaurants, ...googleRestaurants]);
+                      }
+                      setTimeout(() => setShowMapFindNearby(true), 10000);
+                    }}
+                    className="absolute top-4 left-1/2 -translate-x-1/2 px-4 py-2.5 bg-[#33a29b] text-white rounded-lg font-bold hover:bg-[#2a8a84] transition shadow-lg z-10 text-sm"
+                    style={{ fontFamily: '"Courier New", monospace' }}
+                  >
+                    Find Nearby Restaurants
+                  </button>
+                )}
                 
                 {/* Filters Panel */}
                 <div className="absolute top-20 right-4 z-10">
@@ -4631,7 +4636,7 @@ const HuntersFindsApp = () => {
                     className="bg-white rounded-lg shadow-lg px-4 py-2 text-sm font-bold hover:bg-gray-50 flex items-center gap-2"
                     style={{ fontFamily: '"Courier New", monospace' }}
                   >
-                    📊 Filters
+                    Filters
                     <span className="text-xs">▾</span>
                   </button>
                   
@@ -4843,44 +4848,7 @@ const HuntersFindsApp = () => {
                   </div>
                 </div>
                 
-                {/* Find Nearby Button */}
-                {showMapFindNearby && (
-                  <button
-                    onClick={async () => {
-                      if (!mapInstance) return;
-                      
-                      const center = mapInstance.getCenter();
-                      const location = { lat: center.lat, lng: center.lng };
-                      
-                      setShowMapFindNearby(false);
-                      
-                      // Search Google Places for visible area
-                      const results = await searchGooglePlacesAPI('restaurants', location, { limit: 5 });
-                      
-                      // Add pins to map
-                      if (results.length > 0) {
-                        const googleRestaurants = results.map(r => ({
-                          id: r.place_id,
-                          name: r.name,
-                          location: { lat: r.lat, lng: r.lng, address: r.address },
-                          avgSRR: null,
-                          cuisine: r.types?.join(', ') || '',
-                          isGooglePlace: true,
-                          googleData: r
-                        }));
-                        
-                        updateMapMarkers([...allRestaurants, ...googleRestaurants]);
-                      }
-                      
-                      // Show button again after 10 seconds
-                      setTimeout(() => setShowMapFindNearby(true), 10000);
-                    }}
-                    className="absolute bottom-20 right-4 px-4 py-2 bg-[#33a29b] text-white rounded-lg font-bold hover:bg-[#2a8a84] transition shadow-lg z-10 text-sm"
-                    style={{ fontFamily: '"Courier New", monospace' }}
-                  >
-                    🔎 Find Nearby Restaurants
-                  </button>
-                )}
+
               </div>
             ) : (
               <div className="h-full flex flex-col items-center justify-center bg-gray-100 p-4">
