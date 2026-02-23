@@ -3088,47 +3088,40 @@ const HuntersFindsApp = () => {
             />
           ` : ''}
           
-          <h3 style="font-weight: bold; margin: 0 0 6px 0; font-size: 15px;">${restaurant.name}</h3>
-          <p style="margin: 0 0 6px 0; font-size: 11px; color: #666;">${restaurant.cuisine || restaurant.googleData?.types?.slice(0,2).join(', ') || 'establishment, food, point_of_interest, restaurant'}</p>
-          <p style="margin: 0 0 8px 0; font-size: 10px; color: #999;">${restaurant.location?.address || ''}</p>
+          <h3 style="font-weight: bold; margin: 0 0 8px 0; font-size: 15px;">${restaurant.name}</h3>
+          
+          ${restaurant.avgSRR ? `
+            <div style="background: #f0fdf4; border: 1px solid #86efac; padding: 8px; border-radius: 6px; margin-bottom: 8px;">
+              <div style="font-size: 10px; color: #666; text-transform: uppercase; margin-bottom: 6px;">Hunters Finds Rating</div>
+              <div style="font-weight: bold; font-size: 18px; color: #10b981; margin-bottom: 8px;">${restaurant.avgSRR}</div>
+              ${(restaurant.topDishes && restaurant.topDishes.length > 0) ? `
+                <div style="font-size: 10px; color: #666; text-transform: uppercase; margin-bottom: 4px; border-top: 1px solid #d1fae5; padding-top: 6px;">Top Rated Dishes</div>
+                ${restaurant.topDishes.slice(0, 3).map(dish => `
+                  <div style="font-size: 11px; padding: 3px 0; display: flex; justify-content: space-between;">
+                    <span>${dish.name}</span>
+                    <span style="font-weight: bold; color: #10b981;">${dish.srr}</span>
+                  </div>
+                `).join('')}
+              ` : ''}
+            </div>
+          ` : `
+            <div style="background: #f9fafb; padding: 10px; border-radius: 6px; margin-bottom: 8px; text-align: center;">
+              <span style="font-size: 11px; color: #9ca3af;">Nothing rated yet</span>
+            </div>
+          `}
           
           ${restaurant.googleData?.rating ? `
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding: 6px; background: #fef3c7; border-radius: 6px;">
-              <span style="font-size: 18px;">⭐</span>
               <span style="font-weight: bold; font-size: 15px;">${restaurant.googleData.rating}</span>
-              <span style="font-size: 10px; color: #666;">(${restaurant.googleData.user_ratings_total || 0} reviews)</span>
+              <span style="font-size: 10px; color: #666;">(${restaurant.googleData.user_ratings_total || 0} Google reviews)</span>
             </div>
           ` : ''}
           
           ${restaurant.googleData?.opening_hours ? `
             <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 11px;">
-              <span style="font-size: 14px;">🕐</span>
               <span style="font-weight: bold; color: ${restaurant.googleData.opening_hours.open_now ? '#10b981' : '#ef4444'};">
                 ${restaurant.googleData.opening_hours.open_now ? 'Open now' : 'Closed'}
               </span>
-            </div>
-          ` : ''}
-          
-          ${category === 'user' ? `
-            <div style="background: #10b981; color: white; padding: 8px; border-radius: 6px; margin: 8px 0; text-align: center;">
-              <strong>Your Rating:</strong> ${restaurant.avgSRR}
-            </div>
-          ` : ''}
-          
-          ${restaurant.avgSRR && restaurant.dishCount >= 3 ? `
-            <div style="border-top: 1px solid #eee; padding-top: 8px; margin-top: 8px;">
-              <div style="font-size: 10px; color: #666; text-transform: uppercase; margin-bottom: 4px;">Top Rated Dishes</div>
-              ${(restaurant.topDishes || []).slice(0, 2).map(dish => `
-                <div style="font-size: 11px; padding: 4px 0; display: flex; justify-content: space-between;">
-                  <span>${dish.name}</span>
-                  <span style="font-weight: bold; color: #33a29b;">${dish.srr}</span>
-                </div>
-              `).join('')}
-            </div>
-          ` : restaurant.avgSRR ? `
-            <div style="display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid #eee;">
-              <span style="font-size: 11px; color: #666;">Community:</span>
-              <span style="font-weight: bold; font-size: 14px; color: ${config.color};">${restaurant.avgSRR}</span>
             </div>
           ` : ''}
           
@@ -3136,7 +3129,7 @@ const HuntersFindsApp = () => {
             onclick="window.openRestaurantFromMap('${restaurant.id}')" 
             style="width: 100%; padding: 10px; background: #33a29b; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 8px; font-size: 12px;"
           >
-            ${category === 'google' || !restaurant.avgSRR ? 'Rate a Dish' : 'View Details'}
+            ${!restaurant.avgSRR ? 'Rate a Dish' : 'View Details'}
           </button>
         </div>
       `;
