@@ -1318,12 +1318,12 @@ const HuntersFindsApp = () => {
       isDatabase: true
     }));
     
-    // Search Google via proxy
+    // Search Google Places API directly
     try {
       const location = userLocation || { lat: 37.8044, lng: -122.2712 };
-      const proxyUrl = `http://localhost:3001/api/places/search?query=${encodeURIComponent(query)}&lat=${location.lat}&lng=${location.lng}`;
+      const googleUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&location=${location.lat},${location.lng}&radius=5000&key=${GOOGLE_PLACES_API_KEY}`;
       
-      const response = await fetch(proxyUrl);
+      const response = await fetch(googleUrl);
       const data = await response.json();
       
       if (data.status === 'OK' && data.results) {
@@ -1714,19 +1714,13 @@ const HuntersFindsApp = () => {
       
       console.log('🔎 Searching Google Places:', query, 'near', searchLocation);
       
-      // Use local proxy server to avoid CORS
-      const proxyUrl = 'http://localhost:3001/api/places/search';
-      const params = new URLSearchParams({
-        query: query,
-        lat: searchLocation.lat,
-        lng: searchLocation.lng,
-        radius: 5000
-      });
+      // Call Google Places API directly
+      const googleUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&location=${searchLocation.lat},${searchLocation.lng}&radius=5000&key=${GOOGLE_PLACES_API_KEY}`;
       
-      const response = await fetch(`${proxyUrl}?${params}`);
+      const response = await fetch(googleUrl);
       
       if (!response.ok) {
-        throw new Error('Proxy server request failed');
+        throw new Error('Google Places API request failed');
       }
       
       const data = await response.json();
@@ -2781,7 +2775,12 @@ const HuntersFindsApp = () => {
   // ENHANCED MAP FUNCTIONS
   // ============================================
   
-  const GOOGLE_PLACES_API_KEY = 'AIzaSyBGGhB8PW32hCyC6mdLGVy1pxSKrDjfEJc';
+  const GOOGLE_PLACES_API_KEY = import.meta.env.VITE_GOOGLE_PLACES_API_KEY;
+  
+  // Debug: Log API key status (first 10 chars only for security)
+  React.useEffect(() => {
+    console.log('🔑 Google API Key status:', GOOGLE_PLACES_API_KEY ? `${GOOGLE_PLACES_API_KEY.substring(0, 10)}...` : 'MISSING');
+  }, []);
   
   // Cache management (24 hour cache)
   const CACHE_DURATION = 24 * 60 * 60 * 1000;
