@@ -934,9 +934,20 @@ const HuntersFindsApp = () => {
       
       console.log('Rating soft deleted successfully!');
       
-      // Close modal
+      // Capture ID before clearing state
+      const deletedId = deletingRating.id;
+      
+      // Immediately remove deleted rating from state
+      setAllRatings(prev => prev.filter(r => r.id !== deletedId));
+      
+      // Close modal and clear state
       setShowDeleteConfirm(false);
       setDeletingRating(null);
+      setIsDeleting(false);
+      
+      // Refetch to fully sync
+      fetchAllRatings();
+      if (refetchData) refetchData();
       
       // Show success message
       setErrorModal({
@@ -944,13 +955,6 @@ const HuntersFindsApp = () => {
         title: 'Rating Deleted',
         message: 'Rating moved to trash. Can be restored within 30 days.'
       });
-      
-      // Immediately remove deleted rating from state
-      setAllRatings(prev => prev.filter(r => r.id !== deletingRating.id));
-      setIsDeleting(false);
-      // Refetch both allRatings and hook data to fully sync
-      fetchAllRatings();
-      if (refetchData) refetchData();
       
     } catch (error) {
       setIsDeleting(false);
