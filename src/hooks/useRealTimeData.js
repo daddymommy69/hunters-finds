@@ -34,7 +34,8 @@ export const useRealTimeData = (user) => {
             portion_score,
             price_score,
             overall_score,
-            user_id
+            user_id,
+            is_deleted
           )
         `)
         .order('avg_srr', { ascending: false });
@@ -46,16 +47,22 @@ export const useRealTimeData = (user) => {
       }
 
       // Process dishes to ensure proper format
-      const processedDishes = (data || []).map(dish => ({
-        ...dish,
-        total_ratings: dish.ratings?.length || 0,
-        // Recalculate average if needed
-        avg_srr: dish.total_ratings > 0
-          ? Math.round(
-              dish.ratings.reduce((sum, r) => sum + (r.overall_score || 0), 0) / dish.total_ratings
-            )
-          : dish.avg_srr || 0
-      }));
+      const processedDishes = (data || []).map(dish => {
+        // Only count non-deleted ratings
+        const activeRatings = (dish.ratings || []).filter(r => !r.is_deleted);
+        return {
+          ...dish,
+          ratings: activeRatings,
+          total_ratings: activeRatings.length,
+          avg_srr: activeRatings.length > 0
+            ? Math.round(
+                activeRatings.reduce((sum, r) => sum + (r.overall_score || 0), 0) / activeRatings.length
+              )
+            : dish.avg_srr || 0,
+          // Mark dish as having no active ratings so App.jsx can filter it out
+          is_deleted: activeRatings.length === 0
+        };
+      });
 
       setDishes(processedDishes);
     } catch (error) {
@@ -110,6 +117,7 @@ export const useRealTimeData = (user) => {
           )
         `)
         .eq('user_id', user.id)
+        .eq('is_deleted', false)
         .order('created_at', { ascending: false });
 
       if (error) {
