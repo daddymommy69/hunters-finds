@@ -24,42 +24,34 @@ export const useRealTimeData = (user) => {
    */
   const fetchDishes = async () => {
     try {
-      const { data, error } = await supabase
-        .from('dishes')
-        .select(`
-          *,
-          ratings (
-            id,
-            taste_score,
-            portion_score,
-            price_score,
-            overall_score,
-            user_id,
-            is_deleted
-          )
-        `)
-        .order('avg_srr', { ascending: false });
+      // Fetch dishes and active (non-deleted) ratings separately to properly filter
+      const [dishesResult, ratingsResult] = await Promise.all([
+        supabase.from('dishes').select('*').order('avg_srr', { ascending: false }),
+        supabase.from('ratings').select('id, dish_id, overall_score, user_id').eq('is_deleted', false)
+      ]);
 
-      if (error) {
-        console.error('Error fetching dishes:', error);
+      if (dishesResult.error) {
+        console.error('Error fetching dishes:', dishesResult.error);
         setDishes([]);
         return;
       }
 
-      // Process dishes to ensure proper format
-      const processedDishes = (data || []).map(dish => {
-        // Only count non-deleted ratings
-        const activeRatings = (dish.ratings || []).filter(r => !r.is_deleted);
+      const activeRatingsByDish = {};
+      (ratingsResult.data || []).forEach(r => {
+        if (!activeRatingsByDish[r.dish_id]) activeRatingsByDish[r.dish_id] = [];
+        activeRatingsByDish[r.dish_id].push(r);
+      });
+
+      const processedDishes = (dishesResult.data || []).map(dish => {
+        const activeRatings = activeRatingsByDish[dish.id] || [];
         return {
           ...dish,
           ratings: activeRatings,
           total_ratings: activeRatings.length,
           avg_srr: activeRatings.length > 0
-            ? Math.round(
-                activeRatings.reduce((sum, r) => sum + (r.overall_score || 0), 0) / activeRatings.length
-              )
+            ? Math.round(activeRatings.reduce((sum, r) => sum + (r.overall_score || 0), 0) / activeRatings.length)
             : dish.avg_srr || 0,
-          // Mark dish as having no active ratings so App.jsx can filter it out
+          // Mark dish as having no active ratings so App.jsx filters it out
           is_deleted: activeRatings.length === 0
         };
       });
@@ -175,8 +167,11 @@ export const useRealTimeData = (user) => {
         { event: '*', schema: 'public', table: 'ratings' },
         (payload) => {
           console.log('Ratings updated:', payload);
-          fetchDishes(); // Refresh dishes when ratings change
-          fetchUserRatings(); // Refresh user ratings
+          // Delay to ensure DB has committed is_deleted before re-fetching
+          setTimeout(() => {
+            fetchDishes();
+            fetchUserRatings();
+          }, 1000);
         }
       )
       .subscribe();
