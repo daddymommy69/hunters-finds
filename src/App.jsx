@@ -1523,8 +1523,11 @@ const HuntersFindsApp = () => {
         calculatedSRR = totalSRR > 0 ? Math.round(totalSRR / dishRatings.length) : Math.round((avgTaste + avgPortion + avgPrice) / 3);
       }
       
+      // Find user's own rating for this dish (for delete/edit)
+      const userRatingForDish = dishRatings.find(r => r.user_id === user?.id);
       return {
         id: dish.id,
+        ratingId: userRatingForDish?.id || null,
         name: dish.name,
         restaurantName: dish.restaurant_name,
         cuisine: dish.cuisine_type || 'various',
@@ -1536,7 +1539,7 @@ const HuntersFindsApp = () => {
         numRatings: dishRatings.length,
         photos: 0,
         comments: 0,
-        created_at: dish.created_at,
+        created_at: userRatingForDish?.created_at || dish.created_at,
         edit_count: dish.edit_count,
         edited_at: dish.edited_at
       };
@@ -6930,8 +6933,14 @@ const HuntersFindsApp = () => {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
+                            // Use ratingId if available, otherwise look it up
+                            const ratingForDish = selectedDish.ratingId ? null : (
+                              allRatings.find(r => r.dish_id === selectedDish.id && !r.is_deleted && r.user_id === user.id) ||
+                              userRatings.find(r => r.dish_id === selectedDish.id && !r.is_deleted)
+                            );
                             handleDeleteRating({
-                              id: selectedDish.id,
+                              id: selectedDish.ratingId || ratingForDish?.id || selectedDish.id,
+                              dish_id: selectedDish.id,
                               dish_name: selectedDish.name,
                               dish: {name: selectedDish.name},
                               restaurant_name: selectedDish.restaurantName,
