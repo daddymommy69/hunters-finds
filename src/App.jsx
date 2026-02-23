@@ -937,17 +937,15 @@ const HuntersFindsApp = () => {
       // Capture ID before clearing state
       const deletedId = deletingRating.id;
       
-      // Immediately remove deleted rating from state
-      setAllRatings(prev => prev.filter(r => r.id !== deletedId));
-      
       // Close modal and clear state
       setShowDeleteConfirm(false);
       setDeletingRating(null);
       setIsDeleting(false);
       
-      // Refetch to fully sync
-      fetchAllRatings();
-      if (refetchData) refetchData();
+      // Immediately remove from state and reload after short delay
+      setAllRatings(prev => prev.filter(r => r.id !== deletedId));
+      if (refetchData) await refetchData();
+      await fetchAllRatings();
       
       // Show success message
       setErrorModal({
