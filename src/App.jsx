@@ -96,7 +96,7 @@ const HuntersFindsApp = () => {
   const { user, loading: authLoading, signOut, signUpWithEmail, signInWithEmail, error: authError } = useAuth();
   
   // Real-time data
-  const { dishes = [], restaurants = [], userRatings = [], loading: dataLoading } = useRealTimeData(user);
+  const { dishes = [], restaurants = [], userRatings = [], loading: dataLoading, refetch: refetchData } = useRealTimeData(user);
   
   // Filter out deleted ratings from dishes
   const activeDishes = dishes.filter(dish => !dish.is_deleted);
@@ -864,10 +864,10 @@ const HuntersFindsApp = () => {
         message: 'Your changes have been saved!'
       });
       
-      // Refresh ratings
-      setTimeout(() => {
-        window.location.reload();
-      }, 1500);
+      // Immediately remove from allRatings state
+      setAllRatings(prev => prev.filter(r => r.id !== deletingRating.id));
+      // Refetch all data to sync
+      if (refetchData) refetchData();
       
     } catch (error) {
       console.error('Error saving rating:', error);
@@ -948,10 +948,9 @@ const HuntersFindsApp = () => {
         message: 'Rating moved to trash. Can be restored within 30 days.'
       });
       
-      // Refresh ratings
-      setTimeout(() => {
-        window.location.reload();
-      }, 1500);
+      // Immediately remove from allRatings state and refetch
+      setAllRatings(prev => prev.filter(r => r.id !== deletingRating.id));
+      if (refetchData) refetchData();
       
     } catch (error) {
       console.error('Error deleting rating:', error);
