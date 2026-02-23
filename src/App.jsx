@@ -186,38 +186,33 @@ const HuntersFindsApp = () => {
     };
   }, []);
   
-  // Fetch all ratings when component mounts or when dishes change
-  React.useEffect(() => {
-    const newCount = ratingsCallCount + 1;
-    setRatingsCallCount(newCount);
-    console.log(`🔢 allRatings useEffect called - COUNT: ${newCount}`);
-    
-    const fetchAllRatings = async () => {
-      console.log('📊 fetchAllRatings starting...');
-      setAllRatingsLoading(true);
-      try {
-        const { data, error } = await supabase
-          .from('ratings')
-          .select(`
-            *,
-            dish:dishes(*)
-          `)
-          .eq('is_deleted', false)
-          .order('created_at', { ascending: false });
+  // Fetch all ratings - lifted out so it can be called directly after delete
+  const fetchAllRatings = React.useCallback(async () => {
+    setAllRatingsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('ratings')
+        .select(`
+          *,
+          dish:dishes(*)
+        `)
+        .eq('is_deleted', false)
+        .order('created_at', { ascending: false });
 
-        if (error) {
-          console.error('❌ Error fetching all ratings:', error);
-        } else {
-          console.log('✅ Fetched', data?.length || 0, 'total ratings from all users (excluding deleted)');
-          setAllRatings(data || []);
-        }
-      } catch (error) {
+      if (error) {
         console.error('❌ Error fetching all ratings:', error);
-      } finally {
-        setAllRatingsLoading(false);
+      } else {
+        setAllRatings(data || []);
       }
-    };
+    } catch (error) {
+      console.error('❌ Error fetching all ratings:', error);
+    } finally {
+      setAllRatingsLoading(false);
+    }
+  }, []);
 
+  // Re-fetch when dishes change
+  React.useEffect(() => {
     fetchAllRatings();
   }, [dishes]);
   
@@ -948,8 +943,10 @@ const HuntersFindsApp = () => {
         message: 'Rating moved to trash. Can be restored within 30 days.'
       });
       
-      // Immediately remove from allRatings state and refetch
+      // Immediately remove deleted rating from state
       setAllRatings(prev => prev.filter(r => r.id !== deletingRating.id));
+      // Refetch both allRatings and hook data to fully sync
+      fetchAllRatings();
       if (refetchData) refetchData();
       
     } catch (error) {
