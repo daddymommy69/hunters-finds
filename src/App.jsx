@@ -2921,7 +2921,7 @@ const HuntersFindsApp = () => {
     if (mapInstance && activeTab === 'map') {
       updateMapMarkers(allRestaurants);
     }
-  }, [mapFilters, mapInstance, activeTab]);
+  }, [mapFilters, mapInstance, activeTab, allRestaurants]);
   
   const updateMapMarkers = (restaurants) => {
     if (!mapInstance || !window.L) return;
