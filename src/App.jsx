@@ -3982,6 +3982,15 @@ const HuntersFindsApp = () => {
   return (
     <div className="h-screen flex flex-col bg-gray-50" style={{ fontFamily: '"Courier New", monospace' }}>
       <style>{`
+        .leaflet-control-attribution {
+          font-size: 7px !important;
+          opacity: 0.3 !important;
+          background: transparent !important;
+          box-shadow: none !important;
+        }
+        .leaflet-control-attribution:hover {
+          opacity: 0.6 !important;
+        }
         input[type="range"] {
           -webkit-appearance: none;
           appearance: none;
