@@ -1565,7 +1565,9 @@ const HuntersFindsApp = () => {
           lat: restaurant.latitude,
           lng: restaurant.longitude,
           address: restaurant.address
-        } : null
+        } : null,
+        // Map stored google_data to googleData for popup/UI compatibility
+        googleData: restaurant.google_data || null
       };
     });
     
