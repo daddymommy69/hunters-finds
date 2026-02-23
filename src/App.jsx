@@ -3254,29 +3254,45 @@ const HuntersFindsApp = () => {
       
       if (selectedGooglePlace) {
         // User selected from Google Places - create/update restaurant with full data
-        console.log('Creating restaurant with Google Places data:', selectedGooglePlace);
-        
-        const { data: existingRestaurant } = await supabase
+        const googleData = {
+          name: selectedGooglePlace.name,
+          google_place_id: selectedGooglePlace.place_id,
+          latitude: selectedGooglePlace.geometry?.location?.lat,
+          longitude: selectedGooglePlace.geometry?.location?.lng,
+          address: selectedGooglePlace.formatted_address,
+          google_data: selectedGooglePlace
+        };
+
+        // Try to find by google_place_id first, then by name
+        let { data: existingRestaurant } = await supabase
           .from('restaurants')
-          .select('id')
+          .select('id, latitude')
           .eq('google_place_id', selectedGooglePlace.place_id)
           .maybeSingle();
-        
+
+        if (!existingRestaurant) {
+          // Also check by name in case it was created without a place_id
+          const { data: byName } = await supabase
+            .from('restaurants')
+            .select('id, latitude')
+            .ilike('name', selectedGooglePlace.name.trim())
+            .maybeSingle();
+          existingRestaurant = byName;
+        }
+
         if (existingRestaurant) {
           restaurantId = existingRestaurant.id;
-          console.log('✅ Using existing Google-linked restaurant');
+          // Always update with Google data to fill in any missing fields
+          await supabase
+            .from('restaurants')
+            .update(googleData)
+            .eq('id', restaurantId);
+          console.log('✅ Updated existing restaurant with Google data');
         } else {
           // Create new restaurant with Google data
           const { data: newRestaurant, error: restaurantError } = await supabase
             .from('restaurants')
-            .insert([{
-              name: selectedGooglePlace.name,
-              google_place_id: selectedGooglePlace.place_id,
-              latitude: selectedGooglePlace.geometry.location.lat,
-              longitude: selectedGooglePlace.geometry.location.lng,
-              address: selectedGooglePlace.formatted_address,
-              google_data: selectedGooglePlace
-            }])
+            .insert([googleData])
             .select()
             .single();
           
