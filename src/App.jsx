@@ -2926,7 +2926,15 @@ const HuntersFindsApp = () => {
     
     // Clear existing marker layers
     mapInstance.eachLayer(layer => {
-      if (layer instanceof window.L.Marker || layer instanceof window.L.MarkerClusterGroup) {
+      if (layer instanceof window.L.Marker) {
+        mapInstance.removeLayer(layer);
+      }
+      // Check for marker cluster group safely
+      if (window.L.MarkerClusterGroup && layer instanceof window.L.MarkerClusterGroup) {
+        mapInstance.removeLayer(layer);
+      }
+      // Also check by class name as fallback
+      if (layer.options?.className === 'marker-cluster') {
         mapInstance.removeLayer(layer);
       }
     });
