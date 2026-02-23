@@ -1318,12 +1318,12 @@ const HuntersFindsApp = () => {
       isDatabase: true
     }));
     
-    // Search Google Places API directly
+    // Search Google Places API via Vercel serverless function
     try {
       const location = userLocation || { lat: 37.8044, lng: -122.2712 };
-      const googleUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&location=${location.lat},${location.lng}&radius=5000&key=${GOOGLE_PLACES_API_KEY}`;
+      const apiUrl = `/api/places/search?query=${encodeURIComponent(query)}&lat=${location.lat}&lng=${location.lng}`;
       
-      const response = await fetch(googleUrl);
+      const response = await fetch(apiUrl);
       const data = await response.json();
       
       if (data.status === 'OK' && data.results) {
@@ -1714,10 +1714,10 @@ const HuntersFindsApp = () => {
       
       console.log('🔎 Searching Google Places:', query, 'near', searchLocation);
       
-      // Call Google Places API directly
-      const googleUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&location=${searchLocation.lat},${searchLocation.lng}&radius=5000&key=${GOOGLE_PLACES_API_KEY}`;
+      // Call Vercel serverless function proxy
+      const apiUrl = `/api/places/search?query=${encodeURIComponent(query)}&lat=${searchLocation.lat}&lng=${searchLocation.lng}&radius=5000`;
       
-      const response = await fetch(googleUrl);
+      const response = await fetch(apiUrl);
       
       if (!response.ok) {
         throw new Error('Google Places API request failed');
