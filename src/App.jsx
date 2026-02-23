@@ -6944,10 +6944,32 @@ const HuntersFindsApp = () => {
                 {/* Restaurant & Price Info */}
                 <div className="flex justify-between items-start mb-2">
                   <div className="flex-1">
-                    <p className="text-xs font-medium text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>{selectedDish.restaurantName}</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-medium text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>{selectedDish.restaurantName}</p>
+                      {(() => {
+                        const dishRestaurant = allRestaurants.find(r => r.name === selectedDish.restaurantName);
+                        const address = dishRestaurant?.address || dishRestaurant?.location?.address || dishRestaurant?.googleData?.vicinity || dishRestaurant?.google_data?.vicinity;
+                        return address ? (
+                          <p className="text-[10px] text-gray-400 truncate max-w-[160px]" style={{ fontFamily: '"Courier New", monospace' }}>{address}</p>
+                        ) : null;
+                      })()}
+                    </div>
                     <p className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>${selectedDish.price.toFixed(2)} • {selectedDish.numRatings} ratings</p>
                   </div>
                 </div>
+                {/* Rate this Dish button */}
+                <button
+                  onClick={() => {
+                    setRestaurant(selectedDish.restaurantName);
+                    setDishName(selectedDish.name);
+                    setIsSubmissionModalOpen(true);
+                    handleCloseDish();
+                  }}
+                  className="w-full py-2 bg-[#33a29b] text-white rounded-lg font-bold hover:bg-[#2a8a84] transition text-sm mb-2"
+                  style={{ fontFamily: '"Courier New", monospace' }}
+                >
+                  Rate this Dish
+                </button>
 
                 {/* Overall Score Display - Matching Restaurant Style */}
                 <div className="bg-gradient-to-r from-[#33a29b]/10 to-[#2a8a84]/10 rounded-lg px-3 py-1.5 border border-[#33a29b]/30 mb-2">
@@ -7454,8 +7476,29 @@ const HuntersFindsApp = () => {
                     <p className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
                       {selectedRestaurant.dishCount || 0} dish{selectedRestaurant.dishCount !== 1 ? 'es' : ''} rated
                     </p>
+                    {/* Address - show for all restaurants */}
+                    {(selectedRestaurant.address || selectedRestaurant.location?.address || selectedRestaurant.googleData?.vicinity || selectedRestaurant.google_data?.vicinity) && (
+                      <p className="text-[10px] text-gray-500 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
+                        {selectedRestaurant.address || selectedRestaurant.location?.address || selectedRestaurant.googleData?.vicinity || selectedRestaurant.google_data?.vicinity}
+                      </p>
+                    )}
                   </div>
                 </div>
+                {/* Rate a Dish button for DB restaurants (Google Place ones already have it above) */}
+                {!selectedRestaurant.isGooglePlace && (
+                  <button
+                    onClick={() => {
+                      setRestaurant(selectedRestaurant.name);
+                      setDishName('');
+                      setIsSubmissionModalOpen(true);
+                      setSelectedRestaurant(null);
+                    }}
+                    className="w-full py-2 bg-[#33a29b] text-white rounded-lg font-bold hover:bg-[#2a8a84] transition text-sm mb-2"
+                    style={{ fontFamily: '"Courier New", monospace' }}
+                  >
+                    Rate a Dish Here
+                  </button>
+                )}
 
                 {/* Overall Score Display */}
                 <div className="bg-gradient-to-r from-[#33a29b]/10 to-[#2a8a84]/10 rounded-lg px-3 py-1.5 border border-[#33a29b]/30 mb-2">
