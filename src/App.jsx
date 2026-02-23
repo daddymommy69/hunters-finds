@@ -3353,12 +3353,13 @@ const HuntersFindsApp = () => {
         dishId = existingDishes[0].id;
         console.log('✅ Using existing dish:', dishName);
         
-        // Check if user already rated this dish
+        // Check if user already rated this dish (only active, non-deleted ratings)
         const { data: existingRating } = await supabase
           .from('ratings')
           .select('id')
           .eq('dish_id', dishId)
           .eq('user_id', user.id)
+          .eq('is_deleted', false)
           .maybeSingle();
 
         if (existingRating) {
