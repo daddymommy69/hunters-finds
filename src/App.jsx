@@ -6937,13 +6937,16 @@ const HuntersFindsApp = () => {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            // Use ratingId if available, otherwise look it up
-                            const ratingForDish = selectedDish.ratingId ? null : (
-                              allRatings.find(r => r.dish_id === selectedDish.id && !r.is_deleted && r.user_id === user.id) ||
-                              userRatings.find(r => r.dish_id === selectedDish.id && !r.is_deleted)
-                            );
+                            // Look up the actual rating ID from allRatings or userRatings
+                            const myRating = 
+                              userRatings.find(r => (r.dish_id === selectedDish.id || r.dish?.id === selectedDish.id) && !r.is_deleted) ||
+                              allRatings.find(r => r.dish_id === selectedDish.id && !r.is_deleted && r.user_id === user.id);
+                            const ratingIdToDelete = myRating?.id || selectedDish.ratingId;
+                            if (!ratingIdToDelete) {
+                              console.error('Could not find rating ID to delete for dish:', selectedDish.id);
+                            }
                             handleDeleteRating({
-                              id: selectedDish.ratingId || ratingForDish?.id || selectedDish.id,
+                              id: ratingIdToDelete || selectedDish.id,
                               dish_id: selectedDish.id,
                               dish_name: selectedDish.name,
                               dish: {name: selectedDish.name},
