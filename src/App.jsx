@@ -6947,29 +6947,35 @@ const HuntersFindsApp = () => {
                       
                       {canDeleteRating({user_id: user.id, created_at: selectedDish.created_at || new Date().toISOString()}) && (
                         <button
-                          onClick={(e) => {
+                          onClick={async (e) => {
                             e.stopPropagation();
-                            // Look up the actual rating ID from allRatings or userRatings
-                            const myRating = 
-                              userRatings.find(r => (r.dish_id === selectedDish.id || r.dish?.id === selectedDish.id) && !r.is_deleted) ||
-                              allRatings.find(r => r.dish_id === selectedDish.id && !r.is_deleted && r.user_id === user.id);
-                            const ratingIdToDelete = myRating?.id || selectedDish.ratingId;
-                            if (!ratingIdToDelete) {
-                              console.error('Could not find rating ID to delete for dish:', selectedDish.id);
+                            // Query DB directly for the user's active rating on this dish
+                            const { data: ratingRow } = await supabase
+                              .from('ratings')
+                              .select('id, taste_score, portion_score, price_score, overall_score, comment, created_at')
+                              .eq('dish_id', selectedDish.id)
+                              .eq('user_id', user.id)
+                              .eq('is_deleted', false)
+                              .maybeSingle();
+                            
+                            if (!ratingRow) {
+                              console.error('No active rating found for dish:', selectedDish.name);
+                              return;
                             }
+                            
                             handleDeleteRating({
-                              id: ratingIdToDelete || selectedDish.id,
+                              id: ratingRow.id,
                               dish_id: selectedDish.id,
                               dish_name: selectedDish.name,
                               dish: {name: selectedDish.name},
                               restaurant_name: selectedDish.restaurantName,
                               user_id: user.id,
-                              taste_score: selectedDish.taste,
-                              portion_score: selectedDish.portion,
-                              price_value_score: selectedDish.priceValue,
+                              taste_score: ratingRow.taste_score,
+                              portion_score: ratingRow.portion_score,
+                              price_value_score: ratingRow.price_score,
                               price: selectedDish.price,
-                              comment: selectedDish.comment || '',
-                              created_at: selectedDish.created_at
+                              comment: ratingRow.comment || '',
+                              created_at: ratingRow.created_at
                             });
                             handleCloseDish();
                           }}
