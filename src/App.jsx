@@ -2908,11 +2908,16 @@ const HuntersFindsApp = () => {
     return R * c;
   };
   
-  // Update map when filters change
+  // Update map when filters change - debounced to prevent popup flicker
+  const mapUpdateTimerRef = React.useRef(null);
   React.useEffect(() => {
     if (mapInstance && activeTab === 'map') {
-      updateMapMarkers(allRestaurants);
+      if (mapUpdateTimerRef.current) clearTimeout(mapUpdateTimerRef.current);
+      mapUpdateTimerRef.current = setTimeout(() => {
+        updateMapMarkers(allRestaurants);
+      }, 300);
     }
+    return () => { if (mapUpdateTimerRef.current) clearTimeout(mapUpdateTimerRef.current); };
   }, [mapFilters, mapInstance, activeTab, allRestaurants]);
   
   const updateMapMarkers = (restaurants) => {
