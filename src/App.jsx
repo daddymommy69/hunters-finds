@@ -3120,7 +3120,7 @@ const HuntersFindsApp = () => {
           ` : ''}
           
           <button 
-            onclick="window.openRestaurantFromMap('${restaurant.id}')" 
+            onclick="event.stopPropagation(); window.openRestaurantFromMap('${restaurant.id}')" 
             style="width: 100%; padding: 10px; background: #33a29b; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 8px; font-size: 12px;"
           >
             ${!restaurant.avgSRR ? 'Rate a Dish' : 'View Details'}
@@ -3142,9 +3142,9 @@ const HuntersFindsApp = () => {
       if (restaurant) {
         // Close any open Leaflet popups first
         if (window._mapInstance) window._mapInstance.closePopup();
-        setRestaurantModalJustOpened(true);
+        restaurantModalJustOpenedRef.current = true;
         setSelectedRestaurant(restaurant);
-        setTimeout(() => setRestaurantModalJustOpened(false), 600);
+        setTimeout(() => { restaurantModalJustOpenedRef.current = false; }, 600);
       }
     };
   }
@@ -3910,10 +3910,10 @@ const HuntersFindsApp = () => {
     return R * c; // Distance in miles
   };
 
-  const [restaurantModalJustOpened, setRestaurantModalJustOpened] = React.useState(false);
+  const restaurantModalJustOpenedRef = React.useRef(false);
 
   const handleCloseRestaurant = () => {
-    if (restaurantModalJustOpened) return; // Ignore clicks right after opening
+    if (restaurantModalJustOpenedRef.current) return; // Ignore clicks right after opening
     setIsRestaurantModalClosing(true);
     setTimeout(() => {
       setSelectedRestaurant(null);
@@ -7429,7 +7429,7 @@ const HuntersFindsApp = () => {
             style={{ 
               backdropFilter: 'blur(4px)', 
               WebkitBackdropFilter: 'blur(4px)',
-              pointerEvents: restaurantModalJustOpened ? 'none' : 'auto'
+              pointerEvents: 'auto'
             }} 
           />
           <div className={`fixed inset-0 flex items-center justify-center z-60 p-4 pointer-events-none`}>
