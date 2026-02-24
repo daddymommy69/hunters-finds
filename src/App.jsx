@@ -2913,22 +2913,33 @@ const HuntersFindsApp = () => {
     return R * c;
   };
   
-  // Update map when filters change - skip if a popup is currently open
+  // Update map ONLY when filters, instance, or tab changes - NOT on every allRestaurants change
   const mapUpdateTimerRef = React.useRef(null);
+  const lastMapRestaurantsRef = React.useRef(null);
+  
   React.useEffect(() => {
     if (mapInstance && activeTab === 'map') {
-      // Don't redraw markers if a popup is open - it would close the popup
-      if (mapInstance._popup && mapInstance._popup.isOpen()) return;
-      if (mapUpdateTimerRef.current) clearTimeout(mapUpdateTimerRef.current);
-      mapUpdateTimerRef.current = setTimeout(() => {
-        // Double-check no popup opened during the delay
-        if (!mapInstance._popup || !mapInstance._popup.isOpen()) {
-          updateMapMarkers(allRestaurants);
-        }
-      }, 500);
+      updateMapMarkers(allRestaurants);
+      lastMapRestaurantsRef.current = allRestaurants;
     }
+  }, [mapFilters, mapInstance, activeTab]); // Intentionally excludes allRestaurants
+
+  // Separately handle allRestaurants changes with popup protection
+  React.useEffect(() => {
+    if (!mapInstance || activeTab !== 'map') return;
+    // Skip if restaurants haven't meaningfully changed
+    if (lastMapRestaurantsRef.current === allRestaurants) return;
+    // Don't redraw if a Leaflet popup is open
+    if (mapInstance._popup && mapInstance._popup.isOpen && mapInstance._popup.isOpen()) return;
+    if (mapUpdateTimerRef.current) clearTimeout(mapUpdateTimerRef.current);
+    mapUpdateTimerRef.current = setTimeout(() => {
+      if (!mapInstance._popup || !mapInstance._popup.isOpen || !mapInstance._popup.isOpen()) {
+        updateMapMarkers(allRestaurants);
+        lastMapRestaurantsRef.current = allRestaurants;
+      }
+    }, 1000);
     return () => { if (mapUpdateTimerRef.current) clearTimeout(mapUpdateTimerRef.current); };
-  }, [mapFilters, mapInstance, activeTab, allRestaurants]);
+  }, [allRestaurants]);
   
   const updateMapMarkers = (restaurants) => {
     if (!mapInstance || !window.L) return;
