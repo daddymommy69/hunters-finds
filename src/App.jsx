@@ -882,76 +882,55 @@ const HuntersFindsApp = () => {
     setShowDeleteConfirm(true);
   };
   
-  // CONFIRM DELETE (SOFT DELETE)
+  // CONFIRM DELETE (PERMANENT)
   const confirmDeleteRating = async () => {
     if (!deletingRating || isDeleting) return;
     setIsDeleting(true);
     
     try {
-      console.log('Soft deleting rating...');
-      console.log('Deleting rating object:', deletingRating);
-      
-      // 1. Copy to deleted_ratings table (simplified structure)
-      const { error: insertError } = await supabase
-        .from('deleted_ratings')
-        .insert({
-          original_rating_id: deletingRating.id,
-          user_id: deletingRating.user_id || user.id,
-          dish_id: deletingRating.dish_id || null,
-          dish_name: deletingRating.dish?.name || deletingRating.dish_name,
-          taste_score: deletingRating.taste_score || deletingRating.taste,
-          portion_score: deletingRating.portion_score || deletingRating.portion,
-          price_value_score: deletingRating.price_value_score || deletingRating.priceValue,
-          price: deletingRating.price,
-          comment: deletingRating.comment || '',
-          deleted_by: user.id,
-          deleted_at: new Date().toISOString(),
-          can_restore_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          created_at: deletingRating.created_at || new Date().toISOString()
-        });
-      
-      if (insertError) {
-        console.error('Insert error:', insertError);
-        throw insertError;
-      }
-      
-      console.log('Successfully copied to deleted_ratings');
-      
-      // 2. Mark as deleted in ratings table
-      const { error: updateError } = await supabase
-        .from('ratings')
-        .update({
-          is_deleted: true,
-          deleted_at: new Date().toISOString(),
-          deleted_by: user.id
-        })
-        .eq('id', deletingRating.id);
-      
-      if (updateError) {
-        console.error('Update error:', updateError);
-        throw updateError;
-      }
-      
-      console.log('Rating soft deleted successfully!');
-      
-      // Capture ID before clearing state
+      // Capture before clearing state
       const deletedId = deletingRating.id;
+      const deletedDishName = deletingRating.dish?.name || deletingRating.dish_name;
+      const deletedDishId = deletingRating.dish_id;
+
+      // Permanently delete the rating
+      const { error: deleteError } = await supabase
+        .from('ratings')
+        .delete()
+        .eq('id', deletedId);
+      
+      if (deleteError) {
+        console.error('Delete error:', deleteError);
+        throw deleteError;
+      }
+      
+      console.log('Rating permanently deleted!');
       
       // Close modal and clear state
       setShowDeleteConfirm(false);
       setDeletingRating(null);
       setIsDeleting(false);
       
-      // Immediately remove from state and reload after short delay
+      // Immediately remove from state
       setAllRatings(prev => prev.filter(r => r.id !== deletedId));
       if (refetchData) await refetchData();
       await fetchAllRatings();
       
-      // Show success message
+      // Offer to re-rate
       setErrorModal({
         show: true,
         title: 'Rating Deleted',
-        message: 'Rating moved to trash. Can be restored within 30 days.'
+        message: `Your rating for "${deletedDishName}" has been removed. Want to re-rate it?`,
+        confirmLabel: 'Re-rate now',
+        cancelLabel: 'No thanks',
+        confirmAction: () => {
+          setErrorModal({ show: false });
+          // Pre-fill the rating modal with the dish info
+          setRestaurant('');
+          setDishName(deletedDishName || '');
+          setSelectedGooglePlace(null);
+          setIsSubmissionModalOpen(true);
+        }
       });
       
     } catch (error) {
@@ -3353,7 +3332,7 @@ const HuntersFindsApp = () => {
         dishId = existingDishes[0].id;
         console.log('✅ Using existing dish:', dishName);
         
-        // Check if user already rated this dish (only active, non-deleted ratings)
+        // Check if user already has an ACTIVE (non-deleted) rating for this dish
         const { data: existingRating } = await supabase
           .from('ratings')
           .select('id')
@@ -3363,13 +3342,15 @@ const HuntersFindsApp = () => {
           .maybeSingle();
 
         if (existingRating) {
-          // User already rated this dish - ask if they want to update
+          // User already has an active rating - ask if they want to update
           setErrorModal({
             show: true,
             title: 'Already Rated',
             message: `You already rated "${dishName}". Would you like to update your rating?`,
+            confirmLabel: 'Update rating',
+            cancelLabel: 'Keep old rating',
             confirmAction: async () => {
-              // Update existing rating
+              // Update the existing active rating
               const { error: updateError } = await supabase
                 .from('ratings')
                 .update({
@@ -6529,6 +6510,8 @@ const HuntersFindsApp = () => {
                       value={restaurant} 
                       onChange={(e) => {
                         setRestaurant(e.target.value);
+                        // Clear Google Place link if user manually types
+                        setSelectedGooglePlace(null);
                         if (e.target.value.length >= 3) {
                           searchRestaurantForRating(e.target.value);
                           setShowRestaurantSearch(true);
@@ -8294,7 +8277,7 @@ const HuntersFindsApp = () => {
                       className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-semibold hover:bg-gray-200 transition"
                       style={{ fontFamily: '"Courier New", monospace' }}
                     >
-                      cancel
+                      {errorModal.cancelLabel || 'cancel'}
                     </button>
                     <button
                       onClick={() => {
@@ -8304,7 +8287,7 @@ const HuntersFindsApp = () => {
                       className="flex-1 px-4 py-2 bg-[#33a29b] text-white rounded-lg font-semibold hover:bg-[#2a8a84] transition"
                       style={{ fontFamily: '"Courier New", monospace' }}
                     >
-                      confirm
+                      {errorModal.confirmLabel || 'confirm'}
                     </button>
                   </>
                 ) : (
