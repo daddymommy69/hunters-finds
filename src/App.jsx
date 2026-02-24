@@ -3350,22 +3350,68 @@ const HuntersFindsApp = () => {
           console.log('✅ New Google-linked restaurant created');
         }
       } else {
-        // Manual entry - create simple restaurant without Google data
+        // Manual entry or DB restaurant - try to find existing, then auto-link Google if missing coords
         const { data: existingRestaurant } = await supabase
           .from('restaurants')
-          .select('id')
-          .eq('name', restaurant.trim())
+          .select('id, latitude, longitude, google_place_id')
+          .ilike('name', restaurant.trim())
           .maybeSingle();
         
         if (existingRestaurant) {
           restaurantId = existingRestaurant.id;
-          console.log('✅ Using existing restaurant');
+          
+          // If missing coordinates, try to fetch from Google Places automatically
+          if (!existingRestaurant.latitude || !existingRestaurant.longitude) {
+            console.log('🔍 Restaurant missing coordinates, attempting Google lookup...');
+            try {
+              const loc = userLocation || { lat: 37.8044, lng: -122.2712 };
+              const apiUrl = `/api/places/search?query=${encodeURIComponent(restaurant.trim())}&lat=${loc.lat}&lng=${loc.lng}`;
+              const response = await fetch(apiUrl);
+              const data = await response.json();
+              if (data.status === 'OK' && data.results?.[0]) {
+                const place = data.results[0];
+                await supabase.from('restaurants').update({
+                  google_place_id: place.place_id,
+                  latitude: place.geometry.location.lat,
+                  longitude: place.geometry.location.lng,
+                  address: place.formatted_address || place.vicinity,
+                  google_data: place
+                }).eq('id', existingRestaurant.id);
+                console.log('✅ Auto-linked existing restaurant to Google Places');
+              }
+            } catch (e) {
+              console.log('Could not auto-link to Google Places:', e.message);
+            }
+          } else {
+            console.log('✅ Using existing restaurant with coordinates');
+          }
         } else {
+          // Try Google Places before creating a bare restaurant
+          let newRestaurantData = { name: restaurant.trim() };
+          try {
+            const loc = userLocation || { lat: 37.8044, lng: -122.2712 };
+            const apiUrl = `/api/places/search?query=${encodeURIComponent(restaurant.trim())}&lat=${loc.lat}&lng=${loc.lng}`;
+            const response = await fetch(apiUrl);
+            const data = await response.json();
+            if (data.status === 'OK' && data.results?.[0]) {
+              const place = data.results[0];
+              newRestaurantData = {
+                name: restaurant.trim(),
+                google_place_id: place.place_id,
+                latitude: place.geometry.location.lat,
+                longitude: place.geometry.location.lng,
+                address: place.formatted_address || place.vicinity,
+                google_data: place
+              };
+              console.log('✅ New restaurant auto-linked to Google Places');
+            }
+          } catch (e) {
+            console.log('Could not fetch Google data for new restaurant:', e.message);
+          }
+
           const { data: newRestaurant, error: restaurantError } = await supabase
             .from('restaurants')
-            .insert([{
-              name: restaurant.trim()
-            }])
+            .insert([newRestaurantData])
             .select()
             .single();
           
@@ -3375,7 +3421,7 @@ const HuntersFindsApp = () => {
           }
           
           restaurantId = newRestaurant.id;
-          console.log('✅ New restaurant created (manual entry)');
+          console.log('✅ New restaurant created');
         }
       }
       
