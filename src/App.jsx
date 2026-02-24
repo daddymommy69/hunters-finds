@@ -2913,33 +2913,25 @@ const HuntersFindsApp = () => {
     return R * c;
   };
   
-  // Update map ONLY when filters, instance, or tab changes - NOT on every allRestaurants change
+  // Update map markers - with popup protection to prevent closing open popups
   const mapUpdateTimerRef = React.useRef(null);
-  const lastMapRestaurantsRef = React.useRef(null);
   
   React.useEffect(() => {
-    if (mapInstance && activeTab === 'map') {
-      updateMapMarkers(allRestaurants);
-      lastMapRestaurantsRef.current = allRestaurants;
-    }
-  }, [mapFilters, mapInstance, activeTab]); // Intentionally excludes allRestaurants
-
-  // Separately handle allRestaurants changes with popup protection
-  React.useEffect(() => {
     if (!mapInstance || activeTab !== 'map') return;
-    // Skip if restaurants haven't meaningfully changed
-    if (lastMapRestaurantsRef.current === allRestaurants) return;
-    // Don't redraw if a Leaflet popup is open
+    
+    // If a popup is open, skip this update entirely
     if (mapInstance._popup && mapInstance._popup.isOpen && mapInstance._popup.isOpen()) return;
+    
     if (mapUpdateTimerRef.current) clearTimeout(mapUpdateTimerRef.current);
     mapUpdateTimerRef.current = setTimeout(() => {
+      // Final check before redrawing
       if (!mapInstance._popup || !mapInstance._popup.isOpen || !mapInstance._popup.isOpen()) {
         updateMapMarkers(allRestaurants);
-        lastMapRestaurantsRef.current = allRestaurants;
       }
-    }, 1000);
+    }, 200);
+    
     return () => { if (mapUpdateTimerRef.current) clearTimeout(mapUpdateTimerRef.current); };
-  }, [allRestaurants]);
+  }, [mapFilters, mapInstance, activeTab, allRestaurants]);
   
   const updateMapMarkers = (restaurants) => {
     if (!mapInstance || !window.L) return;
