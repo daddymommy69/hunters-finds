@@ -211,9 +211,14 @@ const HuntersFindsApp = () => {
     }
   }, []);
 
-  // Re-fetch when dishes change
+  // Re-fetch when dish count changes (not on every render)
+  const prevDishCountRef = React.useRef(0);
   React.useEffect(() => {
-    fetchAllRatings();
+    const currentCount = dishes.length;
+    if (currentCount !== prevDishCountRef.current) {
+      prevDishCountRef.current = currentCount;
+      fetchAllRatings();
+    }
   }, [dishes]);
   
   // Fetch user's groups and all public groups
@@ -2908,14 +2913,19 @@ const HuntersFindsApp = () => {
     return R * c;
   };
   
-  // Update map when filters change - debounced to prevent popup flicker
+  // Update map when filters change - skip if a popup is currently open
   const mapUpdateTimerRef = React.useRef(null);
   React.useEffect(() => {
     if (mapInstance && activeTab === 'map') {
+      // Don't redraw markers if a popup is open - it would close the popup
+      if (mapInstance._popup && mapInstance._popup.isOpen()) return;
       if (mapUpdateTimerRef.current) clearTimeout(mapUpdateTimerRef.current);
       mapUpdateTimerRef.current = setTimeout(() => {
-        updateMapMarkers(allRestaurants);
-      }, 300);
+        // Double-check no popup opened during the delay
+        if (!mapInstance._popup || !mapInstance._popup.isOpen()) {
+          updateMapMarkers(allRestaurants);
+        }
+      }, 500);
     }
     return () => { if (mapUpdateTimerRef.current) clearTimeout(mapUpdateTimerRef.current); };
   }, [mapFilters, mapInstance, activeTab, allRestaurants]);
