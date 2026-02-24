@@ -1340,12 +1340,22 @@ const HuntersFindsApp = () => {
     setRestaurantSearchLoading(false);
   };
   
-  const selectGooglePlaceForRating = (place) => {
-    // Normalize lat/lng at selection time
+  // Normalize any Google place object into consistent format with geometry.location.lat/lng
+  const normalizeGooglePlace = (place) => {
+    // Handle flat lat/lng (from searchGooglePlacesAPI)
+    if (place.lat && place.lng && !place.geometry) {
+      return {
+        ...place,
+        geometry: { location: { lat: place.lat, lng: place.lng } },
+        formatted_address: place.formatted_address || place.address,
+      };
+    }
+    // Handle geometry with function-style lat/lng (from Google JS SDK)
     const lat = place.geometry?.location?.lat;
     const lng = place.geometry?.location?.lng;
-    const normalizedPlace = {
+    return {
       ...place,
+      formatted_address: place.formatted_address || place.address,
       geometry: {
         location: {
           lat: typeof lat === 'function' ? lat() : lat,
@@ -1353,6 +1363,10 @@ const HuntersFindsApp = () => {
         }
       }
     };
+  };
+
+  const selectGooglePlaceForRating = (place) => {
+    const normalizedPlace = normalizeGooglePlace(place);
     console.log('✅ Selected Google place:', normalizedPlace.name, 'lat:', normalizedPlace.geometry.location.lat, 'lng:', normalizedPlace.geometry.location.lng);
     setSelectedGooglePlace(normalizedPlace);
     setRestaurant(normalizedPlace.name);
@@ -4511,26 +4525,21 @@ const HuntersFindsApp = () => {
                     <div
                       key={`result-${idx}`}
                       onClick={() => {
-                        if (result.source === 'database') {
-                          // Database item: switch to map and show pin
-                          setActiveTab('map');
-                          setShowSearchDropdown(false);
-                          setSearchQuery('');
-                          // TODO: Zoom map to this location
-                        } else {
-                          // Google Place: open modal with "Rate Now"
-                          setSelectedRestaurant({
-                            id: result.id,
-                            name: result.name,
-                            location: { address: result.address },
-                            cuisine: result.googlePlaceData?.types?.join(', ') || '',
-                            avgSRR: null,
-                            googleData: result.googlePlaceData,
-                            isGooglePlace: true
-                          });
-                          setShowSearchDropdown(false);
-                          setSearchQuery('');
-                        }
+                        // Always open rating modal pre-filled with this restaurant
+                        const placeData = result.googlePlaceData || {
+                          place_id: result.id,
+                          name: result.name,
+                          address: result.address,
+                          lat: result.lat,
+                          lng: result.lng,
+                        };
+                        const normalized = normalizeGooglePlace(placeData);
+                        setSelectedGooglePlace(normalized);
+                        setRestaurant(result.name);
+                        setDishName('');
+                        setIsSubmissionModalOpen(true);
+                        setShowSearchDropdown(false);
+                        setSearchQuery('');
                       }}
                       className="flex items-start gap-3 p-2 hover:bg-gray-50 rounded cursor-pointer transition"
                     >
