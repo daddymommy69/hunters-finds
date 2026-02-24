@@ -1314,15 +1314,22 @@ const HuntersFindsApp = () => {
       const data = await response.json();
       
       if (data.status === 'OK' && data.results) {
-        const googleResults = data.results.slice(0, 5).map(r => ({
-          name: r.name,
-          formatted_address: r.formatted_address || r.vicinity,
-          rating: r.rating,
-          user_ratings_total: r.user_ratings_total,
-          place_id: r.place_id,
-          geometry: r.geometry,
-          isDatabase: false
-        }));
+        const googleResults = data.results.slice(0, 5).map(r => {
+          // Normalize lat/lng — API returns plain numbers, not functions
+          const lat = r.geometry?.location?.lat;
+          const lng = r.geometry?.location?.lng;
+          const latVal = typeof lat === 'function' ? lat() : lat;
+          const lngVal = typeof lng === 'function' ? lng() : lng;
+          return {
+            name: r.name,
+            formatted_address: r.formatted_address || r.vicinity,
+            rating: r.rating,
+            user_ratings_total: r.user_ratings_total,
+            place_id: r.place_id,
+            geometry: latVal && lngVal ? { location: { lat: latVal, lng: lngVal } } : r.geometry,
+            isDatabase: false
+          };
+        });
         results = [...results, ...googleResults];
       }
     } catch (error) {
@@ -1334,11 +1341,23 @@ const HuntersFindsApp = () => {
   };
   
   const selectGooglePlaceForRating = (place) => {
-    setSelectedGooglePlace(place);
-    setRestaurant(place.name);
+    // Normalize lat/lng at selection time
+    const lat = place.geometry?.location?.lat;
+    const lng = place.geometry?.location?.lng;
+    const normalizedPlace = {
+      ...place,
+      geometry: {
+        location: {
+          lat: typeof lat === 'function' ? lat() : lat,
+          lng: typeof lng === 'function' ? lng() : lng,
+        }
+      }
+    };
+    console.log('✅ Selected Google place:', normalizedPlace.name, 'lat:', normalizedPlace.geometry.location.lat, 'lng:', normalizedPlace.geometry.location.lng);
+    setSelectedGooglePlace(normalizedPlace);
+    setRestaurant(normalizedPlace.name);
     setShowRestaurantSearch(false);
     setRestaurantSearchResults([]);
-    console.log('Selected place:', place);
   };
   
   // Friend search state
@@ -3265,8 +3284,12 @@ const HuntersFindsApp = () => {
         const googleData = {
           name: selectedGooglePlace.name,
           google_place_id: selectedGooglePlace.place_id,
-          latitude: selectedGooglePlace.geometry?.location?.lat,
-          longitude: selectedGooglePlace.geometry?.location?.lng,
+          latitude: typeof selectedGooglePlace.geometry?.location?.lat === 'function' 
+            ? selectedGooglePlace.geometry.location.lat() 
+            : selectedGooglePlace.geometry?.location?.lat,
+          longitude: typeof selectedGooglePlace.geometry?.location?.lng === 'function'
+            ? selectedGooglePlace.geometry.location.lng()
+            : selectedGooglePlace.geometry?.location?.lng,
           address: selectedGooglePlace.formatted_address,
           google_data: selectedGooglePlace
         };
