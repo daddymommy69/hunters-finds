@@ -6631,11 +6631,10 @@ const HuntersFindsApp = () => {
       {isSubmissionModalOpen && (
         <>
           <div onClick={handleCloseSubmission} className={`fixed inset-0 bg-black/40 z-50 ${isSubmissionClosing ? 'animate-fade-out' : 'animate-fade-in'}`} />
-          <div className={`fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-2xl shadow-xl flex flex-col ${isSubmissionClosing ? 'animate-slide-down-fade' : 'animate-slide-up-fade'}`} style={{ height: '92vh' }}>
+          <div className={`fixed left-1/2 -translate-x-1/2 z-50 bg-white rounded-2xl shadow-xl flex flex-col ${isSubmissionClosing ? 'animate-slide-down-fade' : 'animate-slide-up-fade'}`} style={{ top: '4%', width: '92%', maxWidth: '600px', height: '92vh' }}>
             <div className="sticky top-0 z-10 bg-white border-b px-4 py-3 flex justify-center items-center relative rounded-t-2xl flex-shrink-0">
-              <div className="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-1 bg-gray-300 rounded-full" />
-              <h2 className="text-lg font-bold text-center mt-2" style={{ fontFamily: '"Courier New", monospace' }}>hunter rater</h2>
-              <button onClick={handleCloseSubmission} className="absolute right-4 top-3"><X size={24} /></button>
+              <h2 className="text-lg font-bold text-center" style={{ fontFamily: '"Courier New", monospace' }}>hunter rater</h2>
+              <button onClick={handleCloseSubmission} className="absolute right-4"><X size={24} /></button>
             </div>
             <div className="overflow-y-auto flex-1 pb-16 p-4" style={{ WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}>
               <div className="max-w-xl mx-auto space-y-3">
