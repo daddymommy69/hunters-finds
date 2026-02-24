@@ -1954,7 +1954,7 @@ const HuntersFindsApp = () => {
     }, 300); // Debounce 300ms
 
     return () => clearTimeout(timeoutId);
-  }, [searchQuery, allDishes, allRestaurants, userLocation, activeTab]);
+  }, [searchQuery, userLocation, activeTab]); // Intentionally excludes allDishes/allRestaurants to prevent infinite search loops
   
   // Friend search function
   const searchFriends = async (query) => {
@@ -6566,7 +6566,7 @@ const HuntersFindsApp = () => {
                         }
                       }}
                       onBlur={() => {
-                        setTimeout(() => setShowRestaurantSearch(false), 200);
+                        setTimeout(() => setShowRestaurantSearch(false), 300);
                       }}
                       placeholder="e.g., taco palace" 
                       className="w-full px-2 py-1.5 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
