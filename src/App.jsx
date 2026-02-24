@@ -1470,7 +1470,7 @@ const HuntersFindsApp = () => {
     if (rankingMode === 'personal' && user && activeUserRatings) {
       // Personal mode: show only user's own non-deleted ratings
       return activeUserRatings.map(rating => {
-        const calculatedSRR = rating.overall_score || Math.round((rating.taste_score + rating.portion_score + rating.price_score) / 3);
+        const calculatedSRR = rating.overall_score ? parseFloat(rating.overall_score.toFixed(2)) : parseFloat(((rating.taste_score + rating.portion_score + rating.price_score) / 3).toFixed(2));
         return {
           id: rating.dish?.id || rating.id,
           name: rating.dish?.name || 'Unknown',
@@ -1508,10 +1508,10 @@ const HuntersFindsApp = () => {
         const totalPrice = dishRatings.reduce((sum, r) => sum + (r.price_score || 0), 0);
         const totalSRR = dishRatings.reduce((sum, r) => sum + (r.overall_score || 0), 0);
         
-        avgTaste = Math.round(totalTaste / dishRatings.length);
-        avgPortion = Math.round(totalPortion / dishRatings.length);
-        avgPrice = Math.round(totalPrice / dishRatings.length);
-        calculatedSRR = totalSRR > 0 ? Math.round(totalSRR / dishRatings.length) : Math.round((avgTaste + avgPortion + avgPrice) / 3);
+        avgTaste = parseFloat((totalTaste / dishRatings.length).toFixed(2));
+        avgPortion = parseFloat((totalPortion / dishRatings.length).toFixed(2));
+        avgPrice = parseFloat((totalPrice / dishRatings.length).toFixed(2));
+        calculatedSRR = totalSRR > 0 ? parseFloat((totalSRR / dishRatings.length).toFixed(2)) : parseFloat(((avgTaste + avgPortion + avgPrice) / 3).toFixed(2));
       }
       
       // Find user's own rating for this dish (for delete/edit)
@@ -1534,7 +1534,8 @@ const HuntersFindsApp = () => {
         edit_count: dish.edit_count,
         edited_at: dish.edited_at
       };
-    }).filter(dish => dish.numRatings > 0); // ✅ FILTER OUT DISHES WITH 0 ACTIVE RATINGS!
+    }).filter(dish => dish.numRatings > 0) // ✅ FILTER OUT DISHES WITH 0 ACTIVE RATINGS!
+     .sort((a, b) => b.srr - a.srr); // Sort highest score first
   };
 
   // Memoize allDishes to prevent re-calculation on every render
@@ -1594,7 +1595,7 @@ const HuntersFindsApp = () => {
         
         // Recalculate average SRR
         const totalSRR = existing.topDishes.reduce((sum, d) => sum + d.srr, 0);
-        existing.avgSRR = Math.round(totalSRR / existing.topDishes.length);
+        existing.avgSRR = parseFloat((totalSRR / existing.topDishes.length).toFixed(2));
       }
     });
     
@@ -3106,13 +3107,13 @@ const HuntersFindsApp = () => {
           ${restaurant.avgSRR ? `
             <div style="background: #f0fdf4; border: 1px solid #86efac; padding: 8px; border-radius: 6px; margin-bottom: 8px;">
               <div style="font-size: 10px; color: #666; text-transform: uppercase; margin-bottom: 6px;">Hunters Finds Rating</div>
-              <div style="font-weight: bold; font-size: 18px; color: #10b981; margin-bottom: 8px;">${restaurant.avgSRR}</div>
+              <div style="font-weight: bold; font-size: 18px; color: #10b981; margin-bottom: 8px;">${typeof restaurant.avgSRR === "number" ? restaurant.avgSRR.toFixed(2) : restaurant.avgSRR}</div>
               ${(restaurant.topDishes && restaurant.topDishes.length > 0) ? `
                 <div style="font-size: 10px; color: #666; text-transform: uppercase; margin-bottom: 4px; border-top: 1px solid #d1fae5; padding-top: 6px;">Top Rated Dishes</div>
                 ${restaurant.topDishes.slice(0, 3).map(dish => `
                   <div style="font-size: 11px; padding: 3px 0; display: flex; justify-content: space-between;">
                     <span>${dish.name}</span>
-                    <span style="font-weight: bold; color: #10b981;">${dish.srr}</span>
+                    <span style="font-weight: bold; color: #10b981;">${typeof dish.srr === "number" ? dish.srr.toFixed(2) : dish.srr}</span>
                   </div>
                 `).join('')}
               ` : ''}
@@ -5263,9 +5264,7 @@ const HuntersFindsApp = () => {
                     />
                   ) : (
                     <div className="space-y-2">
-                      {getFilteredDishes().map((dish, idx) => {
-                        const badge = getTierBadge(dish.srr);
-                        return (
+                      {getFilteredDishes().map((dish, idx) => {                        return (
                           <div key={idx} className="bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition cursor-pointer stagger-item" onClick={() => setSelectedDish(dish)}>
                             <div className="flex items-center gap-3">
                               <div className="w-8 text-center text-lg font-bold text-gray-400">#{idx + 1}</div>
@@ -5287,9 +5286,7 @@ const HuntersFindsApp = () => {
                                     />
                                   );
                                 })}
-                              </div>
-                              <span className={`text-xs px-2 py-1 rounded float-badge ${badge.color}`}>{badge.label}</span>
-                              <div className={`text-2xl font-bold ${getSRRColor(dish.srr)} ${dish.srr >= 90 ? 'score-shine' : ''}`}>{dish.srr}</div>
+                              </div>                              <div className={`text-2xl font-bold ${getSRRColor(dish.srr)} ${dish.srr >= 90 ? 'score-shine' : ''}`}>{typeof dish.srr === "number" ? dish.srr.toFixed(2) : dish.srr}</div>
                               <div className="text-[10px] text-gray-500 text-center mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
                                 {dish.numRatings} rating{dish.numRatings !== 1 ? 's' : ''}
                               </div>
@@ -5304,18 +5301,14 @@ const HuntersFindsApp = () => {
 
               {rankingView === 'restaurants' && (
                 <div className="space-y-2">
-                  {getFilteredRestaurants().sort((a, b) => b.avgSRR - a.avgSRR).map((restaurant, idx) => {
-                    const badge = getTierBadge(restaurant.avgSRR);
-                    return (
+                  {getFilteredRestaurants().sort((a, b) => b.avgSRR - a.avgSRR).map((restaurant, idx) => {                    return (
                       <div key={idx} className="bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition cursor-pointer stagger-item" onClick={() => setSelectedRestaurant(restaurant)}>
                         <div className="flex items-center gap-3">
                           <div className="w-8 text-center text-lg font-bold text-gray-400">#{idx + 1}</div>
                           <div className="flex-1">
                             <div className="font-semibold text-sm">{restaurant.name}</div>
                             <div className="text-xs text-gray-500">{restaurant.cuisine}</div>
-                          </div>
-                          <span className={`text-xs px-2 py-1 rounded float-badge ${badge.color}`}>{badge.label}</span>
-                          <div className={`text-2xl font-bold ${getSRRColor(restaurant.avgSRR)} ${restaurant.avgSRR >= 90 ? 'score-shine' : ''}`}>{restaurant.avgSRR}</div>
+                          </div>                          <div className={`text-2xl font-bold ${getSRRColor(restaurant.avgSRR)} ${restaurant.avgSRR >= 90 ? 'score-shine' : ''}`}>{typeof restaurant.avgSRR === "number" ? restaurant.avgSRR.toFixed(2) : restaurant.avgSRR}</div>
                         </div>
                       </div>
                     );
@@ -5401,9 +5394,7 @@ const HuntersFindsApp = () => {
                     return (
                       <div className="space-y-3">
                         <h2 className="text-lg font-bold mb-4" style={{ fontFamily: '"Courier New", monospace' }}>dishes you might like</h2>
-                        {recommendations.map((dish, idx) => {
-                          const badge = getTierBadge(dish.srr);
-                          return (
+                        {recommendations.map((dish, idx) => {                          return (
                             <div 
                               key={dish.id}
                               onClick={() => setSelectedDish(dish)}
@@ -5416,10 +5407,8 @@ const HuntersFindsApp = () => {
                                   <p className="text-xs text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
                                     {dish.restaurantName} • {dish.cuisine} • ${dish.price?.toFixed(2)}
                                   </p>
-                                </div>
-                                <span className={`text-xs px-2 py-1 rounded ${badge.color}`}>{badge.label}</span>
-                                <div className={`text-2xl font-bold ${getSRRColor(dish.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>
-                                  {dish.srr}
+                                </div>                                <div className={`text-2xl font-bold ${getSRRColor(dish.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>
+                                  {typeof dish.srr === "number" ? dish.srr.toFixed(2) : dish.srr}
                                 </div>
                                 <button 
                                   onClick={(e) => {
@@ -5763,7 +5752,7 @@ const HuntersFindsApp = () => {
                           <div className="text-sm font-medium">#{idx + 1} {dish.name}</div>
                           <div className="text-xs text-gray-500">{dish.restaurantName}</div>
                         </div>
-                        <div className={`text-lg font-bold ${getSRRColor(dish.srr)}`}>{dish.srr}</div>
+                        <div className={`text-lg font-bold ${getSRRColor(dish.srr)}`}>{typeof dish.srr === "number" ? dish.srr.toFixed(2) : dish.srr}</div>
                       </div>
                     ))}
                   </div>
@@ -5796,7 +5785,7 @@ const HuntersFindsApp = () => {
                             </div>
                             <div className="text-xs text-gray-400 mt-1" style={{ fontFamily: '"Courier New", monospace' }}>rated 2 days ago</div>
                           </div>
-                          <div className={`text-2xl font-bold ${getSRRColor(dish.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{dish.srr}</div>
+                          <div className={`text-2xl font-bold ${getSRRColor(dish.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{typeof dish.srr === "number" ? dish.srr.toFixed(2) : dish.srr}</div>
                         </div>
                       </div>
                       
@@ -7051,7 +7040,7 @@ const HuntersFindsApp = () => {
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="text-[8px] text-gray-600 uppercase" style={{ fontFamily: '"Courier New", monospace' }}>Overall Score</div>
-                      <div className={`text-2xl font-bold leading-none ${getSRRColor(overallSRR)}`} style={{ fontFamily: '"Courier New", monospace' }}>{overallSRR}</div>
+                      <div className={`text-2xl font-bold leading-none ${getSRRColor(overallSRR)}`} style={{ fontFamily: '"Courier New", monospace' }}>{typeof overallSRR === "number" ? overallSRR.toFixed(2) : overallSRR}</div>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <button
@@ -7434,7 +7423,7 @@ const HuntersFindsApp = () => {
                         <div className="text-sm font-medium" style={{ fontFamily: '"Courier New", monospace' }}>#{idx + 1} {dish.name}</div>
                         <div className="text-xs text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>{dish.restaurantName}</div>
                       </div>
-                      <div className={`text-lg font-bold ${getSRRColor(dish.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{dish.srr}</div>
+                      <div className={`text-lg font-bold ${getSRRColor(dish.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{typeof dish.srr === "number" ? dish.srr.toFixed(2) : dish.srr}</div>
                     </div>
                   ))}
                 </div>
@@ -7684,7 +7673,7 @@ const HuntersFindsApp = () => {
                                   </div>
                                 </div>
                                 <div className={`text-xl font-bold ${getSRRColor(dish.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>
-                                  {dish.srr}
+                                  {typeof dish.srr === "number" ? dish.srr.toFixed(2) : dish.srr}
                                 </div>
                               </div>
                             </div>
@@ -7922,7 +7911,7 @@ const HuntersFindsApp = () => {
                             <div className="text-sm font-medium" style={{ fontFamily: '"Courier New", monospace' }}>#{idx + 1} {dish.name}</div>
                             <div className="text-xs text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>{dish.restaurantName}</div>
                           </div>
-                          <div className={`text-lg font-bold ${getSRRColor(dish.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{dish.srr}</div>
+                          <div className={`text-lg font-bold ${getSRRColor(dish.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{typeof dish.srr === "number" ? dish.srr.toFixed(2) : dish.srr}</div>
                         </div>
                       ))}
                     </div>
@@ -8131,7 +8120,7 @@ const HuntersFindsApp = () => {
                                   <div className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>{dish.name}</div>
                                   <div className="text-xs text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>{dish.restaurant}</div>
                                 </div>
-                                <div className={`text-2xl font-bold ${getSRRColor(dish.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{dish.srr}</div>
+                                <div className={`text-2xl font-bold ${getSRRColor(dish.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{typeof dish.srr === "number" ? dish.srr.toFixed(2) : dish.srr}</div>
                               </div>
                             </div>
                           );
@@ -8212,7 +8201,7 @@ const HuntersFindsApp = () => {
                       </div>
                     </div>
                     <div className={`text-base font-bold ${getSRRColor(submittedRating.ranking.topRanked.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>
-                      {submittedRating.ranking.topRanked.srr}
+                      {typeof submittedRating.ranking.topRanked.srr === "number" ? submittedRating.ranking.topRanked.srr.toFixed(2) : submittedRating.ranking.topRanked.srr}
                     </div>
                   </div>
                 </div>
@@ -8226,7 +8215,7 @@ const HuntersFindsApp = () => {
                         <div className="text-xs font-semibold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>{submittedRating.ranking.aboveItem.name}</div>
                       </div>
                       <div className="text-xs font-bold text-gray-600" style={{ fontFamily: '"Courier New", monospace' }}>
-                        #{submittedRating.ranking.rank - 1} · {submittedRating.ranking.aboveItem.srr}
+                        #{submittedRating.ranking.rank - 1} · {typeof submittedRating.ranking.aboveItem.srr === "number" ? submittedRating.ranking.aboveItem.srr.toFixed(2) : submittedRating.ranking.aboveItem.srr}
                       </div>
                     </div>
                   </div>
@@ -8241,7 +8230,7 @@ const HuntersFindsApp = () => {
                         <div className="text-xs font-semibold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>{submittedRating.ranking.belowItem.name}</div>
                       </div>
                       <div className="text-xs font-bold text-gray-600" style={{ fontFamily: '"Courier New", monospace' }}>
-                        #{submittedRating.ranking.rank + 1} · {submittedRating.ranking.belowItem.srr}
+                        #{submittedRating.ranking.rank + 1} · {typeof submittedRating.ranking.belowItem.srr === "number" ? submittedRating.ranking.belowItem.srr.toFixed(2) : submittedRating.ranking.belowItem.srr}
                       </div>
                     </div>
                   </div>
