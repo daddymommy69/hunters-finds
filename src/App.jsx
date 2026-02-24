@@ -4204,6 +4204,20 @@ const HuntersFindsApp = () => {
           transform: scale(1.1);
         }
 
+        /* Smaller slider thumb on mobile */
+        @media (max-width: 768px) {
+          input[type="range"]::-webkit-slider-thumb {
+            width: 16px;
+            height: 16px;
+            border-width: 2px;
+          }
+          input[type="range"]::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            border-width: 2px;
+          }
+        }
+
         /* PHASE 1 ANIMATIONS - Quick Wins */
         
         /* Enhanced button micro-interactions with scale and shadow */
@@ -6631,16 +6645,17 @@ const HuntersFindsApp = () => {
       {isSubmissionModalOpen && (
         <>
           <div onClick={handleCloseSubmission} className={`fixed inset-0 bg-black/40 z-50 ${isSubmissionClosing ? 'animate-fade-out' : 'animate-fade-in'}`} />
-          <div className={`fixed left-1/2 -translate-x-1/2 z-50 bg-white rounded-2xl shadow-xl flex flex-col ${isSubmissionClosing ? 'animate-slide-down-fade' : 'animate-slide-up-fade'}`} style={{ top: '4%', width: '92%', maxWidth: '600px', height: '92vh' }}>
-            <div className="sticky top-0 z-10 bg-white border-b px-4 py-3 flex justify-center items-center relative rounded-t-2xl flex-shrink-0">
-              <h2 className="text-lg font-bold text-center" style={{ fontFamily: '"Courier New", monospace' }}>hunter rater</h2>
-              <button onClick={handleCloseSubmission} className="absolute right-4"><X size={24} /></button>
+          <div className={`fixed z-50 bg-white shadow-xl flex flex-col ${isSubmissionClosing ? 'animate-slide-down-fade' : 'animate-slide-up-fade'} md:left-1/2 md:-translate-x-1/2 md:rounded-2xl md:top-[4%] md:w-[92%] md:max-w-[600px] md:h-[92vh] left-0 right-0 bottom-0 rounded-t-2xl h-[94vh]`}>
+            <div className="sticky top-0 z-10 bg-white border-b px-3 py-2 flex justify-center items-center relative rounded-t-2xl flex-shrink-0">
+              <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-8 h-1 bg-gray-300 rounded-full md:hidden" />
+              <h2 className="text-sm font-bold text-center mt-1 md:mt-0 md:text-lg" style={{ fontFamily: '"Courier New", monospace' }}>hunter rater</h2>
+              <button onClick={handleCloseSubmission} className="absolute right-3"><X size={20} /></button>
             </div>
-            <div className="overflow-y-auto flex-1 pb-16 p-4" style={{ WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}>
-              <div className="max-w-xl mx-auto space-y-3">
-                <div className="grid grid-cols-2 gap-3">
+            <div className="overflow-y-auto flex-1 pb-16 px-3 pt-2" style={{ WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}>
+              <div className="max-w-xl mx-auto space-y-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   <div className="relative">
-                    <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>restaurant</label>
+                    <label className="block text-[10px] font-semibold text-gray-700 mb-0.5" style={{ fontFamily: '"Courier New", monospace' }}>restaurant</label>
                     <input 
                       type="text" 
                       value={restaurant} 
@@ -6737,19 +6752,19 @@ const HuntersFindsApp = () => {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>food</label>
+                    <label className="block text-[10px] font-semibold text-gray-700 mb-0.5" style={{ fontFamily: '"Courier New", monospace' }}>food</label>
                     <input 
                       type="text" 
                       value={dishName} 
                       onChange={(e) => setDishName(e.target.value)} 
                       placeholder="e.g., carne asada tacos" 
-                      className="w-full px-2 py-1.5 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
+                      className="w-full px-2 py-1 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
                       style={{ fontFamily: '"Courier New", monospace' }}
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-2">
                   <div className="relative">
                     <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>category</label>
                     <input
@@ -6800,14 +6815,14 @@ const HuntersFindsApp = () => {
                   </div>
                 </div>
 
-                <div className="border-t-2 border-gray-100 pt-3 mt-3">
-                  <h3 className="text-sm font-semibold text-gray-800 mb-3" style={{ fontFamily: '"Courier New", monospace' }}>rating scores</h3>
+                <div className="border-t border-gray-100 pt-2 mt-1">
+                  <h3 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-2" style={{ fontFamily: '"Courier New", monospace' }}>rating scores</h3>
 
                   {/* Taste Slider */}
-                  <div className="mb-3">
-                    <div className="flex justify-between items-center mb-1">
-                      <label className="text-xs font-semibold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>taste</label>
-                      <span className="text-sm font-bold text-orange-600" style={{ fontFamily: '"Courier New", monospace' }}>{tasteScore}</span>
+                  <div className="mb-2">
+                    <div className="flex justify-between items-center mb-0.5">
+                      <label className="text-[10px] font-semibold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>taste</label>
+                      <span className="text-xs font-bold text-orange-600" style={{ fontFamily: '"Courier New", monospace' }}>{tasteScore}</span>
                     </div>
                     <input 
                       type="range" 
@@ -6815,19 +6830,22 @@ const HuntersFindsApp = () => {
                       max="100" 
                       value={tasteScore} 
                       onChange={(e) => setTasteScore(parseInt(e.target.value))} 
-                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      className="w-full appearance-none cursor-pointer"
                       style={{
-                        background: `linear-gradient(to right, #fb923c 0%, #fb923c ${tasteScore}%, #e5e7eb ${tasteScore}%, #e5e7eb 100%)`
+                        height: '4px',
+                        borderRadius: '2px',
+                        background: `linear-gradient(to right, #fb923c 0%, #fb923c ${tasteScore}%, #e5e7eb ${tasteScore}%, #e5e7eb 100%)`,
+                        WebkitAppearance: 'none',
                       }}
                     />
                   </div>
 
                   {/* Price Value Display */}
-                  <div className="bg-green-50 border-2 border-green-200 rounded-lg p-2 mb-3">
-                    <div className="flex justify-between items-center mb-1">
-                      <label className="text-xs font-semibold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>price value (auto)</label>
+                  <div className="bg-green-50 border border-green-200 rounded-lg px-2 py-1.5 mb-2">
+                    <div className="flex justify-between items-center mb-0.5">
+                      <label className="text-[10px] font-semibold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>price value (auto)</label>
                       <div className="text-right">
-                        <span className="text-sm font-bold text-green-600" style={{ fontFamily: '"Courier New", monospace' }}>{priceScore}</span>
+                        <span className="text-xs font-bold text-green-600" style={{ fontFamily: '"Courier New", monospace' }}>{priceScore}</span>
                         {price && dishName && dishCategory && (() => {
                           const priceNum = parseFloat(price);
                           if (!isNaN(priceNum) && priceNum > 0) {
@@ -6841,16 +6859,16 @@ const HuntersFindsApp = () => {
                         })()}
                       </div>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div className="bg-green-500 h-2 rounded-full transition-all" style={{ width: `${priceScore}%` }}></div>
+                    <div className="w-full bg-gray-200 rounded-full" style={{ height: '4px' }}>
+                      <div className="bg-green-500 rounded-full transition-all" style={{ width: `${priceScore}%`, height: '4px' }}></div>
                     </div>
                   </div>
 
                   {/* Portion Slider */}
-                  <div className="mb-3">
-                    <div className="flex justify-between items-center mb-1">
-                      <label className="text-xs font-semibold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>portion</label>
-                      <span className="text-sm font-bold text-blue-600" style={{ fontFamily: '"Courier New", monospace' }}>{portionScore}</span>
+                  <div className="mb-2">
+                    <div className="flex justify-between items-center mb-0.5">
+                      <label className="text-[10px] font-semibold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>portion</label>
+                      <span className="text-xs font-bold text-blue-600" style={{ fontFamily: '"Courier New", monospace' }}>{portionScore}</span>
                     </div>
                     <input 
                       type="range" 
@@ -6858,9 +6876,12 @@ const HuntersFindsApp = () => {
                       max="100" 
                       value={portionScore} 
                       onChange={(e) => setPortionScore(parseInt(e.target.value))} 
-                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      className="w-full appearance-none cursor-pointer"
                       style={{
-                        background: `linear-gradient(to right, #60a5fa 0%, #60a5fa ${portionScore}%, #e5e7eb ${portionScore}%, #e5e7eb 100%)`
+                        height: '4px',
+                        borderRadius: '2px',
+                        background: `linear-gradient(to right, #60a5fa 0%, #60a5fa ${portionScore}%, #e5e7eb ${portionScore}%, #e5e7eb 100%)`,
+                        WebkitAppearance: 'none',
                       }}
                     />
                   </div>
