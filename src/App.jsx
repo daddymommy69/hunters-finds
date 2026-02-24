@@ -340,6 +340,7 @@ const HuntersFindsApp = () => {
     localStorage.setItem('activeTab', activeTab);
   }, [activeTab]);
   const [selectedDish, setSelectedDish] = useState(null);
+  const [userHasRatedDish, setUserHasRatedDish] = useState(false);
   const [dishModalView, setDishModalView] = useState('scores'); // 'scores', 'photos', 'comments'
   const [restaurantModalView, setRestaurantModalView] = useState('scores'); // 'scores', 'photos', 'comments'
   const [rankingView, setRankingView] = useState(() => {
@@ -751,11 +752,11 @@ const HuntersFindsApp = () => {
     // Moderator can delete any rating
     if (userRole === 'moderator') return true;
     
-    // User can delete own rating within 1 hour
+    // User can delete own rating within 24 hours
     if (rating.user_id === user?.id) {
-      const oneHourAgo = Date.now() - (60 * 60 * 1000);
+      const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
       const ratingTime = new Date(rating.created_at).getTime();
-      return ratingTime > oneHourAgo;
+      return ratingTime > twentyFourHoursAgo;
     }
     
     return false;
@@ -3930,6 +3931,20 @@ const HuntersFindsApp = () => {
 
   const restaurantModalJustOpenedRef = React.useRef(false);
 
+  // Check if current user has rated the selected dish
+  React.useEffect(() => {
+    if (!selectedDish || !user) { setUserHasRatedDish(false); return; }
+    if (userRole === 'admin' || userRole === 'moderator') { setUserHasRatedDish(true); return; }
+    supabase
+      .from('ratings')
+      .select('id')
+      .eq('dish_id', selectedDish.id)
+      .eq('user_id', user.id)
+      .eq('is_deleted', false)
+      .maybeSingle()
+      .then(({ data }) => setUserHasRatedDish(!!data));
+  }, [selectedDish, user]);
+
   const handleCloseRestaurant = () => {
     if (restaurantModalJustOpenedRef.current) return; // Ignore clicks right after opening
     setIsRestaurantModalClosing(true);
@@ -6945,18 +6960,24 @@ const HuntersFindsApp = () => {
                         Edit
                       </button>
                       
-                      {canDeleteRating({user_id: user.id, created_at: selectedDish.created_at || new Date().toISOString()}) && (
+                      {userHasRatedDish && (
                         <button
                           onClick={async (e) => {
                             e.stopPropagation();
-                            // Query DB directly for the user's active rating on this dish
-                            const { data: ratingRow } = await supabase
+                            // Query DB directly for the rating to delete
+                            // Admins/mods can delete any rating; regular users only their own
+                            let ratingQuery = supabase
                               .from('ratings')
-                              .select('id, taste_score, portion_score, price_score, overall_score, comment, created_at')
+                              .select('id, taste_score, portion_score, price_score, overall_score, comment, created_at, user_id')
                               .eq('dish_id', selectedDish.id)
-                              .eq('user_id', user.id)
-                              .eq('is_deleted', false)
-                              .maybeSingle();
+                              .eq('is_deleted', false);
+                            
+                            // Regular users can only delete their own
+                            if (userRole !== 'admin' && userRole !== 'moderator') {
+                              ratingQuery = ratingQuery.eq('user_id', user.id);
+                            }
+                            
+                            const { data: ratingRow } = await ratingQuery.maybeSingle();
                             
                             if (!ratingRow) {
                               console.error('No active rating found for dish:', selectedDish.name);
