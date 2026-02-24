@@ -6631,7 +6631,7 @@ const HuntersFindsApp = () => {
       {isSubmissionModalOpen && (
         <>
           <div onClick={handleCloseSubmission} className={`fixed inset-0 bg-black/40 z-50 ${isSubmissionClosing ? 'animate-fade-out' : 'animate-fade-in'}`} />
-          <div className={`fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-2xl shadow-xl flex flex-col ${isSubmissionClosing ? 'animate-slide-down-fade' : 'animate-slide-up-fade'}`} style={{ height: '92vh', maxWidth: '1000px', margin: '0 auto' }}>
+          <div className={`fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-2xl shadow-xl flex flex-col ${isSubmissionClosing ? 'animate-slide-down-fade' : 'animate-slide-up-fade'}`} style={{ height: '92vh' }}>
             <div className="sticky top-0 z-10 bg-white border-b px-4 py-3 flex justify-center items-center relative rounded-t-2xl flex-shrink-0">
               <div className="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-1 bg-gray-300 rounded-full" />
               <h2 className="text-lg font-bold text-center mt-2" style={{ fontFamily: '"Courier New", monospace' }}>hunter rater</h2>
