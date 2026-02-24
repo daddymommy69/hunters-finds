@@ -3140,7 +3140,11 @@ const HuntersFindsApp = () => {
     window.openRestaurantFromMap = (restaurantId) => {
       const restaurant = allRestaurants.find(r => r.id === restaurantId);
       if (restaurant) {
+        // Close any open Leaflet popups first
+        if (window._mapInstance) window._mapInstance.closePopup();
+        setRestaurantModalJustOpened(true);
         setSelectedRestaurant(restaurant);
+        setTimeout(() => setRestaurantModalJustOpened(false), 600);
       }
     };
   }
@@ -3906,7 +3910,10 @@ const HuntersFindsApp = () => {
     return R * c; // Distance in miles
   };
 
+  const [restaurantModalJustOpened, setRestaurantModalJustOpened] = React.useState(false);
+
   const handleCloseRestaurant = () => {
+    if (restaurantModalJustOpened) return; // Ignore clicks right after opening
     setIsRestaurantModalClosing(true);
     setTimeout(() => {
       setSelectedRestaurant(null);
@@ -4598,6 +4605,7 @@ const HuntersFindsApp = () => {
                           }).addTo(map);
 
                           setMapInstance(map);
+                          window._mapInstance = map; // Store globally for popup close
                           
                           // Initial load: show nearby restaurants
                           const initialRestaurants = allRestaurants.filter(r => 
@@ -7415,7 +7423,15 @@ const HuntersFindsApp = () => {
       {/* Restaurant Detail Modal - Optimized Compact View */}
       {selectedRestaurant && (
         <>
-          <div onClick={handleCloseRestaurant} className={`fixed inset-0 bg-black/40 z-60 ${isRestaurantModalClosing ? 'animate-fade-out' : 'animate-fade-in'}`} style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }} />
+          <div 
+            onClick={handleCloseRestaurant} 
+            className={`fixed inset-0 bg-black/40 z-60 ${isRestaurantModalClosing ? 'animate-fade-out' : 'animate-fade-in'}`} 
+            style={{ 
+              backdropFilter: 'blur(4px)', 
+              WebkitBackdropFilter: 'blur(4px)',
+              pointerEvents: restaurantModalJustOpened ? 'none' : 'auto'
+            }} 
+          />
           <div className={`fixed inset-0 flex items-center justify-center z-60 p-4 pointer-events-none`}>
             <div className={`bg-white rounded-xl max-w-lg w-full overflow-y-auto pointer-events-auto ${isRestaurantModalClosing ? 'animate-slide-down-fade-simple' : 'animate-slide-up-fade-simple'}`} style={{ maxHeight: '32vh' }}>
               {/* Compact Header */}
