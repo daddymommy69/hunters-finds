@@ -6645,7 +6645,7 @@ const HuntersFindsApp = () => {
       {isSubmissionModalOpen && (
         <>
           <div onClick={handleCloseSubmission} className={`fixed inset-0 bg-black/40 z-50 ${isSubmissionClosing ? 'animate-fade-out' : 'animate-fade-in'}`} />
-          <div className={`fixed z-[45] bg-white shadow-xl flex flex-col ${isSubmissionClosing ? 'animate-slide-down-fade' : 'animate-slide-up-fade'} md:left-1/2 md:-translate-x-1/2 md:rounded-2xl md:top-[4%] md:w-[92%] md:max-w-[600px] md:h-[88vh] md:bottom-auto left-0 right-0 rounded-t-2xl`} style={{ bottom: '64px', maxHeight: 'calc(100vh - 64px - env(safe-area-inset-top, 0px))' }}>
+          <div className={`fixed z-[45] bg-white shadow-xl flex flex-col ${isSubmissionClosing ? 'animate-slide-down-fade' : 'animate-slide-up-fade'} md:left-1/2 md:-translate-x-1/2 md:rounded-2xl md:top-[4%] md:w-[92%] md:max-w-[600px] md:bottom-auto left-0 right-0 rounded-t-2xl`} style={{ bottom: '64px', top: '140px', maxHeight: 'calc(100vh - 140px - 64px)' }}>
             <div className="sticky top-0 z-10 bg-white border-b px-3 py-2 flex justify-center items-center relative rounded-t-2xl flex-shrink-0">
               <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-8 h-1 bg-gray-300 rounded-full md:hidden" />
               <h2 className="text-sm font-bold text-center mt-1 md:mt-0 md:text-lg" style={{ fontFamily: '"Courier New", monospace' }}>hunter rater</h2>
