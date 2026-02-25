@@ -425,6 +425,10 @@ const HuntersFindsApp = () => {
   const [dishCategory, setDishCategory] = useState('');
   const [categoryInput, setCategoryInput] = useState('');
   const [showCategorySuggestions, setShowCategorySuggestions] = useState(false);
+  const categoryDropdownRef = React.useRef(null);
+  const [categoryShowAll, setCategoryShowAll] = useState(false);
+  const [categoryConfirmNew, setCategoryConfirmNew] = useState(null); // string to confirm adding
+  const [categoryLocked, setCategoryLocked] = useState(false); // true once a valid category is selected
   const [price, setPrice] = useState('');
   const [tasteScore, setTasteScore] = useState(50);
   const [portionScore, setPortionScore] = useState(50);
@@ -3452,9 +3456,46 @@ const HuntersFindsApp = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showSearchDropdown]);
   
-  const categorySuggestions = Object.keys(categoryAverages || {}).filter(cat =>
-    cat.toLowerCase().includes(categoryInput.toLowerCase())
-  );
+  // Close category dropdown when clicking outside
+  React.useEffect(() => {
+    if (!showCategorySuggestions) return;
+    const handleClickOutside = (event) => {
+      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(event.target)) {
+        setShowCategorySuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showCategorySuggestions]);
+
+  // Build dynamic category list from all dishes + ratings, lowercase, deduped, with usage counts
+  const allCategoriesWithCount = React.useMemo(() => {
+    const counts = {};
+    allDishes.forEach(d => {
+      const cat = (d.cuisine || d.category || '').toLowerCase().trim();
+      if (cat) counts[cat] = (counts[cat] || 0) + 1;
+    });
+    allRatings.forEach(r => {
+      const cat = (r.dish?.cuisine_type || r.dish?.category || r.category || '').toLowerCase().trim();
+      if (cat) counts[cat] = (counts[cat] || 0) + 1;
+    });
+    return Object.entries(counts)
+      .map(([cat, count]) => ({ cat, count }))
+      .sort((a, b) => b.count - a.count); // most used first by default
+  }, [allDishes, allRatings]);
+
+  const categorySuggestions = React.useMemo(() => {
+    const query = categoryInput.toLowerCase().trim();
+    let list = query
+      ? [...allCategoriesWithCount].sort((a, b) => a.cat.localeCompare(b.cat)) // alphabetical when typing
+          .filter(({ cat }) => cat.includes(query))
+      : allCategoriesWithCount; // most used when empty
+    return list;
+  }, [allCategoriesWithCount, categoryInput]);
+
+  const CATEGORY_INITIAL_SHOW = 6;
+  const visibleCategories = categoryShowAll ? categorySuggestions : categorySuggestions.slice(0, CATEGORY_INITIAL_SHOW);
+  const hasMoreCategories = categorySuggestions.length > CATEGORY_INITIAL_SHOW;
 
   const handleCloseResults = () => {
     setIsResultsClosing(true);
@@ -3465,6 +3506,9 @@ const HuntersFindsApp = () => {
       setDishName('');
       setDishCategory('');
       setCategoryInput('');
+      setCategoryShowAll(false);
+      setCategoryConfirmNew(null);
+      setCategoryLocked(false);
       setPrice('');
       setTasteScore(50);
       setPortionScore(50);
@@ -7333,34 +7377,113 @@ const HuntersFindsApp = () => {
 
                 <div className="grid grid-cols-2 gap-2">
                   <div className="relative">
-                    <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>category</label>
-                    <input
-                      type="text"
-                      value={categoryInput}
-                      onChange={(e) => {
-                        const inputValue = e.target.value;
-                        setCategoryInput(inputValue);
-                        setShowCategorySuggestions(true);
-                        // ALWAYS accept category (existing or new) - no restrictions!
-                        setDishCategory(inputValue.toLowerCase().trim());
-                      }}
-                      onFocus={() => setShowCategorySuggestions(true)}
-                      placeholder="start typing..."
-                      className="w-full px-2 py-1.5 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
-                      style={{ fontFamily: '"Courier New", monospace' }}
-                    />
-                    {showCategorySuggestions && categoryInput && categorySuggestions.length > 0 && (
-                      <div className="absolute z-10 w-full mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
-                        {categorySuggestions.map((category) => (
-                          <div 
-                            key={category} 
-                            onClick={() => handleCategorySelect(category)} 
-                            className="px-2 py-1.5 hover:bg-orange-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                    <label className="block text-[10px] font-semibold text-gray-700 mb-0.5" style={{ fontFamily: '"Courier New", monospace' }}>category</label>
+
+                    {/* Confirm new category prompt */}
+                    {categoryConfirmNew && (
+                      <div className="absolute z-20 w-full mt-0 bg-white border-2 border-[#33a29b] rounded-lg shadow-lg p-2" style={{ top: '100%' }}>
+                        <p className="text-xs text-gray-700 mb-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                          add <span className="font-bold text-[#33a29b]">"{categoryConfirmNew}"</span> as a new category?
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              setDishCategory(categoryConfirmNew);
+                              setCategoryInput(categoryConfirmNew);
+                              setCategoryLocked(true);
+                              setCategoryConfirmNew(null);
+                              setShowCategorySuggestions(false);
+                            }}
+                            className="flex-1 py-1 bg-[#33a29b] text-white text-xs rounded-lg font-bold"
+                            style={{ fontFamily: '"Courier New", monospace' }}
+                          >yes, add it</button>
+                          <button
+                            onClick={() => setCategoryConfirmNew(null)}
+                            className="flex-1 py-1 bg-gray-100 text-gray-600 text-xs rounded-lg font-bold"
+                            style={{ fontFamily: '"Courier New", monospace' }}
+                          >cancel</button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={categoryInput}
+                        onChange={(e) => {
+                          const val = e.target.value.toLowerCase();
+                          setCategoryInput(val);
+                          setCategoryLocked(false);
+                          setDishCategory(''); // require explicit selection
+                          setShowCategorySuggestions(true);
+                          setCategoryShowAll(false);
+                          setCategoryConfirmNew(null);
+                        }}
+                        onFocus={() => { setShowCategorySuggestions(true); setCategoryShowAll(false); setCategoryConfirmNew(null); }}
+                        onBlur={() => setTimeout(() => setShowCategorySuggestions(false), 150)}
+                        placeholder="start typing or pick below..."
+                        className={`w-full px-2 py-1.5 text-xs border-2 rounded-lg focus:outline-none ${categoryLocked ? 'border-[#33a29b] bg-[#33a29b]/5' : 'border-gray-200 focus:border-[#33a29b]'}`}
+                        style={{ fontFamily: '"Courier New", monospace' }}
+                        readOnly={categoryLocked}
+                      />
+                      {categoryLocked && (
+                        <button
+                          onClick={() => { setCategoryLocked(false); setCategoryInput(''); setDishCategory(''); setShowCategorySuggestions(true); }}
+                          className="absolute right-2 top-1.5 text-gray-400 hover:text-gray-600"
+                        >
+                          <X size={12} />
+                        </button>
+                      )}
+                    </div>
+
+                    {showCategorySuggestions && !categoryLocked && (
+                      <div ref={categoryDropdownRef} className="absolute z-10 w-full mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-lg">
+                        {visibleCategories.length === 0 && !categoryInput && (
+                          <div className="px-2 py-2 text-[10px] text-gray-400 italic" style={{ fontFamily: '"Courier New", monospace' }}>no categories yet</div>
+                        )}
+                        {visibleCategories.map(({ cat, count }) => (
+                          <div
+                            key={cat}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              setCategoryInput(cat);
+                              setDishCategory(cat);
+                              setCategoryLocked(true);
+                              setShowCategorySuggestions(false);
+                              setCategoryShowAll(false);
+                            }}
+                            className="px-2 py-1.5 hover:bg-[#33a29b]/10 cursor-pointer border-b border-gray-100 flex justify-between items-center"
                           >
-                            <div className="font-medium text-xs text-gray-800" style={{ fontFamily: '"Courier New", monospace' }}>{category}</div>
-                            <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>avg: ${categoryAverages[category]}</div>
+                            <span className="text-xs font-medium text-gray-800" style={{ fontFamily: '"Courier New", monospace' }}>{cat}</span>
+                            <span className="text-[10px] text-gray-400 ml-2 flex-shrink-0" style={{ fontFamily: '"Courier New", monospace' }}>{count} {count === 1 ? 'dish' : 'dishes'}</span>
                           </div>
                         ))}
+
+                        {/* Show more / collapse */}
+                        {hasMoreCategories && (
+                          <button
+                            onMouseDown={(e) => { e.preventDefault(); setCategoryShowAll(v => !v); }}
+                            className="w-full px-2 py-1.5 text-[10px] text-[#33a29b] font-semibold hover:bg-gray-50 border-b border-gray-100 text-left"
+                            style={{ fontFamily: '"Courier New", monospace' }}
+                          >
+                            {categoryShowAll ? '▲ show less' : `▼ find more (${categorySuggestions.length - CATEGORY_INITIAL_SHOW} more)`}
+                          </button>
+                        )}
+
+                        {/* Add new — only show if typed something not in list */}
+                        {categoryInput && !categorySuggestions.some(({ cat }) => cat === categoryInput.trim()) && (
+                          <button
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              setCategoryConfirmNew(categoryInput.trim());
+                              setShowCategorySuggestions(false);
+                            }}
+                            className="w-full px-2 py-1.5 text-[10px] text-gray-500 hover:bg-gray-50 text-left flex items-center gap-1"
+                            style={{ fontFamily: '"Courier New", monospace' }}
+                          >
+                            <span className="text-[#33a29b] font-bold">+ add new:</span> "{categoryInput.trim()}"
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
