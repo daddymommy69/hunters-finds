@@ -2010,7 +2010,7 @@ const HuntersFindsApp = () => {
   
   // Fetch all users for explore/people tab
   React.useEffect(() => {
-    if (activeTab !== 'explore' || exploreView !== 'people') return;
+    if (activeTab !== 'explore' || (exploreView !== 'people' && exploreView !== 'activity')) return;
     const fetchAllUsers = async () => {
       setAllUsersLoading(true);
       try {
@@ -2318,12 +2318,23 @@ const HuntersFindsApp = () => {
     const followingIdSet = new Set(userFollows.map(f => f.id));
     const groupMemberIds = new Set(); // could expand later
 
+    // Build user_id -> username lookup from allUsers + current user
+    const userNameMap = {};
+    allUsers.forEach(u => { userNameMap[u.id] = u.username || u.email?.split('@')[0] || 'user'; });
+    if (user) userNameMap[user.id] = user.user_metadata?.username || user.email?.split('@')[0] || 'you';
+
     // Ratings as activity items
     allRatings.filter(r => !r.is_deleted).forEach(r => {
-      const username = r.username || r.user_metadata?.username || 'user';
+      const username = userNameMap[r.user_id] || r.username || 'user';
       const isOwn = user && r.user_id === user.id;
       const isFollowing = followingIdSet.has(r.user_id);
       const isGroup = r.group_id != null;
+      // Compute srr from raw scores since allRatings doesn't have srr pre-computed
+      const computedSrr = r.overall_score
+        ? parseFloat(r.overall_score.toFixed(2))
+        : (r.taste_score != null && r.portion_score != null && r.price_score != null)
+          ? parseFloat(((r.taste_score + r.portion_score + r.price_score) / 3).toFixed(2))
+          : null;
       items.push({
         id: `rating-${r.id}`,
         rating_id: r.id,
@@ -2335,7 +2346,7 @@ const HuntersFindsApp = () => {
         content: {
           dish_name: r.dish?.name || r.dish_name,
           restaurant_name: r.dish?.restaurant_name || r.restaurant_name,
-          score: r.srr,
+          score: computedSrr,
           comment: r.comment,
         },
         created_at: r.created_at,
@@ -5742,7 +5753,12 @@ const HuntersFindsApp = () => {
                   if (!dishScoreMap[r.dish_id]) {
                     dishScoreMap[r.dish_id] = { scores: [], rating: r };
                   }
-                  dishScoreMap[r.dish_id].scores.push(r.srr || 0);
+                  const computedSrr = r.overall_score
+                    ? parseFloat(r.overall_score)
+                    : (r.taste_score != null && r.portion_score != null && r.price_score != null)
+                      ? (r.taste_score + r.portion_score + r.price_score) / 3
+                      : null;
+                  if (computedSrr != null) dishScoreMap[r.dish_id].scores.push(computedSrr);
                 });
 
                 const communityDishes = Object.entries(dishScoreMap).map(([dishId, val]) => {
@@ -5761,7 +5777,12 @@ const HuntersFindsApp = () => {
                 const friendDishMap = {};
                 friendRatings.forEach(r => {
                   if (!friendDishMap[r.dish_id]) friendDishMap[r.dish_id] = { scores: [], rating: r };
-                  friendDishMap[r.dish_id].scores.push(r.srr || 0);
+                  const computedSrr = r.overall_score
+                    ? parseFloat(r.overall_score)
+                    : (r.taste_score != null && r.portion_score != null && r.price_score != null)
+                      ? (r.taste_score + r.portion_score + r.price_score) / 3
+                      : null;
+                  if (computedSrr != null) friendDishMap[r.dish_id].scores.push(computedSrr);
                 });
                 const recommendedDishes = Object.entries(friendDishMap).map(([dishId, val]) => {
                   const avg = val.scores.reduce((a, b) => a + b, 0) / val.scores.length;
