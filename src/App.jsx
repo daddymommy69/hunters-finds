@@ -6645,13 +6645,12 @@ const HuntersFindsApp = () => {
       {isSubmissionModalOpen && (
         <>
           <>
-              <div onClick={handleCloseSubmission} className={`fixed z-[46] bg-black/40 ${isSubmissionClosing ? 'animate-fade-out' : 'animate-fade-in'}`}
-                style={{ top: '290px', bottom: '64px', left: 0, right: 0 }} />
+              <div onClick={handleCloseSubmission} className={`fixed inset-0 z-[46] bg-black/40 ${isSubmissionClosing ? 'animate-fade-out' : 'animate-fade-in'}`} />
               <div className={`fixed z-[47] bg-white shadow-xl flex flex-col ${isSubmissionClosing ? 'animate-slide-down-fade' : 'animate-slide-up-fade'}`}
                 style={{
-                  top: '290px',
+                  top: '200px',
                   bottom: '64px',
-                  maxHeight: 'calc(100vh - 290px - 64px)',
+                  maxHeight: 'calc(100vh - 200px - 64px)',
                   ...(window.innerWidth >= 768
                     ? { left: '50%', transform: 'translateX(-50%)', width: '92%', maxWidth: '600px', borderRadius: '1rem' }
                     : { left: 0, right: 0, borderRadius: '1rem 1rem 0 0' }
