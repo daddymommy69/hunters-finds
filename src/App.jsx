@@ -6644,16 +6644,11 @@ const HuntersFindsApp = () => {
       {/* Submission Modal */}
       {isSubmissionModalOpen && (
         <>
-          {(() => {
-            const isMobile = window.innerWidth < 768;
-            return <>
+          <>
               <div onClick={handleCloseSubmission} className={`fixed z-[46] bg-black/40 ${isSubmissionClosing ? 'animate-fade-out' : 'animate-fade-in'}`}
-                style={isMobile ? { top: '290px', bottom: '64px', left: 0, right: 0 } : { inset: 0 }} />
-              <div className={`fixed z-[47] bg-white shadow-xl flex flex-col rounded-t-2xl ${isSubmissionClosing ? 'animate-slide-down-fade' : 'animate-slide-up-fade'}`}
-                style={isMobile
-                  ? { top: '290px', bottom: '64px', left: 0, right: 0, maxHeight: 'calc(100vh - 290px - 64px)' }
-                  : { top: '4%', left: '50%', transform: 'translateX(-50%)', width: '92%', maxWidth: '600px', height: '88vh', borderRadius: '1rem' }
-                }>
+                style={{ top: '290px', bottom: '64px', left: 0, right: 0 }} />
+              <div className={`fixed z-[47] bg-white shadow-xl flex flex-col ${isSubmissionClosing ? 'animate-slide-down-fade' : 'animate-slide-up-fade'} md:left-1/2 md:-translate-x-1/2 md:w-[92%] md:max-w-[600px] md:rounded-2xl`}
+                style={{ top: '290px', bottom: '64px', left: 0, right: 0, maxHeight: 'calc(100vh - 290px - 64px)', borderRadius: '1rem 1rem 0 0' }}>
             <div className="sticky top-0 z-10 bg-white border-b px-3 py-2 flex justify-center items-center relative rounded-t-2xl flex-shrink-0">
               <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-8 h-1 bg-gray-300 rounded-full md:hidden" />
               <h2 className="text-sm font-bold text-center mt-1 md:mt-0 md:text-lg" style={{ fontFamily: '"Courier New", monospace' }}>hunter rater</h2>
@@ -7013,8 +7008,7 @@ const HuntersFindsApp = () => {
               </div>
             </div>
           </div>
-            </>;
-          })()}
+          </>
         </>
       )}
 
