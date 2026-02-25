@@ -6649,19 +6649,19 @@ const HuntersFindsApp = () => {
               <div className={`fixed z-[47] bg-white shadow-xl flex flex-col ${isSubmissionClosing ? 'animate-slide-down-fade' : 'animate-slide-up-fade'}`}
                 style={{
                   top: '200px',
-                  bottom: '80px',
                   left: '50%',
                   transform: 'translateX(-50%)',
                   width: 'min(92vw, 600px)',
                   borderRadius: '1rem',
                   maxHeight: 'calc(100vh - 200px - 80px)',
+                  overflowY: 'auto',
                 }}>
             <div className="sticky top-0 z-10 bg-white border-b px-3 py-2 flex justify-center items-center relative rounded-t-2xl flex-shrink-0">
               <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-8 h-1 bg-gray-300 rounded-full md:hidden" />
               <h2 className="text-sm font-bold text-center mt-1 md:mt-0 md:text-lg" style={{ fontFamily: '"Courier New", monospace' }}>hunter rater</h2>
               <button onClick={handleCloseSubmission} className="absolute right-3"><X size={20} /></button>
             </div>
-            <div className="overflow-y-auto flex-1 pb-16 px-3 pt-2" style={{ WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}>
+            <div className="overflow-y-auto pb-4 px-3 pt-2" style={{ WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}>
               <div className="max-w-xl mx-auto space-y-2">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   <div className="relative">
