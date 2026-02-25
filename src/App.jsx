@@ -2558,14 +2558,15 @@ const HuntersFindsApp = () => {
     try {
       const { data, error } = await supabase
         .from('rating_likes')
-        .select('rating_id, user_id, users:user_id(username)')
+        .select('rating_id, user_id')
         .in('rating_id', ratingIds);
       if (error) throw error;
       const likesMap = {};
       (data || []).forEach(like => {
         if (!likesMap[like.rating_id]) likesMap[like.rating_id] = { count: 0, likedByMe: false, users: [] };
         likesMap[like.rating_id].count++;
-        likesMap[like.rating_id].users.push(like.users?.username || 'user');
+        const likeUser = allUsers.find(u => u.id === like.user_id);
+        likesMap[like.rating_id].users.push(likeUser?.username || (user && like.user_id === user.id ? (user.user_metadata?.username || user.email?.split('@')[0]) : 'user'));
         if (user && like.user_id === user.id) likesMap[like.rating_id].likedByMe = true;
       });
       setRatingLikes(prev => ({ ...prev, ...likesMap }));
@@ -2585,14 +2586,14 @@ const HuntersFindsApp = () => {
     try {
       const { data, error } = await supabase
         .from('rating_comments')
-        .select(`*, author:users!rating_comments_user_id_fkey(id, username, email)`)
+        .select('*')
         .eq('rating_id', ratingId)
         .order('created_at', { ascending: true });
       if (error) throw error;
-      const enriched = (data || []).map(c => ({
-        ...c,
-        username: c.author?.username || c.author?.email?.split('@')[0] || 'user',
-      }));
+      const enriched = (data || []).map(c => {
+        const u = allUsers.find(u => u.id === c.user_id);
+        return { ...c, username: u?.username || u?.email?.split('@')[0] || (user && c.user_id === user.id ? (user.user_metadata?.username || user.email?.split('@')[0]) : 'user') };
+      });
       setRatingComments(prev => ({ ...prev, [ratingId]: { comments: enriched, loading: false, loaded: true } }));
       // Fetch comment likes
       if (enriched.length > 0) {
@@ -2625,14 +2626,14 @@ const HuntersFindsApp = () => {
       if (dishRatingIds.length === 0) { setDishComments([]); setDishCommentsLoading(false); return; }
       const { data, error } = await supabase
         .from('rating_comments')
-        .select(`*, author:users!rating_comments_user_id_fkey(id, username, email)`)
+        .select('*')
         .in('rating_id', dishRatingIds)
         .order('created_at', { ascending: true });
       if (error) throw error;
-      const enriched = (data || []).map(c => ({
-        ...c,
-        username: c.author?.username || c.author?.email?.split('@')[0] || 'user',
-      }));
+      const enriched = (data || []).map(c => {
+        const u = allUsers.find(u => u.id === c.user_id);
+        return { ...c, username: u?.username || u?.email?.split('@')[0] || (user && c.user_id === user.id ? (user.user_metadata?.username || user.email?.split('@')[0]) : 'user') };
+      });
       setDishComments(enriched);
       // Also update ratingComments cache
       dishRatingIds.forEach(rid => {
@@ -2696,10 +2697,10 @@ const HuntersFindsApp = () => {
           parent_id: reply?.commentId || null,
           content: text,
         })
-        .select(`*, author:users!rating_comments_user_id_fkey(id, username, email)`)
+        .select('*')
         .single();
       if (error) throw error;
-      const inserted = { ...data, username: data.author?.username || data.author?.email?.split('@')[0] || myUsername };
+      const inserted = { ...data, username: myUsername };
       // Replace optimistic with real
       setRatingComments(prev => ({
         ...prev,
