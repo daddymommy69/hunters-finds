@@ -194,7 +194,8 @@ const HuntersFindsApp = () => {
         .from('ratings')
         .select(`
           *,
-          dish:dishes(*)
+          dish:dishes(*),
+          rater:users!ratings_user_id_fkey(id, username, email)
         `)
         .eq('is_deleted', false)
         .order('created_at', { ascending: false });
@@ -202,7 +203,12 @@ const HuntersFindsApp = () => {
       if (error) {
         console.error('❌ Error fetching all ratings:', error);
       } else {
-        setAllRatings(data || []);
+        // Attach username directly to each rating for easy access
+        const enriched = (data || []).map(r => ({
+          ...r,
+          username: r.rater?.username || r.rater?.email?.split('@')[0] || null,
+        }));
+        setAllRatings(enriched);
       }
     } catch (error) {
       console.error('❌ Error fetching all ratings:', error);
@@ -2318,14 +2324,9 @@ const HuntersFindsApp = () => {
     const followingIdSet = new Set(userFollows.map(f => f.id));
     const groupMemberIds = new Set(); // could expand later
 
-    // Build user_id -> username lookup from allUsers + current user
-    const userNameMap = {};
-    allUsers.forEach(u => { userNameMap[u.id] = u.username || u.email?.split('@')[0] || 'user'; });
-    if (user) userNameMap[user.id] = user.user_metadata?.username || user.email?.split('@')[0] || 'you';
-
     // Ratings as activity items
     allRatings.filter(r => !r.is_deleted).forEach(r => {
-      const username = userNameMap[r.user_id] || r.username || 'user';
+      const username = r.username || (user && r.user_id === user.id ? (user.user_metadata?.username || user.email?.split('@')[0]) : null) || 'user';
       const isOwn = user && r.user_id === user.id;
       const isFollowing = followingIdSet.has(r.user_id);
       const isGroup = r.group_id != null;
