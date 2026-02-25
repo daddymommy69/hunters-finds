@@ -6649,12 +6649,12 @@ const HuntersFindsApp = () => {
               <div className={`fixed z-[47] bg-white shadow-xl flex flex-col ${isSubmissionClosing ? 'animate-slide-down-fade' : 'animate-slide-up-fade'}`}
                 style={{
                   top: '200px',
-                  bottom: '64px',
-                  maxHeight: 'calc(100vh - 200px - 64px)',
-                  ...(window.innerWidth >= 768
-                    ? { left: '50%', transform: 'translateX(-50%)', width: '92%', maxWidth: '600px', borderRadius: '1rem' }
-                    : { left: 0, right: 0, borderRadius: '1rem 1rem 0 0' }
-                  )
+                  bottom: '80px',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  width: 'min(92vw, 600px)',
+                  borderRadius: '1rem',
+                  maxHeight: 'calc(100vh - 200px - 80px)',
                 }}>
             <div className="sticky top-0 z-10 bg-white border-b px-3 py-2 flex justify-center items-center relative rounded-t-2xl flex-shrink-0">
               <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-8 h-1 bg-gray-300 rounded-full md:hidden" />
