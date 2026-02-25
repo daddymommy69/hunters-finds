@@ -3505,7 +3505,7 @@ const HuntersFindsApp = () => {
     }
 
     // Calculate final SRR score
-    const finalSRR = Math.round((tasteScore + priceScore + portionScore) / 3);
+    const finalSRR = parseFloat(((tasteScore + priceScore + portionScore) / 3).toFixed(2));
 
     const rating = {
       restaurant,
