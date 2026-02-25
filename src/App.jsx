@@ -1391,6 +1391,10 @@ const HuntersFindsApp = () => {
   const [suggestedFriends, setSuggestedFriends] = useState([]);
   const [activityFeed, setActivityFeed] = useState([]);
   const [activityFilter, setActivityFilter] = useState('all');
+  const [youActivityFilter, setYouActivityFilter] = useState('all'); // all | ratings | following | groups | likes
+  const [globalActivityFeed, setGlobalActivityFeed] = useState([]);
+  const [globalActivityLoading, setGlobalActivityLoading] = useState(false);
+  const [exploreActivityNearMe, setExploreActivityNearMe] = useState(false);
   const [userFollowers, setUserFollowers] = useState([]);
   const [ratingLikes, setRatingLikes] = useState({});
   const [selectedRatingDetail, setSelectedRatingDetail] = useState(null);
@@ -2307,6 +2311,73 @@ const HuntersFindsApp = () => {
     }
   };
   
+  // Build global activity feed from allRatings + follows data
+  const buildGlobalActivityFeed = React.useCallback(() => {
+    const items = [];
+    const myUsername = user?.user_metadata?.username || user?.email?.split('@')[0] || '';
+    const followingIdSet = new Set(userFollows.map(f => f.id));
+    const groupMemberIds = new Set(); // could expand later
+
+    // Ratings as activity items
+    allRatings.filter(r => !r.is_deleted).forEach(r => {
+      const username = r.username || r.user_metadata?.username || 'user';
+      const isOwn = user && r.user_id === user.id;
+      const isFollowing = followingIdSet.has(r.user_id);
+      const isGroup = r.group_id != null;
+      items.push({
+        id: `rating-${r.id}`,
+        rating_id: r.id,
+        activity_type: isGroup ? 'group_rating' : 'rating',
+        username,
+        user_id: r.user_id,
+        isOwn,
+        isFollowing,
+        content: {
+          dish_name: r.dish?.name || r.dish_name,
+          restaurant_name: r.dish?.restaurant_name || r.restaurant_name,
+          score: r.srr,
+          comment: r.comment,
+        },
+        created_at: r.created_at,
+        _rawRating: r,
+      });
+    });
+
+    // Popularity score: (likes*1 + comments*2) / decay
+    const scored = items.map(item => {
+      const likes = ratingLikes[item.rating_id] || { count: 0 };
+      const hoursAgo = (Date.now() - new Date(item.created_at)) / 3600000;
+      const popularity = (likes.count + 0) / Math.pow(hoursAgo / 24 + 1, 1.5);
+      return { ...item, popularity, hoursAgo };
+    });
+
+    // Sort: blend recency + popularity (70% recency, 30% popularity)
+    scored.sort((a, b) => {
+      const aScore = (1 / (a.hoursAgo + 1)) * 0.7 + a.popularity * 0.3;
+      const bScore = (1 / (b.hoursAgo + 1)) * 0.7 + b.popularity * 0.3;
+      return bScore - aScore;
+    });
+
+    return scored;
+  }, [allRatings, userFollows, ratingLikes, user]);
+
+  // Fetch activity for explore global feed
+  React.useEffect(() => {
+    if (activeTab === 'explore' && exploreView === 'activity') {
+      setGlobalActivityLoading(true);
+      const feed = buildGlobalActivityFeed();
+      setGlobalActivityFeed(feed);
+      const ratingIds = feed.filter(a => a.rating_id).map(a => a.rating_id);
+      if (ratingIds.length > 0) fetchLikesForRatings(ratingIds);
+      setGlobalActivityLoading(false);
+    }
+  }, [activeTab, exploreView, allRatings, userFollows, ratingLikes]);
+
+  // Refresh you activity feed without filter dropdown
+  React.useEffect(() => {
+    if (user && youView === 'activity') fetchActivityFeed();
+  }, [user, youView]);
+
   // Fetch followers (people who follow current user)
   const fetchUserFollowers = async () => {
     if (!user) return;
@@ -2453,12 +2524,7 @@ const HuntersFindsApp = () => {
     }
   }, [user, youView]);
   
-  // Fetch activity feed when on activity tab + fetch likes for visible ratings
-  React.useEffect(() => {
-    if (user && youView === 'activity') {
-      fetchActivityFeed();
-    }
-  }, [user, youView, activityFilter]);
+  // activityFilter kept for RPC compat (unused in UI now)
 
   // Fetch likes when activity feed loads
   React.useEffect(() => {
@@ -5641,6 +5707,7 @@ const HuntersFindsApp = () => {
             <div className="bg-white border-b px-4 py-2 flex gap-2 items-center justify-between">
               <div className="flex gap-2">
                 <button onClick={() => setExploreView('for-you')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${exploreView === 'for-you' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} style={{ fontFamily: '"Courier New", monospace' }}>for you</button>
+                <button onClick={() => setExploreView('activity')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${exploreView === 'activity' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} style={{ fontFamily: '"Courier New", monospace' }}>activity</button>
                 <button onClick={() => setExploreView('people')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${exploreView === 'people' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} style={{ fontFamily: '"Courier New", monospace' }}>people</button>
                 <button onClick={() => setExploreView('groups')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${exploreView === 'groups' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} style={{ fontFamily: '"Courier New", monospace' }}>groups</button>
               </div>
@@ -5769,6 +5836,133 @@ const HuntersFindsApp = () => {
                       </div>
                     )}
                   </>
+                );
+              })()}
+
+              {/* ACTIVITY TAB - global feed */}
+              {exploreView === 'activity' && (() => {
+                // Color + icon config per type
+                const activityStyle = (item) => {
+                  if (item.isOwn) return { bg: 'bg-green-50', dot: 'bg-green-400', label: 'you' };
+                  if (item.activity_type === 'group_rating' || item.activity_type === 'group_join') return { bg: 'bg-[#33a29b]/5', dot: 'bg-[#33a29b]', label: 'group' };
+                  if (item.activity_type === 'follow') return { bg: 'bg-red-50', dot: 'bg-red-300', label: 'follow' };
+                  if (item.activity_type === 'like') return { bg: 'bg-pink-50', dot: 'bg-pink-400', label: 'like' };
+                  if (item.activity_type === 'new_user') return { bg: 'bg-gray-50', dot: 'bg-gray-300', label: 'new' };
+                  if (item.isFollowing) return { bg: 'bg-yellow-50', dot: 'bg-yellow-400', label: 'following' };
+                  return { bg: 'bg-white', dot: 'bg-gray-200', label: '' };
+                };
+
+                const feed = exploreActivityNearMe
+                  ? globalActivityFeed.filter(item => {
+                      const r = item._rawRating;
+                      if (!userLocation || !r) return false;
+                      const lat = r.dish?.latitude || r.latitude;
+                      const lng = r.dish?.longitude || r.longitude;
+                      if (!lat || !lng) return false;
+                      const dist = Math.sqrt(Math.pow(lat - userLocation.lat, 2) + Math.pow(lng - userLocation.lng, 2)) * 111;
+                      return dist < 25;
+                    })
+                  : globalActivityFeed;
+
+                return (
+                  <div className="space-y-2">
+                    {/* Near me toggle */}
+                    <div className="flex justify-end mb-1">
+                      <button
+                        onClick={() => setExploreActivityNearMe(v => !v)}
+                        className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition ${exploreActivityNearMe ? 'bg-[#33a29b] text-white' : 'bg-gray-100 text-gray-600'}`}
+                        style={{ fontFamily: '"Courier New", monospace' }}
+                      >
+                        <MapPin size={11} />
+                        {exploreActivityNearMe ? 'near me' : 'everywhere'}
+                      </button>
+                    </div>
+
+                    {/* Color legend */}
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {[
+                        { color: 'bg-green-400', label: 'you' },
+                        { color: 'bg-yellow-400', label: 'following' },
+                        { color: 'bg-[#33a29b]', label: 'groups' },
+                        { color: 'bg-red-300', label: 'follow' },
+                        { color: 'bg-pink-400', label: 'like' },
+                        { color: 'bg-gray-300', label: 'new user' },
+                      ].map(({ color, label }) => (
+                        <div key={label} className="flex items-center gap-1">
+                          <div className={`w-2 h-2 rounded-full ${color}`} />
+                          <span className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>{label}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {globalActivityLoading ? (
+                      <LoadingSpinner />
+                    ) : feed.length === 0 ? (
+                      <EmptyState icon={Activity} title="no activity yet" message="Be the first to rate something!" actionText="rate now" onAction={() => setIsSubmissionModalOpen(true)} />
+                    ) : (
+                      feed.map(item => {
+                        const style = activityStyle(item);
+                        const likes = ratingLikes[item.rating_id] || { count: 0, likedByMe: false, users: [] };
+                        return (
+                          <div
+                            key={item.id}
+                            className={`${style.bg} rounded-xl p-3 shadow-sm cursor-pointer hover:shadow-md transition border border-transparent`}
+                            onClick={() => {
+                              if (item.activity_type === 'rating' || item.activity_type === 'group_rating') {
+                                const dish = allDishes.find(d => d.id === item._rawRating?.dish_id);
+                                if (dish) setSelectedDish(dish);
+                              }
+                            }}
+                          >
+                            <div className="flex items-start gap-3">
+                              <div className="relative flex-shrink-0">
+                                <div className="w-8 h-8 rounded-full bg-white border flex items-center justify-center text-xs font-bold text-gray-600">
+                                  {(item.username || '?')[0].toUpperCase()}
+                                </div>
+                                <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border border-white ${style.dot}`} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>
+                                  @{item.username}
+                                </div>
+                                <div className="text-xs text-gray-600 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
+                                  {(item.activity_type === 'rating' || item.activity_type === 'group_rating') && (
+                                    <span>rated <span className="font-semibold">{item.content.dish_name}</span> {item.content.score != null && <span className={`font-bold ${getSRRColor(item.content.score)}`}>({typeof item.content.score === 'number' ? item.content.score.toFixed(1) : item.content.score})</span>}</span>
+                                  )}
+                                  {item.activity_type === 'follow' && `followed @${item.content.following_username}`}
+                                  {item.activity_type === 'new_user' && 'joined hunters finds'}
+                                  {item.activity_type === 'like' && `liked a rating`}
+                                </div>
+                                {item.content?.comment && (
+                                  <div className="text-[10px] text-gray-500 mt-0.5 italic truncate" style={{ fontFamily: '"Courier New", monospace' }}>"{item.content.comment}"</div>
+                                )}
+                                <div className="text-[10px] text-gray-400 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
+                                  {(() => {
+                                    const h = Math.floor(item.hoursAgo);
+                                    if (h < 1) return 'just now';
+                                    if (h < 24) return `${h}h ago`;
+                                    return `${Math.floor(h / 24)}d ago`;
+                                  })()}
+                                </div>
+                              </div>
+                              {(item.activity_type === 'rating' || item.activity_type === 'group_rating') && item.rating_id && (
+                                <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
+                                  <button onClick={(e) => handleToggleLike(item.rating_id, e)} className={`transition ${likes.likedByMe ? 'text-red-500' : 'text-gray-300 hover:text-red-400'}`}>
+                                    <Heart size={15} className={likes.likedByMe ? 'fill-current' : ''} />
+                                  </button>
+                                  {likes.count > 0 && (
+                                    <button onClick={(e) => { e.stopPropagation(); setLikesModalRatingId(item.rating_id); }} className="text-[10px] text-gray-500 hover:text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>
+                                      {likes.count}
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
                 );
               })()}
 
@@ -6609,76 +6803,97 @@ const HuntersFindsApp = () => {
 
                             {youView === 'activity' && (
                 <div className="space-y-3">
-                  <div className="flex justify-between items-center mb-4">
+                  <div className="flex justify-between items-center mb-2">
                     <h2 className="text-lg font-bold" style={{ fontFamily: '"Courier New", monospace' }}>activity feed</h2>
-                    <select 
-                      value={activityFilter}
-                      onChange={(e) => setActivityFilter(e.target.value)}
-                      className="text-xs border-2 border-gray-200 rounded-lg px-2 py-1"
-                      style={{ fontFamily: '"Courier New", monospace' }}
-                    >
-                      <option value="all">all activity</option>
-                      <option value="rating">ratings</option>
-                      <option value="group_join">groups</option>
-                      <option value="follow">follows</option>
-                    </select>
                   </div>
-                  
-                  {user ? (
-                    activityFeed.length > 0 ? (
+
+                  {/* Filter buttons */}
+                  <div className="flex gap-1.5 flex-wrap mb-3">
+                    {[
+                      { key: 'all', label: 'all' },
+                      { key: 'ratings', label: 'ratings' },
+                      { key: 'following', label: 'following' },
+                      { key: 'groups', label: 'groups' },
+                      { key: 'likes', label: 'likes' },
+                    ].map(({ key, label }) => (
+                      <button
+                        key={key}
+                        onClick={() => setYouActivityFilter(key)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${youActivityFilter === key ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                        style={{ fontFamily: '"Courier New", monospace' }}
+                      >{label}</button>
+                    ))}
+                  </div>
+
+                  {user ? (() => {
+                    // Build personal feed from allRatings + activityFeed RPC data
+                    const followingIdSet = new Set(userFollows.map(f => f.id));
+                    
+                    // Filter activityFeed based on youActivityFilter
+                    let filtered = activityFeed;
+                    if (youActivityFilter === 'ratings') filtered = activityFeed.filter(a => a.activity_type === 'rating');
+                    else if (youActivityFilter === 'following') filtered = activityFeed.filter(a => followingIdSet.has(a.user_id) && a.activity_type === 'rating');
+                    else if (youActivityFilter === 'groups') filtered = activityFeed.filter(a => a.activity_type === 'group_join' || a.activity_type === 'group_rating');
+                    else if (youActivityFilter === 'likes') filtered = activityFeed.filter(a => a.activity_type === 'like');
+
+                    const getCardStyle = (activity) => {
+                      const isOwn = user && activity.user_id === user.id;
+                      const isFollowingUser = followingIdSet.has(activity.user_id);
+                      if (isOwn) return { bg: 'bg-green-50', dot: 'bg-green-400' };
+                      if (activity.activity_type === 'group_join' || activity.activity_type === 'group_rating') return { bg: 'bg-[#33a29b]/5', dot: 'bg-[#33a29b]' };
+                      if (activity.activity_type === 'follow') return { bg: 'bg-red-50', dot: 'bg-red-300' };
+                      if (activity.activity_type === 'like') return { bg: 'bg-pink-50', dot: 'bg-pink-400' };
+                      if (isFollowingUser) return { bg: 'bg-yellow-50', dot: 'bg-yellow-400' };
+                      return { bg: 'bg-white', dot: 'bg-gray-200' };
+                    };
+
+                    return filtered.length > 0 ? (
                       <div className="space-y-2">
-                        {activityFeed.map(activity => {
+                        {filtered.map(activity => {
                           const likes = ratingLikes[activity.rating_id] || { count: 0, likedByMe: false, users: [] };
+                          const style = getCardStyle(activity);
+                          const hoursAgo = (Date.now() - new Date(activity.created_at)) / 3600000;
+                          const timeLabel = hoursAgo < 1 ? 'just now' : hoursAgo < 24 ? `${Math.floor(hoursAgo)}h ago` : `${Math.floor(hoursAgo/24)}d ago`;
                           return (
-                            <div 
+                            <div
                               key={activity.id}
-                              className="bg-white rounded-xl p-4 shadow-sm cursor-pointer hover:shadow-md transition"
+                              className={`${style.bg} rounded-xl p-3 shadow-sm cursor-pointer hover:shadow-md transition`}
                               onClick={() => {
-                                if (activity.activity_type === 'rating') {
+                                if (activity.activity_type === 'rating' || activity.activity_type === 'group_rating') {
                                   const dish = allDishes.find(d => d.name?.toLowerCase() === activity.content?.dish_name?.toLowerCase());
                                   if (dish) setSelectedDish(dish);
                                 }
                               }}
                             >
                               <div className="flex items-start gap-3">
-                                <div className="w-9 h-9 rounded-full bg-[#33a29b]/10 flex items-center justify-center flex-shrink-0 text-sm font-bold text-[#33a29b]">
-                                  {(activity.username || '?')[0].toUpperCase()}
+                                <div className="relative flex-shrink-0">
+                                  <div className="w-8 h-8 rounded-full bg-white border flex items-center justify-center text-xs font-bold text-gray-600">
+                                    {(activity.username || '?')[0].toUpperCase()}
+                                  </div>
+                                  <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border border-white ${style.dot}`} />
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <div className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>
-                                    @{activity.username}
-                                  </div>
-                                  <div className="text-sm text-gray-600 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
-                                    {activity.activity_type === 'rating' && (
-                                      <span>rated <span className="font-semibold text-gray-800">{activity.content.dish_name}</span> <span className={`font-bold ${getSRRColor(activity.content.score)}`}>({activity.content.score})</span></span>
+                                  <div className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>@{activity.username}</div>
+                                  <div className="text-xs text-gray-600 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
+                                    {(activity.activity_type === 'rating' || activity.activity_type === 'group_rating') && (
+                                      <span>rated <span className="font-semibold">{activity.content.dish_name}</span> {activity.content.score != null && <span className={`font-bold ${getSRRColor(activity.content.score)}`}>({activity.content.score})</span>}</span>
                                     )}
                                     {activity.activity_type === 'group_join' && `joined ${activity.content.group_name}`}
                                     {activity.activity_type === 'follow' && `started following @${activity.content.following_username}`}
+                                    {activity.activity_type === 'like' && `liked a rating`}
                                   </div>
-                                  {activity.activity_type === 'rating' && activity.content.comment && (
-                                    <div className="text-xs text-gray-500 mt-1 italic" style={{ fontFamily: '"Courier New", monospace' }}>
-                                      "{activity.content.comment}"
-                                    </div>
+                                  {activity.content?.comment && (
+                                    <div className="text-[10px] text-gray-500 mt-0.5 italic truncate" style={{ fontFamily: '"Courier New", monospace' }}>"{activity.content.comment}"</div>
                                   )}
-                                  <div className="text-[10px] text-gray-400 mt-1" style={{ fontFamily: '"Courier New", monospace' }}>
-                                    {new Date(activity.created_at).toLocaleDateString()} at {new Date(activity.created_at).toLocaleTimeString()}
-                                  </div>
+                                  <div className="text-[10px] text-gray-400 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>{timeLabel}</div>
                                 </div>
-                                {/* Like button */}
-                                {activity.activity_type === 'rating' && activity.rating_id && (
+                                {(activity.activity_type === 'rating' || activity.activity_type === 'group_rating') && activity.rating_id && (
                                   <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
-                                    <button
-                                      onClick={(e) => handleToggleLike(activity.rating_id, e)}
-                                      className={`transition ${likes.likedByMe ? 'text-red-500' : 'text-gray-300 hover:text-red-400'}`}
-                                    >
-                                      <Heart size={16} className={likes.likedByMe ? 'fill-current' : ''} />
+                                    <button onClick={(e) => handleToggleLike(activity.rating_id, e)} className={`transition ${likes.likedByMe ? 'text-red-500' : 'text-gray-300 hover:text-red-400'}`}>
+                                      <Heart size={15} className={likes.likedByMe ? 'fill-current' : ''} />
                                     </button>
                                     {likes.count > 0 && (
-                                      <button
-                                        onClick={(e) => { e.stopPropagation(); setLikesModalRatingId(activity.rating_id); }}
-                                        className="text-[10px] text-gray-500 hover:text-[#33a29b] transition"
-                                        style={{ fontFamily: '"Courier New", monospace' }}
-                                      >
+                                      <button onClick={(e) => { e.stopPropagation(); setLikesModalRatingId(activity.rating_id); }} className="text-[10px] text-gray-500 hover:text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>
                                         {likes.count}
                                       </button>
                                     )}
@@ -6690,24 +6905,12 @@ const HuntersFindsApp = () => {
                         })}
                       </div>
                     ) : (
-                      <EmptyState
-                        icon={Activity}
-                        title="no activity yet"
-                        message="Follow people to see their activity here!"
-                      />
-                    )
-                  ) : (
+                      <EmptyState icon={Activity} title="no activity yet" message="Follow people and join groups to see activity here!" />
+                    );
+                  })() : (
                     <div className="bg-white rounded-lg p-6 shadow-sm text-center">
-                      <p className="text-gray-600 mb-4" style={{ fontFamily: '"Courier New", monospace' }}>
-                        please log in to see activity
-                      </p>
-                      <button
-                        onClick={() => setYouView('login')}
-                        className="bg-[#33a29b] text-white px-6 py-2 rounded-lg font-semibold hover:bg-[#2a8a84] transition"
-                        style={{ fontFamily: '"Courier New", monospace' }}
-                      >
-                        go to login
-                      </button>
+                      <p className="text-gray-600 mb-4" style={{ fontFamily: '"Courier New", monospace' }}>please log in to see activity</p>
+                      <button onClick={() => setYouView('login')} className="bg-[#33a29b] text-white px-6 py-2 rounded-lg font-semibold hover:bg-[#2a8a84] transition" style={{ fontFamily: '"Courier New", monospace' }}>go to login</button>
                     </div>
                   )}
                 </div>
