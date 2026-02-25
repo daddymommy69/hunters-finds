@@ -1493,83 +1493,74 @@ const HuntersFindsApp = () => {
   // ============================================
   // INLINE COMMENT THREAD RENDERER
   // ============================================
-  const renderCommentThread = (ratingId, ratingNote, ratingUsername, bgClass = 'bg-white') => {
-    const state = ratingComments[ratingId] || { comments: [], loading: false, loaded: false };
-    const allComments = state.comments || [];
-    const topLevel = allComments.filter(c => !c.parent_id);
-    const replies = (parentId) => allComments.filter(c => c.parent_id === parentId);
-    const showAll = commentShowAll[ratingId];
-    const SHOW_COUNT = 3;
-    const visibleTop = showAll ? topLevel : topLevel.slice(0, SHOW_COUNT);
-    const myUsername = user?.user_metadata?.username || user?.email?.split('@')[0] || '';
 
+  // Helper: render a single comment row (plain function, not a React component, to avoid hooks-in-component errors)
+  const renderCommentRow = (c, ratingId, allComments, isReply = false) => {
+    const cLikes = commentLikes[c.id] || { count: 0, likedByMe: false };
+    const isOwn = user && c.user_id === user.id;
+    const childReplies = allComments.filter(ch => ch.parent_id === c.id);
+    const repliesExpanded = expandedReplies.has(c.id);
     const timeAgo = (ts) => {
       const h = (Date.now() - new Date(ts)) / 3600000;
       if (h < 1) return 'just now';
       if (h < 24) return `${Math.floor(h)}h ago`;
       return `${Math.floor(h / 24)}d ago`;
     };
-
-    const CommentRow = ({ c, isReply = false }) => {
-      const cLikes = commentLikes[c.id] || { count: 0, likedByMe: false };
-      const isOwn = user && c.user_id === user.id;
-      const childReplies = replies(c.id);
-      const repliesExpanded = expandedReplies.has(c.id);
-      return (
-        <div className={`${isReply ? 'ml-7 mt-1.5' : 'mt-2'}`}>
-          <div className="flex items-start gap-2">
-            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
-              {(c.username || '?')[0].toUpperCase()}
+    return (
+      <div key={c.id} className={`${isReply ? 'ml-7 mt-1.5' : 'mt-2'}`}>
+        <div className="flex items-start gap-2">
+          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
+            {(c.username || '?')[0].toUpperCase()}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs font-bold" style={{ fontFamily: '"Courier New", monospace' }}>@{c.username}</span>
+              <span className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>{timeAgo(c.created_at)}</span>
+              {isOwn && (
+                <button onClick={(e) => handleDeleteComment(c.id, ratingId, e)} className="text-[10px] text-gray-400 hover:text-red-400 transition" style={{ fontFamily: '"Courier New", monospace' }}>delete</button>
+              )}
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-xs font-bold" style={{ fontFamily: '"Courier New", monospace' }}>@{c.username}</span>
-                <span className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>{timeAgo(c.created_at)}</span>
-                {isOwn && (
-                  <button
-                    onClick={(e) => handleDeleteComment(c.id, ratingId, e)}
-                    className="text-[10px] text-gray-400 hover:text-red-400 transition"
-                    style={{ fontFamily: '"Courier New", monospace' }}
-                  >delete</button>
-                )}
-              </div>
-              <p className="text-xs text-gray-700 mt-0.5 leading-relaxed" style={{ fontFamily: '"Courier New", monospace' }}>{c.content}</p>
-              <div className="flex items-center gap-3 mt-1">
-                <button
-                  onClick={(e) => { e.stopPropagation(); setReplyingTo(prev => ({ ...prev, [ratingId]: { commentId: c.id, username: c.username } })); setCommentInputs(prev => ({ ...prev, [ratingId]: `@${c.username} ` })); }}
-                  className="text-[10px] text-gray-400 hover:text-[#33a29b] font-medium transition"
-                  style={{ fontFamily: '"Courier New", monospace' }}
-                >reply</button>
-                <button
-                  onClick={(e) => handleToggleCommentLike(c.id, e)}
-                  className={`flex items-center gap-0.5 text-[10px] transition ${cLikes.likedByMe ? 'text-red-500' : 'text-gray-400 hover:text-red-400'}`}
-                >
-                  <Heart size={11} className={cLikes.likedByMe ? 'fill-current' : ''} />
-                  {cLikes.count > 0 && <span style={{ fontFamily: '"Courier New", monospace' }}>{cLikes.count}</span>}
-                </button>
-              </div>
+            <p className="text-xs text-gray-700 mt-0.5 leading-relaxed" style={{ fontFamily: '"Courier New", monospace' }}>{c.content}</p>
+            <div className="flex items-center gap-3 mt-1">
+              <button
+                onClick={(e) => { e.stopPropagation(); setReplyingTo(prev => ({ ...prev, [ratingId]: { commentId: c.id, username: c.username } })); setCommentInputs(prev => ({ ...prev, [ratingId]: `@${c.username} ` })); }}
+                className="text-[10px] text-gray-400 hover:text-[#33a29b] font-medium transition"
+                style={{ fontFamily: '"Courier New", monospace' }}
+              >reply</button>
+              <button onClick={(e) => handleToggleCommentLike(c.id, e)} className={`flex items-center gap-0.5 text-[10px] transition ${cLikes.likedByMe ? 'text-red-500' : 'text-gray-400 hover:text-red-400'}`}>
+                <Heart size={11} className={cLikes.likedByMe ? 'fill-current' : ''} />
+                {cLikes.count > 0 && <span style={{ fontFamily: '"Courier New", monospace' }}>{cLikes.count}</span>}
+              </button>
             </div>
           </div>
-          {/* Replies */}
-          {childReplies.length > 0 && (
-            <div className="ml-7 mt-1">
-              <button
-                onClick={(e) => { e.stopPropagation(); setExpandedReplies(prev => { const n = new Set(prev); repliesExpanded ? n.delete(c.id) : n.add(c.id); return n; }); }}
-                className="text-[10px] text-[#33a29b] font-medium"
-                style={{ fontFamily: '"Courier New", monospace' }}
-              >
-                {repliesExpanded ? '▲ hide replies' : `▼ ${childReplies.length} ${childReplies.length === 1 ? 'reply' : 'replies'}`}
-              </button>
-              {repliesExpanded && childReplies.map(r => <CommentRow key={r.id} c={r} isReply />)}
-            </div>
-          )}
         </div>
-      );
-    };
+        {childReplies.length > 0 && (
+          <div className="ml-7 mt-1">
+            <button
+              onClick={(e) => { e.stopPropagation(); setExpandedReplies(prev => { const n = new Set(prev); repliesExpanded ? n.delete(c.id) : n.add(c.id); return n; }); }}
+              className="text-[10px] text-[#33a29b] font-medium"
+              style={{ fontFamily: '"Courier New", monospace' }}
+            >
+              {repliesExpanded ? '▲ hide replies' : `▼ ${childReplies.length} ${childReplies.length === 1 ? 'reply' : 'replies'}`}
+            </button>
+            {repliesExpanded && childReplies.map(r => renderCommentRow(r, ratingId, allComments, true))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderCommentThread = (ratingId, ratingNote, ratingUsername, bgClass = 'bg-white') => {
+    const state = ratingComments[ratingId] || { comments: [], loading: false, loaded: false };
+    const allComments = state.comments || [];
+    const topLevel = allComments.filter(c => !c.parent_id);
+    const showAll = commentShowAll[ratingId];
+    const SHOW_COUNT = 3;
+    const visibleTop = showAll ? topLevel : topLevel.slice(0, SHOW_COUNT);
+    const myUsername = user?.user_metadata?.username || user?.email?.split('@')[0] || '';
 
     return (
       <div className={`${bgClass} rounded-b-xl border-t border-gray-100 px-3 pb-3 pt-2`} onClick={e => e.stopPropagation()}>
-        {/* Pinned note (original rating comment) */}
         {ratingNote && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 mb-2 flex items-start gap-2">
             <Star size={11} className="text-yellow-500 mt-0.5 flex-shrink-0" />
@@ -1579,39 +1570,29 @@ const HuntersFindsApp = () => {
             </div>
           </div>
         )}
-
-        {/* Comments */}
         {state.loading ? (
           <div className="text-xs text-gray-400 text-center py-2" style={{ fontFamily: '"Courier New", monospace' }}>loading...</div>
         ) : topLevel.length === 0 ? (
           <div className="text-xs text-gray-400 text-center py-2" style={{ fontFamily: '"Courier New", monospace' }}>no comments yet — be first!</div>
         ) : (
           <>
-            {visibleTop.map(c => <CommentRow key={c.id} c={c} />)}
+            {visibleTop.map(c => renderCommentRow(c, ratingId, allComments, false))}
             {topLevel.length > SHOW_COUNT && (
-              <button
-                onClick={(e) => { e.stopPropagation(); setCommentShowAll(prev => ({ ...prev, [ratingId]: !showAll })); }}
-                className="text-[10px] text-[#33a29b] font-medium mt-2 block"
-                style={{ fontFamily: '"Courier New", monospace' }}
-              >
+              <button onClick={(e) => { e.stopPropagation(); setCommentShowAll(prev => ({ ...prev, [ratingId]: !showAll })); }} className="text-[10px] text-[#33a29b] font-medium mt-2 block" style={{ fontFamily: '"Courier New", monospace' }}>
                 {showAll ? '▲ show less' : `▼ show ${topLevel.length - SHOW_COUNT} more comments`}
               </button>
             )}
           </>
         )}
-
-        {/* Comment input */}
         {user ? (
           <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100">
             <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
               {(myUsername || '?')[0].toUpperCase()}
             </div>
             {replyingTo[ratingId] && (
-              <button
-                onClick={(e) => { e.stopPropagation(); setReplyingTo(prev => { const n = {...prev}; delete n[ratingId]; return n; }); setCommentInputs(prev => ({ ...prev, [ratingId]: '' })); }}
-                className="text-[10px] text-[#33a29b] whitespace-nowrap"
-                style={{ fontFamily: '"Courier New", monospace' }}
-              >↩ {replyingTo[ratingId].username}</button>
+              <button onClick={(e) => { e.stopPropagation(); setReplyingTo(prev => { const n = {...prev}; delete n[ratingId]; return n; }); setCommentInputs(prev => ({ ...prev, [ratingId]: '' })); }} className="text-[10px] text-[#33a29b] whitespace-nowrap" style={{ fontFamily: '"Courier New", monospace' }}>
+                ↩ {replyingTo[ratingId].username}
+              </button>
             )}
             <input
               type="text"
@@ -1622,12 +1603,7 @@ const HuntersFindsApp = () => {
               className="flex-1 text-xs px-2 py-1 border border-gray-200 rounded-full focus:outline-none focus:border-[#33a29b]"
               style={{ fontFamily: '"Courier New", monospace' }}
             />
-            <button
-              onClick={(e) => handleSubmitComment(ratingId, e)}
-              disabled={!(commentInputs[ratingId] || '').trim()}
-              className="text-[10px] font-bold text-[#33a29b] disabled:text-gray-300 transition"
-              style={{ fontFamily: '"Courier New", monospace' }}
-            >post</button>
+            <button onClick={(e) => handleSubmitComment(ratingId, e)} disabled={!(commentInputs[ratingId] || '').trim()} className="text-[10px] font-bold text-[#33a29b] disabled:text-gray-300 transition" style={{ fontFamily: '"Courier New", monospace' }}>post</button>
           </div>
         ) : (
           <p className="text-[10px] text-gray-400 text-center mt-2 pt-2 border-t border-gray-100" style={{ fontFamily: '"Courier New", monospace' }}>log in to comment</p>
@@ -6401,7 +6377,6 @@ const HuntersFindsApp = () => {
                                 </div>
                               )}
                             </div>
-                          </div>
                           {/* Inline comment thread */}
                           {(item.activity_type === 'rating' || item.activity_type === 'group_rating') && item.rating_id && expandedComments.has(item.rating_id) && (
                             renderCommentThread(item.rating_id, item.content?.comment, item.username, style.bg)
@@ -7356,7 +7331,6 @@ const HuntersFindsApp = () => {
                                   </div>
                                 )}
                               </div>
-                            </div>
                             {/* Inline comment thread */}
                             {(activity.activity_type === 'rating' || activity.activity_type === 'group_rating') && activity.rating_id && expandedComments.has(activity.rating_id) && (
                               renderCommentThread(activity.rating_id, activity.content?.comment, activity.username, style.bg)
