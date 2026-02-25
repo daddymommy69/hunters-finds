@@ -278,14 +278,13 @@ const HuntersFindsApp = () => {
           }
         }
 
-        // Fetch all public groups for discovery
-        console.log('📡 Fetching public groups...');
+        // Fetch all groups for discovery (public + private visible in explore)
+        console.log('📡 Fetching all groups...');
         const { data: publicGroups, error: publicError } = await supabase
           .from('groups')
           .select('*')
-          .eq('privacy', 'public')
           .order('created_at', { ascending: false })
-          .limit(50);
+          .limit(100);
 
         if (publicError) {
           console.error('❌ Error fetching public groups:', publicError);
