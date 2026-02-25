@@ -366,7 +366,13 @@ const HuntersFindsApp = () => {
   const [exploreView, setExploreView] = useState(() => {
     return localStorage.getItem('exploreView') || 'for-you';
   });
-  
+  const [exploreForYouTab, setExploreForYouTab] = useState('recommended');
+  const [exploreNearMe, setExploreNearMe] = useState(false);
+  const [allUsers, setAllUsers] = useState([]);
+  const [allUsersLoading, setAllUsersLoading] = useState(false);
+  const [selectedExploreUser, setSelectedExploreUser] = useState(null);
+  const [followingIds, setFollowingIds] = useState(new Set());
+
   React.useEffect(() => {
     localStorage.setItem('exploreView', exploreView);
   }, [exploreView]);
@@ -1990,6 +1996,66 @@ const HuntersFindsApp = () => {
     return () => clearTimeout(timeoutId);
   }, [searchQuery, userLocation, activeTab]); // Intentionally excludes allDishes/allRestaurants to prevent infinite search loops
   
+  // Fetch all users for explore/people tab
+  React.useEffect(() => {
+    if (activeTab !== 'explore' || exploreView !== 'people') return;
+    const fetchAllUsers = async () => {
+      setAllUsersLoading(true);
+      try {
+        const { data: usersData, error } = await supabase
+          .from('users')
+          .select('id, username, email')
+          .order('username');
+        if (error) throw error;
+
+        // Get following IDs for current user
+        let myFollowingIds = new Set();
+        if (user) {
+          const { data: followData } = await supabase
+            .from('user_follows')
+            .select('following_id')
+            .eq('follower_id', user.id);
+          myFollowingIds = new Set((followData || []).map(f => f.following_id));
+          setFollowingIds(myFollowingIds);
+        }
+
+        // Get my rated dish IDs
+        const myDishIds = new Set(userRatings.map(r => r.dish_id));
+        const myRestaurantIds = new Set(userRatings.map(r => r.restaurant_id).filter(Boolean));
+
+        // Enrich each user with stats from allRatings
+        const enriched = (usersData || [])
+          .filter(u => !user || u.id !== user.id) // exclude self
+          .map(u => {
+            const theirRatings = allRatings.filter(r => r.user_id === u.id && !r.is_deleted);
+            const theirDishIds = new Set(theirRatings.map(r => r.dish_id));
+            const theirRestaurantIds = new Set(theirRatings.map(r => r.restaurant_id).filter(Boolean));
+            const dishOverlap = [...theirDishIds].filter(id => myDishIds.has(id)).length;
+            const restaurantOverlap = [...theirRestaurantIds].filter(id => myRestaurantIds.has(id)).length;
+            const avgScore = theirRatings.length > 0
+              ? theirRatings.reduce((sum, r) => sum + (r.srr || 0), 0) / theirRatings.length
+              : 0;
+            return {
+              ...u,
+              ratingsCount: theirRatings.length,
+              dishOverlap,
+              restaurantOverlap,
+              avgScore,
+              isFollowing: myFollowingIds.has(u.id),
+            };
+          })
+          .sort((a, b) => (b.dishOverlap + b.restaurantOverlap) - (a.dishOverlap + a.restaurantOverlap));
+
+        setAllUsers(enriched);
+      } catch (err) {
+        console.error('Error fetching users:', err);
+      } finally {
+        setAllUsersLoading(false);
+      }
+    };
+    fetchAllUsers();
+  }, [activeTab, exploreView, user, allRatings, userRatings]);
+
   // Friend search function
   const searchFriends = async (query) => {
     if (!query || query.length < 2) {
@@ -5479,83 +5545,192 @@ const HuntersFindsApp = () => {
         {/* EXPLORE TAB */}
         {activeTab === 'explore' && (
           <div>
-            <div className="bg-white border-b px-4 py-2 flex gap-2">
-              <button onClick={() => setExploreView('for-you')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${exploreView === 'for-you' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>for you</button>
-              <button onClick={() => setExploreView('people')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${exploreView === 'people' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>people</button>
-              <button onClick={() => setExploreView('groups')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${exploreView === 'groups' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>groups</button>
+            {/* Top-level tabs */}
+            <div className="bg-white border-b px-4 py-2 flex gap-2 items-center justify-between">
+              <div className="flex gap-2">
+                <button onClick={() => setExploreView('for-you')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${exploreView === 'for-you' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} style={{ fontFamily: '"Courier New", monospace' }}>for you</button>
+                <button onClick={() => setExploreView('people')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${exploreView === 'people' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} style={{ fontFamily: '"Courier New", monospace' }}>people</button>
+                <button onClick={() => setExploreView('groups')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${exploreView === 'groups' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} style={{ fontFamily: '"Courier New", monospace' }}>groups</button>
+              </div>
+              {/* Near me toggle */}
+              <button
+                onClick={() => setExploreNearMe(v => !v)}
+                className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition ${exploreNearMe ? 'bg-[#33a29b] text-white' : 'bg-gray-100 text-gray-600'}`}
+                style={{ fontFamily: '"Courier New", monospace' }}
+              >
+                <MapPin size={12} />
+                {exploreNearMe ? 'near me' : 'everywhere'}
+              </button>
             </div>
 
             <div className="max-w-4xl mx-auto p-4">
-              {exploreView === 'for-you' && (
-                <>
-                  {userRatings.length < 3 ? (
-                    <EmptyState
-                      icon={Compass}
-                      title="not enough data yet"
-                      message="Rate more dishes to get personalized recommendations"
-                      actionText="rate now"
-                      onAction={() => setIsSubmissionModalOpen(true)}
-                    />
-                  ) : (() => {
-                    const recommendations = getRecommendations();
-                    
-                    if (recommendations.length === 0) {
-                      return (
-                        <EmptyState
-                          icon={Compass}
-                          title="no recommendations yet"
-                          message="Rate more diverse dishes to get personalized suggestions"
-                          actionText="rate now"
-                          onAction={() => setIsSubmissionModalOpen(true)}
-                        />
-                      );
-                    }
 
-                    return (
-                      <div className="space-y-3">
-                        <h2 className="text-lg font-bold mb-4" style={{ fontFamily: '"Courier New", monospace' }}>dishes you might like</h2>
-                        {recommendations.map((dish, idx) => {                          return (
-                            <div 
-                              key={dish.id}
-                              onClick={() => setSelectedDish(dish)}
-                              className="bg-white rounded-lg p-3 shadow-sm cursor-pointer hover:shadow-md transition"
-                            >
-                              <div className="flex items-center gap-3">
-                                <div className="w-8 text-center text-lg font-bold text-gray-400">#{idx + 1}</div>
-                                <div className="flex-1">
-                                  <h4 className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>{dish.name}</h4>
-                                  <p className="text-xs text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
-                                    {dish.restaurantName} • {dish.cuisine} • ${dish.price?.toFixed(2)}
-                                  </p>
-                                </div>                                <div className={`text-2xl font-bold ${getSRRColor(dish.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>
-                                  {typeof dish.srr === "number" ? dish.srr.toFixed(2) : dish.srr}
-                                </div>
-                                <button 
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleSaveItem(dish, 'dish');
-                                  }}
-                                  className={`px-2 py-1 rounded text-xs transition ${
-                                    isItemSaved(dish.id, 'dish')
-                                      ? 'bg-blue-500 text-white hover:bg-blue-600'
-                                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                  }`}
-                                >
-                                  <Bookmark size={14} className={isItemSaved(dish.id, 'dish') ? 'fill-current inline' : 'inline'} />
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
+              {/* FOR YOU TAB */}
+              {exploreView === 'for-you' && (() => {
+                // Get dishes I've already rated
+                const myRatedDishIds = new Set(userRatings.map(r => r.dish_id));
+
+                // Get all other users' ratings for dishes I haven't rated
+                const otherRatings = allRatings.filter(r =>
+                  !r.is_deleted &&
+                  (!user || r.user_id !== user.id) &&
+                  !myRatedDishIds.has(r.dish_id)
+                );
+
+                // Group by dish and compute avg score
+                const dishScoreMap = {};
+                otherRatings.forEach(r => {
+                  if (!dishScoreMap[r.dish_id]) {
+                    dishScoreMap[r.dish_id] = { scores: [], rating: r };
+                  }
+                  dishScoreMap[r.dish_id].scores.push(r.srr || 0);
+                });
+
+                const communityDishes = Object.entries(dishScoreMap).map(([dishId, val]) => {
+                  const avg = val.scores.reduce((a, b) => a + b, 0) / val.scores.length;
+                  const dish = allDishes.find(d => d.id === dishId) || val.rating.dish;
+                  return { ...dish, communityScore: avg, ratingCount: val.scores.length };
+                }).sort((a, b) => b.communityScore - a.communityScore);
+
+                // Recommended = from people you follow, else fall back to community
+                const followingIdSet = new Set(userFollows.map(f => f.id));
+                const friendRatings = allRatings.filter(r =>
+                  !r.is_deleted &&
+                  followingIdSet.has(r.user_id) &&
+                  !myRatedDishIds.has(r.dish_id)
+                );
+                const friendDishMap = {};
+                friendRatings.forEach(r => {
+                  if (!friendDishMap[r.dish_id]) friendDishMap[r.dish_id] = { scores: [], rating: r };
+                  friendDishMap[r.dish_id].scores.push(r.srr || 0);
+                });
+                const recommendedDishes = Object.entries(friendDishMap).map(([dishId, val]) => {
+                  const avg = val.scores.reduce((a, b) => a + b, 0) / val.scores.length;
+                  const dish = allDishes.find(d => d.id === dishId) || val.rating.dish;
+                  return { ...dish, communityScore: avg, ratingCount: val.scores.length };
+                }).sort((a, b) => b.communityScore - a.communityScore);
+
+                // If no friend recs, fall back to community for recommended tab too
+                const finalRecommended = recommendedDishes.length > 0 ? recommendedDishes : communityDishes;
+
+                const renderDishCard = (dish, idx) => (
+                  <div
+                    key={dish.id || idx}
+                    onClick={() => setSelectedDish(dish)}
+                    className="bg-white rounded-xl p-3 shadow-sm cursor-pointer hover:shadow-md transition flex items-center gap-3"
+                  >
+                    <div className="w-7 text-center text-sm font-bold text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>#{idx + 1}</div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-bold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}>{dish.name}</h4>
+                      <p className="text-xs text-gray-500 truncate" style={{ fontFamily: '"Courier New", monospace' }}>
+                        {dish.restaurantName || dish.restaurant_name} • {dish.cuisine || dish.category}
+                        {dish.price ? ` • $${parseFloat(dish.price).toFixed(2)}` : ''}
+                      </p>
+                      <p className="text-[10px] text-gray-400 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
+                        {dish.ratingCount} {dish.ratingCount === 1 ? 'rating' : 'ratings'} from community
+                      </p>
+                    </div>
+                    <div className={`text-xl font-bold ${getSRRColor(dish.communityScore)}`} style={{ fontFamily: '"Courier New", monospace' }}>
+                      {dish.communityScore?.toFixed(2)}
+                    </div>
+                  </div>
+                );
+
+                return (
+                  <>
+                    {/* For You subtabs */}
+                    <div className="flex gap-2 mb-4">
+                      <button
+                        onClick={() => setExploreForYouTab('recommended')}
+                        className={`px-3 py-1 rounded-lg text-xs font-medium transition ${exploreForYouTab === 'recommended' ? 'bg-[#33a29b] text-white' : 'bg-gray-100 text-gray-600'}`}
+                        style={{ fontFamily: '"Courier New", monospace' }}
+                      >recommended</button>
+                      <button
+                        onClick={() => setExploreForYouTab('community')}
+                        className={`px-3 py-1 rounded-lg text-xs font-medium transition ${exploreForYouTab === 'community' ? 'bg-[#33a29b] text-white' : 'bg-gray-100 text-gray-600'}`}
+                        style={{ fontFamily: '"Courier New", monospace' }}
+                      >community</button>
+                    </div>
+
+                    {exploreForYouTab === 'recommended' && (
+                      <div className="space-y-2">
+                        {recommendedDishes.length === 0 && (
+                          <p className="text-xs text-gray-400 mb-3 italic" style={{ fontFamily: '"Courier New", monospace' }}>
+                            no friend recommendations yet — showing top community dishes
+                          </p>
+                        )}
+                        {finalRecommended.length === 0 ? (
+                          <EmptyState icon={Compass} title="no dishes yet" message="No community ratings found" actionText="rate now" onAction={() => setIsSubmissionModalOpen(true)} />
+                        ) : (
+                          finalRecommended.map((dish, idx) => renderDishCard(dish, idx))
+                        )}
                       </div>
-                    );
-                  })()}
-                </>
+                    )}
+
+                    {exploreForYouTab === 'community' && (
+                      <div className="space-y-2">
+                        {communityDishes.length === 0 ? (
+                          <EmptyState icon={Compass} title="no community ratings yet" message="Be the first to rate dishes!" actionText="rate now" onAction={() => setIsSubmissionModalOpen(true)} />
+                        ) : (
+                          communityDishes.map((dish, idx) => renderDishCard(dish, idx))
+                        )}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+
+              {/* PEOPLE TAB */}
+              {exploreView === 'people' && (
+                <div className="space-y-3">
+                  {allUsersLoading ? (
+                    <LoadingSpinner />
+                  ) : allUsers.length === 0 ? (
+                    <EmptyState icon={Users} title="no other users yet" message="Invite friends to join hunters finds!" />
+                  ) : (
+                    allUsers.map(u => (
+                      <div
+                        key={u.id}
+                        className="bg-white rounded-xl p-3 shadow-sm flex items-center gap-3 cursor-pointer hover:shadow-md transition"
+                        onClick={() => setSelectedExploreUser(u)}
+                      >
+                        {/* Avatar */}
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                          {(u.username || u.email || '?')[0].toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-bold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}>
+                            @{u.username || u.email?.split('@')[0]}
+                          </div>
+                          <div className="text-[10px] text-gray-500 flex gap-2 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
+                            <span>{u.ratingsCount} ratings</span>
+                            {u.dishOverlap > 0 && <span className="text-[#33a29b]">• {u.dishOverlap} dishes in common</span>}
+                            {u.restaurantOverlap > 0 && <span className="text-[#33a29b]">• {u.restaurantOverlap} restaurants in common</span>}
+                          </div>
+                        </div>
+                        {user && (
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              await handleFollowUser(u);
+                              setAllUsers(prev => prev.map(p => p.id === u.id ? { ...p, isFollowing: !p.isFollowing } : p));
+                            }}
+                            className={`flex-shrink-0 px-3 py-1 rounded-lg text-xs font-medium transition ${u.isFollowing ? 'bg-gray-200 text-gray-700 hover:bg-red-100 hover:text-red-600' : 'bg-[#33a29b] text-white hover:bg-[#2a8a84]'}`}
+                            style={{ fontFamily: '"Courier New", monospace' }}
+                          >
+                            {u.isFollowing ? 'following' : 'follow'}
+                          </button>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
               )}
 
+              {/* GROUPS TAB */}
               {exploreView === 'groups' && (
                 <div className="space-y-3">
-                  <h2 className="text-lg font-bold mb-4">explore groups</h2>
+                  <h2 className="text-lg font-bold mb-4" style={{ fontFamily: '"Courier New", monospace' }}>explore groups</h2>
                   {groupsLoading ? (
                     <LoadingSpinner />
                   ) : allGroups.length === 0 ? (
@@ -5582,6 +5757,93 @@ const HuntersFindsApp = () => {
                 </div>
               )}
             </div>
+
+            {/* User Profile Modal */}
+            {selectedExploreUser && (() => {
+              const u = selectedExploreUser;
+              const theirRatings = allRatings.filter(r => r.user_id === u.id && !r.is_deleted);
+              const topDishes = [...theirRatings].sort((a, b) => (b.srr || 0) - (a.srr || 0)).slice(0, 5);
+              const avgScore = theirRatings.length > 0 ? theirRatings.reduce((s, r) => s + (r.srr || 0), 0) / theirRatings.length : 0;
+              const categories = theirRatings.map(r => r.dish?.category || r.category).filter(Boolean);
+              const favCategory = categories.length > 0
+                ? Object.entries(categories.reduce((acc, c) => { acc[c] = (acc[c] || 0) + 1; return acc; }, {})).sort((a, b) => b[1] - a[1])[0][0]
+                : null;
+
+              return (
+                <>
+                  <div onClick={() => setSelectedExploreUser(null)} className="fixed inset-0 bg-black/40 z-[46]" />
+                  <div className="fixed z-[47] bg-white rounded-2xl shadow-xl flex flex-col"
+                    style={{ top: '10%', left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 500px)', maxHeight: '80vh' }}>
+                    <div className="sticky top-0 bg-white border-b px-4 py-3 flex items-center justify-between rounded-t-2xl flex-shrink-0">
+                      <h2 className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>
+                        @{u.username || u.email?.split('@')[0]}
+                      </h2>
+                      <button onClick={() => setSelectedExploreUser(null)}><X size={20} /></button>
+                    </div>
+                    <div className="overflow-y-auto p-4 space-y-4">
+                      {/* Stats row */}
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div className="bg-gray-50 rounded-lg p-2">
+                          <div className="text-lg font-bold" style={{ fontFamily: '"Courier New", monospace' }}>{theirRatings.length}</div>
+                          <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>ratings</div>
+                        </div>
+                        <div className="bg-gray-50 rounded-lg p-2">
+                          <div className={`text-lg font-bold ${getSRRColor(avgScore)}`} style={{ fontFamily: '"Courier New", monospace' }}>{avgScore.toFixed(1)}</div>
+                          <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>avg score</div>
+                        </div>
+                        <div className="bg-gray-50 rounded-lg p-2">
+                          <div className="text-lg font-bold truncate" style={{ fontFamily: '"Courier New", monospace' }}>{favCategory || '—'}</div>
+                          <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>fav category</div>
+                        </div>
+                      </div>
+
+                      {/* Overlap */}
+                      {(u.dishOverlap > 0 || u.restaurantOverlap > 0) && (
+                        <div className="bg-[#33a29b]/10 rounded-lg p-2 text-xs text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>
+                          you share {u.dishOverlap} dishes and {u.restaurantOverlap} restaurants in common
+                        </div>
+                      )}
+
+                      {/* Top dishes */}
+                      <div>
+                        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2" style={{ fontFamily: '"Courier New", monospace' }}>top dishes</h3>
+                        {topDishes.length === 0 ? (
+                          <p className="text-xs text-gray-400 italic" style={{ fontFamily: '"Courier New", monospace' }}>no ratings yet</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {topDishes.map((r, idx) => (
+                              <div key={r.id} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+                                <span className="text-xs text-gray-400 w-5" style={{ fontFamily: '"Courier New", monospace' }}>#{idx + 1}</span>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-xs font-bold truncate" style={{ fontFamily: '"Courier New", monospace' }}>{r.dish?.name || r.dish_name}</div>
+                                  <div className="text-[10px] text-gray-500 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{r.dish?.restaurant_name || r.restaurant_name}</div>
+                                </div>
+                                <div className={`text-sm font-bold ${getSRRColor(r.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{r.srr?.toFixed(2)}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Follow button */}
+                      {user && (
+                        <button
+                          onClick={async () => {
+                            await handleFollowUser(u);
+                            setSelectedExploreUser(prev => ({ ...prev, isFollowing: !prev.isFollowing }));
+                            setAllUsers(prev => prev.map(p => p.id === u.id ? { ...p, isFollowing: !p.isFollowing } : p));
+                          }}
+                          className={`w-full py-2 rounded-lg text-sm font-bold transition ${u.isFollowing ? 'bg-gray-200 text-gray-700 hover:bg-red-100 hover:text-red-600' : 'bg-[#33a29b] text-white hover:bg-[#2a8a84]'}`}
+                          style={{ fontFamily: '"Courier New", monospace' }}
+                        >
+                          {u.isFollowing ? 'unfollow' : 'follow'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         )}
 
