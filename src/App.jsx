@@ -1407,7 +1407,15 @@ const HuntersFindsApp = () => {
   const [userFollowers, setUserFollowers] = useState([]);
   const [ratingLikes, setRatingLikes] = useState({});
   const [selectedRatingDetail, setSelectedRatingDetail] = useState(null);
-  const [ratingComments, setRatingComments] = useState({});
+  const [ratingComments, setRatingComments] = useState({}); // { ratingId: { comments, loading, loaded } }
+  const [expandedComments, setExpandedComments] = useState(new Set()); // ratingIds with open comment threads
+  const [commentInputs, setCommentInputs] = useState({}); // { ratingId: text }
+  const [replyingTo, setReplyingTo] = useState({}); // { ratingId: { commentId, username } }
+  const [commentShowAll, setCommentShowAll] = useState({}); // { ratingId: bool }
+  const [commentLikes, setCommentLikes] = useState({}); // { commentId: { count, likedByMe } }
+  const [expandedReplies, setExpandedReplies] = useState(new Set()); // commentIds with expanded replies
+  const [dishComments, setDishComments] = useState([]); // unified comments for dish modal
+  const [dishCommentsLoading, setDishCommentsLoading] = useState(false);
   const [profileModalTab, setProfileModalTab] = useState('stats');
   const [selectedUserActivity, setSelectedUserActivity] = useState([]);
   const [likesModalRatingId, setLikesModalRatingId] = useState(null);
@@ -1481,6 +1489,152 @@ const HuntersFindsApp = () => {
     };
     document.head.appendChild(script);
   }, []);
+
+  // ============================================
+  // INLINE COMMENT THREAD RENDERER
+  // ============================================
+  const renderCommentThread = (ratingId, ratingNote, ratingUsername, bgClass = 'bg-white') => {
+    const state = ratingComments[ratingId] || { comments: [], loading: false, loaded: false };
+    const allComments = state.comments || [];
+    const topLevel = allComments.filter(c => !c.parent_id);
+    const replies = (parentId) => allComments.filter(c => c.parent_id === parentId);
+    const showAll = commentShowAll[ratingId];
+    const SHOW_COUNT = 3;
+    const visibleTop = showAll ? topLevel : topLevel.slice(0, SHOW_COUNT);
+    const myUsername = user?.user_metadata?.username || user?.email?.split('@')[0] || '';
+
+    const timeAgo = (ts) => {
+      const h = (Date.now() - new Date(ts)) / 3600000;
+      if (h < 1) return 'just now';
+      if (h < 24) return `${Math.floor(h)}h ago`;
+      return `${Math.floor(h / 24)}d ago`;
+    };
+
+    const CommentRow = ({ c, isReply = false }) => {
+      const cLikes = commentLikes[c.id] || { count: 0, likedByMe: false };
+      const isOwn = user && c.user_id === user.id;
+      const childReplies = replies(c.id);
+      const repliesExpanded = expandedReplies.has(c.id);
+      return (
+        <div className={`${isReply ? 'ml-7 mt-1.5' : 'mt-2'}`}>
+          <div className="flex items-start gap-2">
+            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
+              {(c.username || '?')[0].toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs font-bold" style={{ fontFamily: '"Courier New", monospace' }}>@{c.username}</span>
+                <span className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>{timeAgo(c.created_at)}</span>
+                {isOwn && (
+                  <button
+                    onClick={(e) => handleDeleteComment(c.id, ratingId, e)}
+                    className="text-[10px] text-gray-400 hover:text-red-400 transition"
+                    style={{ fontFamily: '"Courier New", monospace' }}
+                  >delete</button>
+                )}
+              </div>
+              <p className="text-xs text-gray-700 mt-0.5 leading-relaxed" style={{ fontFamily: '"Courier New", monospace' }}>{c.content}</p>
+              <div className="flex items-center gap-3 mt-1">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setReplyingTo(prev => ({ ...prev, [ratingId]: { commentId: c.id, username: c.username } })); setCommentInputs(prev => ({ ...prev, [ratingId]: `@${c.username} ` })); }}
+                  className="text-[10px] text-gray-400 hover:text-[#33a29b] font-medium transition"
+                  style={{ fontFamily: '"Courier New", monospace' }}
+                >reply</button>
+                <button
+                  onClick={(e) => handleToggleCommentLike(c.id, e)}
+                  className={`flex items-center gap-0.5 text-[10px] transition ${cLikes.likedByMe ? 'text-red-500' : 'text-gray-400 hover:text-red-400'}`}
+                >
+                  <Heart size={11} className={cLikes.likedByMe ? 'fill-current' : ''} />
+                  {cLikes.count > 0 && <span style={{ fontFamily: '"Courier New", monospace' }}>{cLikes.count}</span>}
+                </button>
+              </div>
+            </div>
+          </div>
+          {/* Replies */}
+          {childReplies.length > 0 && (
+            <div className="ml-7 mt-1">
+              <button
+                onClick={(e) => { e.stopPropagation(); setExpandedReplies(prev => { const n = new Set(prev); repliesExpanded ? n.delete(c.id) : n.add(c.id); return n; }); }}
+                className="text-[10px] text-[#33a29b] font-medium"
+                style={{ fontFamily: '"Courier New", monospace' }}
+              >
+                {repliesExpanded ? '▲ hide replies' : `▼ ${childReplies.length} ${childReplies.length === 1 ? 'reply' : 'replies'}`}
+              </button>
+              {repliesExpanded && childReplies.map(r => <CommentRow key={r.id} c={r} isReply />)}
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    return (
+      <div className={`${bgClass} rounded-b-xl border-t border-gray-100 px-3 pb-3 pt-2`} onClick={e => e.stopPropagation()}>
+        {/* Pinned note (original rating comment) */}
+        {ratingNote && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 mb-2 flex items-start gap-2">
+            <Star size={11} className="text-yellow-500 mt-0.5 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <span className="text-[10px] font-bold text-yellow-700" style={{ fontFamily: '"Courier New", monospace' }}>@{ratingUsername}</span>
+              <p className="text-xs text-gray-700 italic mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>"{ratingNote}"</p>
+            </div>
+          </div>
+        )}
+
+        {/* Comments */}
+        {state.loading ? (
+          <div className="text-xs text-gray-400 text-center py-2" style={{ fontFamily: '"Courier New", monospace' }}>loading...</div>
+        ) : topLevel.length === 0 ? (
+          <div className="text-xs text-gray-400 text-center py-2" style={{ fontFamily: '"Courier New", monospace' }}>no comments yet — be first!</div>
+        ) : (
+          <>
+            {visibleTop.map(c => <CommentRow key={c.id} c={c} />)}
+            {topLevel.length > SHOW_COUNT && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setCommentShowAll(prev => ({ ...prev, [ratingId]: !showAll })); }}
+                className="text-[10px] text-[#33a29b] font-medium mt-2 block"
+                style={{ fontFamily: '"Courier New", monospace' }}
+              >
+                {showAll ? '▲ show less' : `▼ show ${topLevel.length - SHOW_COUNT} more comments`}
+              </button>
+            )}
+          </>
+        )}
+
+        {/* Comment input */}
+        {user ? (
+          <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100">
+            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
+              {(myUsername || '?')[0].toUpperCase()}
+            </div>
+            {replyingTo[ratingId] && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setReplyingTo(prev => { const n = {...prev}; delete n[ratingId]; return n; }); setCommentInputs(prev => ({ ...prev, [ratingId]: '' })); }}
+                className="text-[10px] text-[#33a29b] whitespace-nowrap"
+                style={{ fontFamily: '"Courier New", monospace' }}
+              >↩ {replyingTo[ratingId].username}</button>
+            )}
+            <input
+              type="text"
+              value={commentInputs[ratingId] || ''}
+              onChange={(e) => setCommentInputs(prev => ({ ...prev, [ratingId]: e.target.value }))}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSubmitComment(ratingId, e); }}
+              placeholder="add a comment..."
+              className="flex-1 text-xs px-2 py-1 border border-gray-200 rounded-full focus:outline-none focus:border-[#33a29b]"
+              style={{ fontFamily: '"Courier New", monospace' }}
+            />
+            <button
+              onClick={(e) => handleSubmitComment(ratingId, e)}
+              disabled={!(commentInputs[ratingId] || '').trim()}
+              className="text-[10px] font-bold text-[#33a29b] disabled:text-gray-300 transition"
+              style={{ fontFamily: '"Courier New", monospace' }}
+            >post</button>
+          </div>
+        ) : (
+          <p className="text-[10px] text-gray-400 text-center mt-2 pt-2 border-t border-gray-100" style={{ fontFamily: '"Courier New", monospace' }}>log in to comment</p>
+        )}
+      </div>
+    );
+  };
 
   const getSRRColor = (score) => {
     if (score >= 96) return 'text-purple-600';
@@ -2444,6 +2598,215 @@ const HuntersFindsApp = () => {
     }
   };
 
+  // ============================================
+  // COMMENT SYSTEM FUNCTIONS
+  // ============================================
+
+  // Fetch comments for a rating (lazy - only on expand)
+  const fetchCommentsForRating = async (ratingId) => {
+    if (ratingComments[ratingId]?.loaded) return;
+    setRatingComments(prev => ({ ...prev, [ratingId]: { ...prev[ratingId], loading: true } }));
+    try {
+      const { data, error } = await supabase
+        .from('rating_comments')
+        .select(`*, author:users!rating_comments_user_id_fkey(id, username, email)`)
+        .eq('rating_id', ratingId)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      const enriched = (data || []).map(c => ({
+        ...c,
+        username: c.author?.username || c.author?.email?.split('@')[0] || 'user',
+      }));
+      setRatingComments(prev => ({ ...prev, [ratingId]: { comments: enriched, loading: false, loaded: true } }));
+      // Fetch comment likes
+      if (enriched.length > 0) {
+        const ids = enriched.map(c => c.id);
+        const { data: likesData } = await supabase
+          .from('comment_likes')
+          .select('comment_id, user_id')
+          .in('comment_id', ids);
+        const likesMap = {};
+        (likesData || []).forEach(l => {
+          if (!likesMap[l.comment_id]) likesMap[l.comment_id] = { count: 0, likedByMe: false };
+          likesMap[l.comment_id].count++;
+          if (user && l.user_id === user.id) likesMap[l.comment_id].likedByMe = true;
+        });
+        setCommentLikes(prev => ({ ...prev, ...likesMap }));
+      }
+    } catch (err) {
+      console.error('Error fetching comments:', err);
+      setRatingComments(prev => ({ ...prev, [ratingId]: { comments: [], loading: false, loaded: true } }));
+    }
+  };
+
+  // Fetch all comments for a dish (unified modal view)
+  const fetchDishComments = async (dishId) => {
+    if (!dishId) return;
+    setDishCommentsLoading(true);
+    try {
+      // Get all ratings for this dish
+      const dishRatingIds = allRatings.filter(r => r.dish_id === dishId && !r.is_deleted).map(r => r.id);
+      if (dishRatingIds.length === 0) { setDishComments([]); setDishCommentsLoading(false); return; }
+      const { data, error } = await supabase
+        .from('rating_comments')
+        .select(`*, author:users!rating_comments_user_id_fkey(id, username, email)`)
+        .in('rating_id', dishRatingIds)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      const enriched = (data || []).map(c => ({
+        ...c,
+        username: c.author?.username || c.author?.email?.split('@')[0] || 'user',
+      }));
+      setDishComments(enriched);
+      // Also update ratingComments cache
+      dishRatingIds.forEach(rid => {
+        const forRating = enriched.filter(c => c.rating_id === rid);
+        setRatingComments(prev => ({ ...prev, [rid]: { comments: forRating, loading: false, loaded: true } }));
+      });
+    } catch (err) {
+      console.error('Error fetching dish comments:', err);
+      setDishComments([]);
+    } finally {
+      setDishCommentsLoading(false);
+    }
+  };
+
+  // Toggle comment section open/closed
+  const handleToggleComments = async (ratingId, e) => {
+    if (e) e.stopPropagation();
+    const isOpen = expandedComments.has(ratingId);
+    setExpandedComments(prev => {
+      const next = new Set(prev);
+      isOpen ? next.delete(ratingId) : next.add(ratingId);
+      return next;
+    });
+    if (!isOpen) await fetchCommentsForRating(ratingId);
+  };
+
+  // Submit a comment or reply
+  const handleSubmitComment = async (ratingId, e) => {
+    if (e) e.stopPropagation();
+    if (!user) return;
+    const text = (commentInputs[ratingId] || '').trim();
+    if (!text) return;
+    const reply = replyingTo[ratingId];
+    const myUsername = user.user_metadata?.username || user.email?.split('@')[0] || 'user';
+    const optimisticId = `temp-${Date.now()}`;
+    const optimistic = {
+      id: optimisticId,
+      rating_id: ratingId,
+      user_id: user.id,
+      parent_id: reply?.commentId || null,
+      content: text,
+      created_at: new Date().toISOString(),
+      username: myUsername,
+    };
+    // Optimistic update
+    setRatingComments(prev => ({
+      ...prev,
+      [ratingId]: {
+        ...prev[ratingId],
+        comments: [...(prev[ratingId]?.comments || []), optimistic],
+      }
+    }));
+    setCommentInputs(prev => ({ ...prev, [ratingId]: '' }));
+    setReplyingTo(prev => { const n = { ...prev }; delete n[ratingId]; return n; });
+    try {
+      const { data, error } = await supabase
+        .from('rating_comments')
+        .insert({
+          rating_id: ratingId,
+          user_id: user.id,
+          parent_id: reply?.commentId || null,
+          content: text,
+        })
+        .select(`*, author:users!rating_comments_user_id_fkey(id, username, email)`)
+        .single();
+      if (error) throw error;
+      const inserted = { ...data, username: data.author?.username || data.author?.email?.split('@')[0] || myUsername };
+      // Replace optimistic with real
+      setRatingComments(prev => ({
+        ...prev,
+        [ratingId]: {
+          ...prev[ratingId],
+          comments: prev[ratingId].comments.map(c => c.id === optimisticId ? inserted : c),
+        }
+      }));
+      // Notify the rating owner (if not commenting on own rating)
+      const rating = allRatings.find(r => r.id === ratingId);
+      if (rating && rating.user_id !== user.id) {
+        await supabase.from('notifications').insert({
+          user_id: rating.user_id,
+          type: 'comment',
+          content: {
+            commenter: myUsername,
+            commenter_id: user.id,
+            comment_text: text.slice(0, 80),
+            dish_name: rating.dish?.name || '',
+            rating_id: ratingId,
+            dish_id: rating.dish_id,
+          }
+        });
+      }
+      // Notify parent comment owner if this is a reply
+      if (reply?.commentId) {
+        const parentComment = ratingComments[ratingId]?.comments?.find(c => c.id === reply.commentId);
+        if (parentComment && parentComment.user_id !== user.id) {
+          await supabase.from('notifications').insert({
+            user_id: parentComment.user_id,
+            type: 'comment_reply',
+            content: {
+              replier: myUsername,
+              replier_id: user.id,
+              comment_text: text.slice(0, 80),
+              rating_id: ratingId,
+            }
+          });
+        }
+      }
+      if (expandedReplies.has(reply?.commentId)) {
+        setExpandedReplies(prev => new Set([...prev, reply.commentId]));
+      }
+    } catch (err) {
+      console.error('Error submitting comment:', err);
+      setRatingComments(prev => ({
+        ...prev,
+        [ratingId]: { ...prev[ratingId], comments: prev[ratingId].comments.filter(c => c.id !== optimisticId) }
+      }));
+    }
+  };
+
+  // Toggle like on a comment
+  const handleToggleCommentLike = async (commentId, e) => {
+    if (e) e.stopPropagation();
+    if (!user) return;
+    const current = commentLikes[commentId] || { count: 0, likedByMe: false };
+    const optimistic = { count: current.likedByMe ? current.count - 1 : current.count + 1, likedByMe: !current.likedByMe };
+    setCommentLikes(prev => ({ ...prev, [commentId]: optimistic }));
+    try {
+      if (current.likedByMe) {
+        await supabase.from('comment_likes').delete().eq('comment_id', commentId).eq('user_id', user.id);
+      } else {
+        await supabase.from('comment_likes').insert({ comment_id: commentId, user_id: user.id });
+      }
+    } catch (err) {
+      setCommentLikes(prev => ({ ...prev, [commentId]: current }));
+    }
+  };
+
+  // Delete a comment
+  const handleDeleteComment = async (commentId, ratingId, e) => {
+    if (e) e.stopPropagation();
+    if (!user) return;
+    setRatingComments(prev => ({
+      ...prev,
+      [ratingId]: { ...prev[ratingId], comments: prev[ratingId].comments.filter(c => c.id !== commentId) }
+    }));
+    try {
+      await supabase.from('rating_comments').delete().eq('id', commentId).eq('user_id', user.id);
+    } catch (err) { console.error('Error deleting comment:', err); }
+  };
+
   // Toggle like on a rating
   const handleToggleLike = async (ratingId, e) => {
     if (e) e.stopPropagation();
@@ -2561,6 +2924,13 @@ const HuntersFindsApp = () => {
     }
   }, [user]);
   
+  // Load comments when dish modal comments tab is opened
+  React.useEffect(() => {
+    if (selectedDish && dishModalView === 'comments') {
+      fetchDishComments(selectedDish.id);
+    }
+  }, [selectedDish, dishModalView]);
+
   // Phase 5: Load photos when PHOTOS tab is opened
   React.useEffect(() => {
     if (selectedDish && dishModalView === 'photos') {
@@ -6011,7 +6381,7 @@ const HuntersFindsApp = () => {
                                 </div>
                               </div>
                               {(item.activity_type === 'rating' || item.activity_type === 'group_rating') && item.rating_id && (
-                                <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
+                                <div className="flex flex-col items-center gap-1 flex-shrink-0">
                                   <button onClick={(e) => handleToggleLike(item.rating_id, e)} className={`transition ${likes.likedByMe ? 'text-red-500' : 'text-gray-300 hover:text-red-400'}`}>
                                     <Heart size={15} className={likes.likedByMe ? 'fill-current' : ''} />
                                   </button>
@@ -6020,11 +6390,24 @@ const HuntersFindsApp = () => {
                                       {likes.count}
                                     </button>
                                   )}
+                                  <button onClick={(e) => handleToggleComments(item.rating_id, e)} className={`transition mt-0.5 ${expandedComments.has(item.rating_id) ? 'text-[#33a29b]' : 'text-gray-300 hover:text-[#33a29b]'}`}>
+                                    <MessageSquare size={15} />
+                                  </button>
+                                  {(ratingComments[item.rating_id]?.comments?.filter(c => !c.parent_id).length || 0) > 0 && (
+                                    <span className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
+                                      {ratingComments[item.rating_id].comments.filter(c => !c.parent_id).length}
+                                    </span>
+                                  )}
                                 </div>
                               )}
                             </div>
                           </div>
-                        );
+                          {/* Inline comment thread */}
+                          {(item.activity_type === 'rating' || item.activity_type === 'group_rating') && item.rating_id && expandedComments.has(item.rating_id) && (
+                            renderCommentThread(item.rating_id, item.content?.comment, item.username, style.bg)
+                          )}
+                        </div>
+                      );
                       })
                     )}
                   </div>
@@ -6953,7 +7336,7 @@ const HuntersFindsApp = () => {
                                   <div className="text-[10px] text-gray-400 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>{timeLabel}</div>
                                 </div>
                                 {(activity.activity_type === 'rating' || activity.activity_type === 'group_rating') && activity.rating_id && (
-                                  <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
+                                  <div className="flex flex-col items-center gap-1 flex-shrink-0">
                                     <button onClick={(e) => handleToggleLike(activity.rating_id, e)} className={`transition ${likes.likedByMe ? 'text-red-500' : 'text-gray-300 hover:text-red-400'}`}>
                                       <Heart size={15} className={likes.likedByMe ? 'fill-current' : ''} />
                                     </button>
@@ -6962,11 +7345,24 @@ const HuntersFindsApp = () => {
                                         {likes.count}
                                       </button>
                                     )}
+                                    <button onClick={(e) => handleToggleComments(activity.rating_id, e)} className={`transition mt-0.5 ${expandedComments.has(activity.rating_id) ? 'text-[#33a29b]' : 'text-gray-300 hover:text-[#33a29b]'}`}>
+                                      <MessageSquare size={15} />
+                                    </button>
+                                    {(ratingComments[activity.rating_id]?.comments?.filter(c => !c.parent_id).length || 0) > 0 && (
+                                      <span className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
+                                        {ratingComments[activity.rating_id].comments.filter(c => !c.parent_id).length}
+                                      </span>
+                                    )}
                                   </div>
                                 )}
                               </div>
                             </div>
-                          );
+                            {/* Inline comment thread */}
+                            {(activity.activity_type === 'rating' || activity.activity_type === 'group_rating') && activity.rating_id && expandedComments.has(activity.rating_id) && (
+                              renderCommentThread(activity.rating_id, activity.content?.comment, activity.username, style.bg)
+                            )}
+                          </div>
+                        );
                         })}
                       </div>
                     ) : (
@@ -7927,7 +8323,7 @@ const HuntersFindsApp = () => {
                     }`}
                     style={{ fontFamily: '"Courier New", monospace' }}
                   >
-                    COMMENTS ({selectedDish.comments || 0})
+                    COMMENTS ({dishComments.filter(c => c.dish_id === selectedDish?.id || allRatings.some(r => r.id === c.rating_id && r.dish_id === selectedDish?.id)).length || selectedDish.comments || 0})
                   </button>
                 </div>
 
@@ -8153,29 +8549,67 @@ const HuntersFindsApp = () => {
                 )}
 
                 {/* Comments View */}
-                {dishModalView === 'comments' && (
-                  <div className="space-y-3">
-                    {(!selectedDish.comments || selectedDish.comments === 0) ? (
-                      <EmptyState
-                        icon={MessageSquare}
-                        title="no comments yet"
-                        message="Be the first to comment on this dish!"
-                        actionText="add comment"
-                        onAction={() => {
-                          setErrorModal({
-                            show: true,
-                            title: 'Coming Soon',
-                            message: 'Comments will be available soon!'
-                          });
-                        }}
-                      />
-                    ) : (
-                      <div className="text-sm text-gray-500 text-center py-8" style={{ fontFamily: '"Courier New", monospace' }}>
-                        Comments section coming soon!
-                      </div>
-                    )}
-                  </div>
-                )}
+                {dishModalView === 'comments' && (() => {
+                  // Group comments by rating
+                  const dishRatings = allRatings.filter(r => r.dish_id === selectedDish.id && !r.is_deleted);
+                  const totalComments = dishComments.filter(c => !c.parent_id).length;
+
+                  return (
+                    <div className="space-y-3">
+                      {dishCommentsLoading ? (
+                        <LoadingSpinner />
+                      ) : dishRatings.length === 0 ? (
+                        <EmptyState icon={MessageSquare} title="no ratings yet" message="Rate this dish to start the conversation!" />
+                      ) : (
+                        <>
+                          {dishRatings.map(rating => {
+                            const ratingUsername = rating.username || (user && rating.user_id === user.id ? (user.user_metadata?.username || user.email?.split('@')[0]) : 'user');
+                            const computedSrr = rating.overall_score
+                              ? parseFloat(rating.overall_score.toFixed(2))
+                              : rating.taste_score != null ? parseFloat(((rating.taste_score + rating.portion_score + rating.price_score) / 3).toFixed(2)) : null;
+                            const isExpanded = expandedComments.has(rating.id);
+                            const commentsForRating = ratingComments[rating.id]?.comments?.filter(c => !c.parent_id) || [];
+                            return (
+                              <div key={rating.id} className="bg-gray-50 rounded-xl overflow-hidden">
+                                {/* Rating header */}
+                                <div
+                                  className="flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-100 transition"
+                                  onClick={() => handleToggleComments(rating.id)}
+                                >
+                                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                                    {(ratingUsername || '?')[0].toUpperCase()}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm font-bold" style={{ fontFamily: '"Courier New", monospace' }}>@{ratingUsername}</span>
+                                      {computedSrr != null && (
+                                        <span className={`text-sm font-bold ${getSRRColor(computedSrr)}`} style={{ fontFamily: '"Courier New", monospace' }}>({computedSrr.toFixed(2)})</span>
+                                      )}
+                                    </div>
+                                    {rating.comment && (
+                                      <p className="text-xs text-gray-500 italic truncate" style={{ fontFamily: '"Courier New", monospace' }}>"{rating.comment}"</p>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    <span className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>
+                                      {commentsForRating.length > 0 ? `${commentsForRating.length} comment${commentsForRating.length !== 1 ? 's' : ''}` : 'no comments'}
+                                    </span>
+                                    <MessageSquare size={14} className={isExpanded ? 'text-[#33a29b]' : 'text-gray-300'} />
+                                  </div>
+                                </div>
+                                {/* Thread */}
+                                {isExpanded && renderCommentThread(rating.id, rating.comment, ratingUsername, 'bg-gray-50')}
+                              </div>
+                            );
+                          })}
+                          {totalComments === 0 && !dishCommentsLoading && (
+                            <p className="text-xs text-gray-400 text-center py-4" style={{ fontFamily: '"Courier New", monospace' }}>no comments yet — tap a rating above to start!</p>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>
