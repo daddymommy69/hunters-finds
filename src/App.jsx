@@ -4364,6 +4364,32 @@ const HuntersFindsApp = () => {
     }
   };
 
+  const handleJoinGroup = async (group) => {
+    const targetGroup = group || selectedGroup;
+    if (!targetGroup || !user) return;
+    try {
+      const { error } = await supabase
+        .from('group_members')
+        .insert({ group_id: targetGroup.id, user_id: user.id, role: 'member' });
+      if (error) throw error;
+
+      // Update local state
+      setUserGroups(prev => [...prev, targetGroup]);
+      setErrorModal({
+        show: true,
+        title: 'Joined!',
+        message: `You've joined "${targetGroup.name}".`
+      });
+    } catch (err) {
+      console.error('Error joining group:', err);
+      setErrorModal({
+        show: true,
+        title: 'Error',
+        message: 'Could not join group. Please try again.'
+      });
+    }
+  };
+
   const handleLeaveGroup = async () => {
     if (!selectedGroup || !user) return;
     
@@ -9626,6 +9652,7 @@ const HuntersFindsApp = () => {
         onClose={() => setSelectedGroup(null)}
         user={user}
         isUserMember={userGroups.some(g => g.id === selectedGroup?.id)}
+        onJoin={handleJoinGroup}
         onLeave={handleLeaveGroup}
         onDelete={handleDeleteGroup}
         allDishes={allDishes}
