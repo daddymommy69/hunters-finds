@@ -2488,15 +2488,21 @@ const HuntersFindsApp = () => {
       });
     });
 
-    // Popularity score: (likes*1 + comments*2) / decay
+    // Popularity score: only kicks in once likes+comments >= 3 (threshold)
     const scored = items.map(item => {
-      const likes = ratingLikes[item.rating_id] || { count: 0 };
+      const likes = (ratingLikes[item.rating_id] || { count: 0 }).count;
+      const commentCount = ratingComments[item.rating_id]?.commentCount
+        ?? (ratingComments[item.rating_id]?.comments?.filter(c => !c.parent_id).length || 0);
+      const engagement = likes + commentCount;
       const hoursAgo = (Date.now() - new Date(item.created_at)) / 3600000;
-      const popularity = (likes.count + 0) / Math.pow(hoursAgo / 24 + 1, 1.5);
+      // Only apply popularity boost if engagement threshold met (>=3 total)
+      const popularity = engagement >= 3
+        ? engagement / Math.pow(hoursAgo / 24 + 1, 1.5)
+        : 0;
       return { ...item, popularity, hoursAgo };
     });
 
-    // Sort: blend recency + popularity (70% recency, 30% popularity)
+    // Sort: 70% recency, 30% popularity (popularity only counts if threshold met)
     scored.sort((a, b) => {
       const aScore = (1 / (a.hoursAgo + 1)) * 0.7 + a.popularity * 0.3;
       const bScore = (1 / (b.hoursAgo + 1)) * 0.7 + b.popularity * 0.3;
@@ -2513,7 +2519,7 @@ const HuntersFindsApp = () => {
       const feed = buildGlobalActivityFeed();
       setGlobalActivityFeed(feed);
       const ratingIds = feed.filter(a => a.rating_id).map(a => a.rating_id);
-      if (ratingIds.length > 0) fetchLikesForRatings(ratingIds);
+      if (ratingIds.length > 0) { fetchLikesForRatings(ratingIds); fetchCommentCountsForFeed(ratingIds); }
       setGlobalActivityLoading(false);
     }
   }, [activeTab, exploreView, allRatings, userFollows, ratingLikes]);
@@ -2550,6 +2556,31 @@ const HuntersFindsApp = () => {
       console.error('Error fetching followers:', err);
       setUserFollowers([]);
     }
+  };
+
+  // Fetch comment counts for activity feed cards (lightweight - top-level only)
+  const fetchCommentCountsForFeed = async (ratingIds) => {
+    if (!ratingIds || !ratingIds.length) return;
+    try {
+      const { data, error } = await supabase
+        .from('rating_comments')
+        .select('rating_id')
+        .in('rating_id', ratingIds)
+        .is('parent_id', null);
+      if (error) throw error;
+      const counts = {};
+      (data || []).forEach(c => { counts[c.rating_id] = (counts[c.rating_id] || 0) + 1; });
+      // Update ratingComments with just counts (don't overwrite loaded full comments)
+      setRatingComments(prev => {
+        const next = { ...prev };
+        ratingIds.forEach(rid => {
+          if (!next[rid]?.loaded) {
+            next[rid] = { ...next[rid], commentCount: counts[rid] || 0 };
+          }
+        });
+        return next;
+      });
+    } catch (err) { console.error('Error fetching comment counts:', err); }
   };
 
   // Fetch likes for a list of rating IDs
@@ -2884,7 +2915,7 @@ const HuntersFindsApp = () => {
   // Fetch likes when activity feed loads
   React.useEffect(() => {
     const ratingIds = activityFeed.filter(a => a.activity_type === 'rating' && a.rating_id).map(a => a.rating_id);
-    if (ratingIds.length > 0) fetchLikesForRatings(ratingIds);
+    if (ratingIds.length > 0) { fetchLikesForRatings(ratingIds); fetchCommentCountsForFeed(ratingIds); }
   }, [activityFeed]);
   
   // Fetch notifications periodically
@@ -6370,11 +6401,14 @@ const HuntersFindsApp = () => {
                                   <button onClick={(e) => handleToggleComments(item.rating_id, e)} className={`transition mt-0.5 ${expandedComments.has(item.rating_id) ? 'text-[#33a29b]' : 'text-gray-300 hover:text-[#33a29b]'}`}>
                                     <MessageSquare size={15} />
                                   </button>
-                                  {(ratingComments[item.rating_id]?.comments?.filter(c => !c.parent_id).length || 0) > 0 && (
-                                    <span className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
-                                      {ratingComments[item.rating_id].comments.filter(c => !c.parent_id).length}
-                                    </span>
-                                  )}
+                                  {(() => {
+                                    const cnt = ratingComments[item.rating_id]?.loaded
+                                      ? ratingComments[item.rating_id].comments.filter(c => !c.parent_id).length
+                                      : (ratingComments[item.rating_id]?.commentCount || 0);
+                                    return cnt > 0 ? (
+                                      <span className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>{cnt}</span>
+                                    ) : null;
+                                  })()}
                                 </div>
                               )}
                             </div>
@@ -6739,7 +6773,9 @@ const HuntersFindsApp = () => {
                     
                     {authError && (
                       <p className="text-sm text-red-500" style={{ fontFamily: '"Courier New", monospace' }}>
-                        {authError}
+                        {authError.toLowerCase().includes('password') && (authError.toLowerCase().includes('character') || authError.toLowerCase().includes('contain'))
+                          ? 'password requires at least one digit'
+                          : authError}
                       </p>
                     )}
                     
@@ -6834,19 +6870,32 @@ const HuntersFindsApp = () => {
 
                   <div className="bg-white rounded-lg p-4 shadow-sm">
                     <h3 className="text-sm font-semibold mb-3">your top rated</h3>
-                    {allDishes.slice(0, 3).map((dish, idx) => (
-                      <div 
-                        key={idx} 
-                        onClick={() => setSelectedDish(dish)}
-                        className="flex justify-between py-2 cursor-pointer hover:bg-gray-50 rounded transition"
-                      >
-                        <div>
-                          <div className="text-sm font-medium">#{idx + 1} {dish.name}</div>
-                          <div className="text-xs text-gray-500">{dish.restaurantName}</div>
+                    {(() => {
+                      const myTopRated = activeUserRatings
+                        .map(r => {
+                          const srr = r.overall_score
+                            ? parseFloat(r.overall_score.toFixed(2))
+                            : r.taste_score != null ? parseFloat(((r.taste_score + r.portion_score + r.price_score) / 3).toFixed(2)) : null;
+                          return { ...r, name: r.dish?.name || 'Unknown', restaurantName: r.dish?.restaurant_name || '', srr };
+                        })
+                        .filter(r => r.srr != null)
+                        .sort((a, b) => b.srr - a.srr)
+                        .slice(0, 3);
+                      if (myTopRated.length === 0) return <p className="text-xs text-gray-400">no ratings yet</p>;
+                      return myTopRated.map((dish, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => { const d = allDishes.find(d => d.id === dish.dish_id); if (d) setSelectedDish(d); }}
+                          className="flex justify-between py-2 cursor-pointer hover:bg-gray-50 rounded transition"
+                        >
+                          <div>
+                            <div className="text-sm font-medium">#{idx + 1} {dish.name}</div>
+                            <div className="text-xs text-gray-500">{dish.restaurantName}</div>
+                          </div>
+                          <div className={`text-lg font-bold ${getSRRColor(dish.srr)}`}>{dish.srr.toFixed(2)}</div>
                         </div>
-                        <div className={`text-lg font-bold ${getSRRColor(dish.srr)}`}>{typeof dish.srr === "number" ? dish.srr.toFixed(2) : dish.srr}</div>
-                      </div>
-                    ))}
+                      ));
+                    })()}
                   </div>
                 </div>
               )}
@@ -7324,11 +7373,14 @@ const HuntersFindsApp = () => {
                                     <button onClick={(e) => handleToggleComments(activity.rating_id, e)} className={`transition mt-0.5 ${expandedComments.has(activity.rating_id) ? 'text-[#33a29b]' : 'text-gray-300 hover:text-[#33a29b]'}`}>
                                       <MessageSquare size={15} />
                                     </button>
-                                    {(ratingComments[activity.rating_id]?.comments?.filter(c => !c.parent_id).length || 0) > 0 && (
-                                      <span className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
-                                        {ratingComments[activity.rating_id].comments.filter(c => !c.parent_id).length}
-                                      </span>
-                                    )}
+                                    {(() => {
+                                      const cnt = ratingComments[activity.rating_id]?.loaded
+                                        ? ratingComments[activity.rating_id].comments.filter(c => !c.parent_id).length
+                                        : (ratingComments[activity.rating_id]?.commentCount || 0);
+                                      return cnt > 0 ? (
+                                        <span className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>{cnt}</span>
+                                      ) : null;
+                                    })()}
                                   </div>
                                 )}
                               </div>
@@ -9597,18 +9649,37 @@ const HuntersFindsApp = () => {
       )}
       
       {/* Error Modal */}
-      {errorModal.show && (
+      {errorModal.show && (() => {
+        const isSuccess = errorModal.title && (
+          errorModal.title.endsWith('!') &&
+          !errorModal.title.toLowerCase().includes('error') &&
+          !errorModal.title.toLowerCase().includes('fail') &&
+          !errorModal.title.toLowerCase().includes("don't") &&
+          !errorModal.title.toLowerCase().includes("can't") &&
+          !errorModal.title.toLowerCase().includes('invalid') &&
+          !errorModal.title.toLowerCase().includes('short') &&
+          !errorModal.title.toLowerCase().includes('match') &&
+          !errorModal.title.toLowerCase().includes('coming soon')
+        );
+        return (
         <>
           <div onClick={() => setErrorModal({ show: false, title: '', message: '' })} className="fixed inset-0 bg-black/50 z-50 animate-fade-in" />
           <div className="fixed inset-0 flex items-center justify-center z-50 p-4 pointer-events-none">
             <div className="bg-white rounded-xl max-w-sm w-full p-6 pointer-events-auto animate-slide-up-fade-simple">
               <div className="flex items-start gap-3 mb-4">
-                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2">
-                    <circle cx="12" cy="12" r="10"/>
-                    <line x1="12" y1="8" x2="12" y2="12"/>
-                    <line x1="12" y1="16" x2="12.01" y2="16"/>
-                  </svg>
+                <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${isSuccess ? 'bg-green-100' : 'bg-red-100'}`}>
+                  {isSuccess ? (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5">
+                      <circle cx="12" cy="12" r="10"/>
+                      <polyline points="7,12 10.5,15.5 17,9"/>
+                    </svg>
+                  ) : (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2">
+                      <circle cx="12" cy="12" r="10"/>
+                      <line x1="12" y1="8" x2="12" y2="12"/>
+                      <line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>
+                  )}
                 </div>
                 <div className="flex-1">
                   <h3 className="text-lg font-bold mb-2" style={{ fontFamily: '"Courier New", monospace' }}>
@@ -9653,7 +9724,8 @@ const HuntersFindsApp = () => {
             </div>
           </div>
         </>
-      )}
+        );
+      })()}
       
       {/* Edit Profile Modal */}
       {isEditProfileModalOpen && (
