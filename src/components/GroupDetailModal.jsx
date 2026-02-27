@@ -9,6 +9,7 @@ export const GroupDetailModal = ({
   onClose, 
   user, 
   isUserMember,
+  onJoin,
   onLeave,
   onDelete,
   allDishes,
@@ -210,9 +211,31 @@ export const GroupDetailModal = ({
                 </div>
               </div>
             </div>
-            <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-              <X size={20} />
-            </button>
+            <div className="flex items-center gap-2">
+              {user && !isUserMember && (
+                <button
+                  onClick={() => onJoin && onJoin(group)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-[#33a29b] text-white text-sm font-semibold rounded-lg hover:bg-[#2a8a84] transition"
+                  style={{ fontFamily: '"Courier New", monospace' }}
+                >
+                  <UserPlus size={14} />
+                  join
+                </button>
+              )}
+              {user && isUserMember && !isCreator && (
+                <button
+                  onClick={onLeave}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-600 text-sm font-semibold rounded-lg hover:bg-gray-200 transition"
+                  style={{ fontFamily: '"Courier New", monospace' }}
+                >
+                  <LogOut size={14} />
+                  leave
+                </button>
+              )}
+              <button onClick={onClose} className="text-gray-500 hover:text-gray-700 ml-1">
+                <X size={20} />
+              </button>
+            </div>
           </div>
 
           {/* Tabs */}
