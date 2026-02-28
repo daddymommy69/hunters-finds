@@ -1487,10 +1487,11 @@ const HuntersFindsApp = () => {
   const [selectedRating, setSelectedRating] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
 
-  // Fetch tags when dish modal opens
+  // Fetch tags and comment count when dish modal opens
   React.useEffect(() => {
     if (selectedDish) {
       fetchTagsForItem(selectedDish.id, 'dish');
+      fetchDishComments(selectedDish.id);
     }
   }, [selectedDish]);
 
