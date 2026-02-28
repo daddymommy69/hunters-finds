@@ -2469,11 +2469,7 @@ const HuntersFindsApp = () => {
             }
           });
         
-        setErrorModal({
-          show: true,
-          title: 'Following!',
-          message: `You're now following @${userToFollow.username}`
-        });
+        // Follow silently - no modal
       }
       
       // Refresh follows list
@@ -6876,6 +6872,19 @@ const HuntersFindsApp = () => {
                           setYouView('profile');
                           setAuthEmail('');
                           setAuthPassword('');
+                          // Auto-follow @jacob for all new signups
+                          if (authMode === 'signup' && result.data.user) {
+                            const newUserId = result.data.user.id;
+                            const jacobId = '28886226-ca5b-4eb7-af6e-197498bb7e3a';
+                            if (newUserId !== jacobId) {
+                              supabase.from('user_follows').insert({
+                                follower_id: newUserId,
+                                following_id: jacobId
+                              }).then(() => {
+                                console.log('Auto-followed @jacob');
+                              });
+                            }
+                          }
                         }
                       }}
                       disabled={authFormLoading || !authEmail || !authPassword}
@@ -8024,7 +8033,17 @@ const HuntersFindsApp = () => {
                 </div>
 
                 <div className="border-t border-gray-100 pt-2 mt-1">
-                  <h3 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-2" style={{ fontFamily: '"Courier New", monospace' }}>rating scores</h3>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <h3 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide" style={{ fontFamily: '"Courier New", monospace' }}>rating scores</h3>
+                    <div className="group relative flex-shrink-0">
+                      <div className="w-4 h-4 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-[9px] font-bold cursor-help hover:bg-[#33a29b] hover:text-white transition">?</div>
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 bg-gray-900 text-white text-[10px] rounded-lg px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl" style={{ fontFamily: '"Courier New", monospace' }}>
+                        <p className="mb-1">your score is the average of taste, price, and portion. each is rated 1–100.</p>
+                        <p>the price score is why i built this app — it's calculated automatically based on what you paid vs. the average price of this dish across the database. value matters.</p>
+                        <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                      </div>
+                    </div>
+                  </div>
 
                   {/* Taste Slider */}
                   <div className="mb-2">
@@ -8051,7 +8070,10 @@ const HuntersFindsApp = () => {
                   {/* Price Value Display */}
                   <div className="bg-green-50 border border-green-200 rounded-lg px-2 py-1.5 mb-2">
                     <div className="flex justify-between items-center mb-0.5">
-                      <label className="text-[10px] font-semibold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>price value (auto)</label>
+                      <div>
+                        <label className="text-[10px] font-semibold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>price value (auto)</label>
+                        <p className="text-[9px] text-gray-400 leading-tight" style={{ fontFamily: '"Courier New", monospace' }}>based on your price vs avg for this dish</p>
+                      </div>
                       <div className="text-right">
                         <span className="text-xs font-bold text-green-600" style={{ fontFamily: '"Courier New", monospace' }}>{priceScore}</span>
                         {price && dishName && dishCategory && (() => {
