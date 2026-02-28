@@ -4785,10 +4785,9 @@ const HuntersFindsApp = () => {
     };
   }, [isSubmissionModalOpen, isResultsModalOpen, selectedDish, selectedRestaurant, showDeleteConfirm]);
 
-  // Check if current user has rated the selected dish
+  // Check if current user has rated the selected dish (only their own ratings, never admin override)
   React.useEffect(() => {
     if (!selectedDish || !user) { setUserHasRatedDish(false); return; }
-    if (userRole === 'admin' || userRole === 'moderator') { setUserHasRatedDish(true); return; }
     supabase
       .from('ratings')
       .select('id')
@@ -8457,9 +8456,9 @@ const HuntersFindsApp = () => {
               <div className="flex-shrink-0 px-4 py-3 border-t bg-white rounded-b-2xl">
                 <button
                   onClick={() => { setRestaurant(selectedDish.restaurantName); setDishName(selectedDish.name); setIsSubmissionModalOpen(true); handleCloseDish(); }}
-                  className={`w-full py-3 rounded-xl font-bold text-sm transition ${userHasRatedDish ? 'bg-gray-100 text-gray-500 hover:bg-gray-200 border border-gray-200' : 'bg-[#33a29b] text-white hover:bg-[#2a8a84] shadow-md'}`}
+                  className={`w-full py-3 rounded-xl font-bold text-sm transition ${(userHasRatedDish && !!activeUserRatings.find(r => r.dish_id === selectedDish.id)) ? 'bg-gray-100 text-gray-500 hover:bg-gray-200 border border-gray-200' : 'bg-[#33a29b] text-white hover:bg-[#2a8a84] shadow-md'}`}
                   style={{ fontFamily: '"Courier New", monospace' }}
-                >{userHasRatedDish ? 'edit your rating' : 'rate this dish'}</button>
+                >{(userHasRatedDish && !!activeUserRatings.find(r => r.dish_id === selectedDish.id)) ? 'edit your rating' : 'rate this dish'}</button>
               </div>
 
             </div>
