@@ -91,6 +91,63 @@ const CountUpScore = ({ value, duration = 800, className = "" }) => {
   return <span className={className}>{count}</span>;
 };
 
+
+// ── Animated score counter for dish modal badge ──
+const DishScoreCounter = ({ target, color = 'white' }) => {
+  const [displayed, setDisplayed] = React.useState(0);
+  React.useEffect(() => {
+    let start = 0;
+    const end = parseFloat(target) || 0;
+    if (end === 0) return;
+    const duration = 900;
+    const steps = 60;
+    const increment = end / steps;
+    const interval = duration / steps;
+    const timer = setInterval(() => {
+      start += increment;
+      if (start >= end) { setDisplayed(end); clearInterval(timer); }
+      else setDisplayed(start);
+    }, interval);
+    return () => clearInterval(timer);
+  }, [target]);
+  return (
+    <div style={{ fontFamily: '"Courier New", monospace', color, fontWeight: 'bold', fontSize: '1.6rem', lineHeight: 1 }}>
+      {displayed.toFixed(1)}
+    </div>
+  );
+};
+
+// ── Animated score bar for dish modal breakdown ──
+const ScoreBar = ({ target, color, bgColor }) => {
+  const [displayed, setDisplayed] = React.useState(0);
+  const [barWidth, setBarWidth] = React.useState(0);
+  React.useEffect(() => {
+    let start = 0;
+    const end = parseFloat(target) || 0;
+    if (end === 0) return;
+    const duration = 900;
+    const steps = 60;
+    const increment = end / steps;
+    const interval = duration / steps;
+    const timer = setInterval(() => {
+      start += increment;
+      if (start >= end) { setDisplayed(end); setBarWidth(end); clearInterval(timer); }
+      else { setDisplayed(start); setBarWidth(start); }
+    }, interval);
+    return () => clearInterval(timer);
+  }, [target]);
+  return (
+    <div>
+      <div style={{ fontFamily: '"Courier New", monospace', color, fontWeight: 'bold', fontSize: '1.5rem', lineHeight: 1 }}>
+        {displayed.toFixed(1)}
+      </div>
+      <div style={{ marginTop: '6px', height: '5px', borderRadius: '999px', background: bgColor, overflow: 'hidden' }}>
+        <div style={{ height: '100%', borderRadius: '999px', background: color, width: barWidth + '%', transition: 'none' }} />
+      </div>
+    </div>
+  );
+};
+
 const HuntersFindsApp = () => {
   // ===== AUTHENTICATION =====
   const { user, loading: authLoading, signOut, signUpWithEmail, signInWithEmail, error: authError } = useAuth();
@@ -407,6 +464,7 @@ const HuntersFindsApp = () => {
   const [isResultsClosing, setIsResultsClosing] = useState(false);
   const [isSubmissionClosing, setIsSubmissionClosing] = useState(false);
   const [isDishModalClosing, setIsDishModalClosing] = useState(false);
+  const [dishModalOverflowOpen, setDishModalOverflowOpen] = useState(false);
   const [isNewListModalClosing, setIsNewListModalClosing] = useState(false);
   const [isNewGroupModalClosing, setIsNewGroupModalClosing] = useState(false);
   const [selectedRestaurant, setSelectedRestaurant] = useState(null);
@@ -4252,7 +4310,8 @@ const HuntersFindsApp = () => {
     setTimeout(() => {
       setSelectedDish(null);
       setIsDishModalClosing(false);
-      setDishModalView('scores'); // Reset to scores view
+      setDishModalView('scores');
+      setDishModalOverflowOpen(false);
     }, 300);
   };
 
@@ -8160,520 +8219,249 @@ const HuntersFindsApp = () => {
 
       {/* Dish Modal - Optimized Compact View with Score Breakdown */}
       {selectedDish && (() => {
-        // Get actual user ratings for this dish if available
         const userRating = userRatings?.find(r => r.dish_id === selectedDish.id);
-        
-        // Use actual user scores if they exist, otherwise use averages from dish data
         const tasteScore = userRating?.taste_score || selectedDish.taste_score || Math.round(selectedDish.srr * 0.85);
         const portionScore = userRating?.portion_score || selectedDish.portion_score || Math.round(selectedDish.srr * 0.9);
-        
-        // Calculate dynamic price score using ALL dishes for comparison
-        const { score: calculatedPriceScore, avgPrice } = calculatePriceScore(
-          selectedDish.price, 
-          selectedDish.name, 
-          selectedDish.cuisine, 
-          allDishes  // Use processed allDishes array, not raw dishes from DB
-        );
-        // ALWAYS use dynamic price score (don't use stored price_score as it's outdated)
+        const { score: calculatedPriceScore, avgPrice } = calculatePriceScore(selectedDish.price, selectedDish.name, selectedDish.cuisine, allDishes);
         const priceScore = calculatedPriceScore;
-        
-        // Calculate overall SRR from the three scores
         const overallSRR = selectedDish.srr || Math.round((tasteScore + portionScore + priceScore) / 3);
-        
+        const scoreVal = typeof overallSRR === 'number' ? overallSRR : parseFloat(overallSRR);
+        const washColor = scoreVal >= 96 ? '#9333ea' : scoreVal >= 89 ? '#eab308' : scoreVal >= 81 ? '#9ca3af' : scoreVal >= 72 ? '#22c55e' : '#3b82f6';
+        const washBg = scoreVal >= 96 ? 'rgba(147,51,234,0.07)' : scoreVal >= 89 ? 'rgba(234,179,8,0.07)' : scoreVal >= 81 ? 'rgba(156,163,175,0.09)' : scoreVal >= 72 ? 'rgba(34,197,94,0.07)' : 'rgba(59,130,246,0.07)';
+        const othersWhoRated = allRatings.filter(r => r.dish_id === selectedDish.id && !r.is_deleted).map(r => {
+          const u = allUsers.find(u => u.id === r.user_id);
+          const srr = r.overall_score != null ? parseFloat(parseFloat(r.overall_score).toFixed(1)) : r.taste_score != null ? parseFloat(((r.taste_score + r.portion_score + r.price_score) / 3).toFixed(1)) : null;
+          return { ...r, username: u?.username || r.username || 'user', srr };
+        });
+        const communityAvg = othersWhoRated.length > 0 ? othersWhoRated.reduce((sum, r) => sum + (r.srr || 0), 0) / othersWhoRated.length : null;
+        const dishRestaurant = allRestaurants.find(r => r.name === selectedDish.restaurantName);
+        const address = dishRestaurant?.address || dishRestaurant?.location?.address || dishRestaurant?.googleData?.vicinity || dishRestaurant?.google_data?.vicinity || '';
+        const overflowOpen = dishModalOverflowOpen;
+        const setOverflowOpen = setDishModalOverflowOpen;
+
         return (
         <>
           <div onClick={handleCloseDish} className={`fixed inset-0 bg-black/40 z-50 ${isDishModalClosing ? 'animate-fade-out' : 'animate-fade-in'}`} style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }} />
-          <div className={`fixed inset-0 flex items-center justify-center z-50 p-4 pointer-events-none`}>
-            <div className={`bg-white rounded-xl w-full overflow-y-auto pointer-events-auto ${isDishModalClosing ? 'animate-slide-down-fade-simple' : 'animate-slide-up-fade-simple'}`} style={{ maxWidth: '614px', maxHeight: '55vh' }}>
-              {/* Compact Header */}
-              <div className="sticky top-0 bg-white border-b px-3 py-2 flex justify-between items-center">
-                <div className="flex items-center gap-2 flex-1">
-                  <h2 className="text-base font-bold truncate" style={{ fontFamily: '"Courier New", monospace' }}>{selectedDish.name}</h2>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSaveItem(selectedDish, 'dish');
-                    }}
-                    className="p-1 hover:bg-gray-100 rounded-full transition flex-shrink-0"
-                  >
-                    <Bookmark size={16} className={isItemSaved(selectedDish.id, 'dish') ? 'fill-[#33a29b] text-[#33a29b]' : 'text-gray-400'} />
+          <div className="fixed inset-0 flex items-center justify-center z-50 p-4 pointer-events-none">
+            <div className={`bg-white rounded-2xl w-full pointer-events-auto flex flex-col ${isDishModalClosing ? 'animate-slide-down-fade-simple' : 'animate-slide-up-fade-simple'}`} style={{ maxWidth: '600px', maxHeight: '90vh' }}>
+
+              {/* HEADER with score wash */}
+              <div className="relative rounded-t-2xl px-4 pt-5 pb-4 flex-shrink-0" style={{ background: washBg }}>
+                <div className="flex justify-between items-center mb-3">
+                  <button onClick={(e) => { e.stopPropagation(); handleSaveItem(selectedDish, 'dish'); }} className="p-1.5 rounded-full hover:bg-white/60 transition">
+                    <Bookmark size={18} className={isItemSaved(selectedDish.id, 'dish') ? 'fill-[#33a29b] text-[#33a29b]' : 'text-gray-400'} />
                   </button>
-                  
-                  {/* Edit/Delete Buttons in Modal */}
-                  {user && canEditRating({user_id: user.id, created_at: selectedDish.created_at || new Date().toISOString()}) && (
-                    <div className="flex gap-1 ml-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleEditRating({
-                            id: selectedDish.id,
-                            dish_name: selectedDish.name,
-                            dish: {name: selectedDish.name},
-                            restaurant_name: selectedDish.restaurantName,
-                            taste_score: selectedDish.taste,
-                            portion_score: selectedDish.portion,
-                            price_value_score: selectedDish.priceValue,
-                            price: selectedDish.price,
-                            comment: selectedDish.comment || '',
-                            created_at: selectedDish.created_at,
-                            edit_count: selectedDish.edit_count || 0
-                          });
-                          handleCloseDish();
-                        }}
-                        className="px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100 border border-blue-200 font-medium"
-                        style={{ fontFamily: '"Courier New", monospace' }}
-                      >
-                        Edit
-                      </button>
-                      
-                      {userHasRatedDish && (
-                        <button
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            // Query DB directly for the rating to delete
-                            // Admins/mods can delete any rating; regular users only their own
-                            let ratingQuery = supabase
-                              .from('ratings')
-                              .select('id, taste_score, portion_score, price_score, overall_score, comment, created_at, user_id')
-                              .eq('dish_id', selectedDish.id)
-                              .eq('is_deleted', false);
-                            
-                            // Regular users can only delete their own
-                            if (userRole !== 'admin' && userRole !== 'moderator') {
-                              ratingQuery = ratingQuery.eq('user_id', user.id);
-                            }
-                            
-                            const { data: ratingRow } = await ratingQuery.maybeSingle();
-                            
-                            if (!ratingRow) {
-                              console.error('No active rating found for dish:', selectedDish.name);
-                              return;
-                            }
-                            
-                            handleDeleteRating({
-                              id: ratingRow.id,
-                              dish_id: selectedDish.id,
-                              dish_name: selectedDish.name,
-                              dish: {name: selectedDish.name},
-                              restaurant_name: selectedDish.restaurantName,
-                              user_id: user.id,
-                              taste_score: ratingRow.taste_score,
-                              portion_score: ratingRow.portion_score,
-                              price_value_score: ratingRow.price_score,
-                              price: selectedDish.price,
-                              comment: ratingRow.comment || '',
-                              created_at: ratingRow.created_at
-                            });
-                            handleCloseDish();
-                          }}
-                          className="px-2 py-1 text-xs bg-red-50 text-red-700 rounded hover:bg-red-100 border border-red-200 font-medium"
-                          style={{ fontFamily: '"Courier New", monospace' }}
-                        >
-                          Delete
-                        </button>
-                      )}
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {user && canEditRating({ user_id: user.id, created_at: selectedDish.created_at || new Date().toISOString() }) && (
+                      <div className="relative">
+                        <button onClick={(e) => { e.stopPropagation(); setOverflowOpen(v => !v); }} className="p-1.5 rounded-full hover:bg-white/60 transition text-gray-500 text-lg font-bold leading-none" style={{ fontFamily: 'monospace' }}>···</button>
+                        {overflowOpen && (
+                          <>
+                            <div className="fixed inset-0 z-10" onClick={() => setOverflowOpen(false)} />
+                            <div className="absolute right-0 top-9 bg-white rounded-xl shadow-xl border z-20 py-1 min-w-[140px]">
+                              <button onClick={(e) => { e.stopPropagation(); setOverflowOpen(false); handleEditRating({ id: selectedDish.id, dish_name: selectedDish.name, dish: { name: selectedDish.name }, restaurant_name: selectedDish.restaurantName, taste_score: selectedDish.taste, portion_score: selectedDish.portion, price_value_score: selectedDish.priceValue, price: selectedDish.price, comment: selectedDish.comment || '', created_at: selectedDish.created_at, edit_count: selectedDish.edit_count || 0 }); handleCloseDish(); }} className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 transition" style={{ fontFamily: '"Courier New", monospace' }}>edit rating</button>
+                              {userHasRatedDish && (
+                                <button onClick={async (e) => { e.stopPropagation(); setOverflowOpen(false); let q = supabase.from('ratings').select('id,taste_score,portion_score,price_score,overall_score,comment,created_at,user_id').eq('dish_id', selectedDish.id).eq('is_deleted', false); if (userRole !== 'admin' && userRole !== 'moderator') q = q.eq('user_id', user.id); const { data: rw } = await q.maybeSingle(); if (!rw) return; handleDeleteRating({ id: rw.id, dish_id: selectedDish.id, dish_name: selectedDish.name, dish: { name: selectedDish.name }, restaurant_name: selectedDish.restaurantName, user_id: user.id, taste_score: rw.taste_score, portion_score: rw.portion_score, price_value_score: rw.price_score, price: selectedDish.price, comment: rw.comment || '', created_at: rw.created_at }); handleCloseDish(); }} className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition" style={{ fontFamily: '"Courier New", monospace' }}>delete rating</button>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                    <button onClick={handleCloseDish} className="p-1.5 rounded-full hover:bg-white/60 transition text-gray-500"><X size={18} /></button>
+                  </div>
                 </div>
-                <button onClick={handleCloseDish} className="text-gray-500 hover:text-gray-700 flex-shrink-0">
-                  <X size={18} />
-                </button>
+
+                {/* Score badge */}
+                <div className="flex flex-col items-center mb-3">
+                  <div className="w-20 h-20 rounded-full flex items-center justify-center shadow-lg mb-2 border-4 border-white" style={{ background: washColor }}>
+                    <DishScoreCounter target={overallSRR} color="white" />
+                  </div>
+                  <div className="text-[10px] text-gray-400 uppercase tracking-widest" style={{ fontFamily: '"Courier New", monospace' }}>overall score</div>
+                </div>
+
+                {/* Dish name */}
+                <h2 className="text-xl font-bold text-center mb-1" style={{ fontFamily: '"Courier New", monospace' }}>{selectedDish.name}</h2>
+
+                {/* Restaurant tappable + address */}
+                <div className="text-center">
+                  <button onClick={(e) => { e.stopPropagation(); if (dishRestaurant) { setSelectedRestaurant(dishRestaurant); handleCloseDish(); } }} className="text-sm font-semibold text-[#33a29b] hover:underline" style={{ fontFamily: '"Courier New", monospace' }}>{selectedDish.restaurantName}</button>
+                  {address && <p className="text-xs text-gray-400 mt-0.5 break-words px-2" style={{ fontFamily: '"Courier New", monospace' }}>{address}</p>}
+                  <p className="text-xs text-gray-400 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>${selectedDish.price.toFixed(2)} · {selectedDish.numRatings} rating{selectedDish.numRatings !== 1 ? 's' : ''}</p>
+                </div>
               </div>
 
-              {/* Compact Content */}
-              <div className="p-3">
-                {/* Restaurant & Price Info */}
-                <div className="flex justify-between items-start mb-2">
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs font-medium text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>{selectedDish.restaurantName}</p>
-                      {(() => {
-                        const dishRestaurant = allRestaurants.find(r => r.name === selectedDish.restaurantName);
-                        const address = dishRestaurant?.address || dishRestaurant?.location?.address || dishRestaurant?.googleData?.vicinity || dishRestaurant?.google_data?.vicinity;
-                        return address ? (
-                          <p className="text-[10px] text-gray-400 truncate max-w-[160px]" style={{ fontFamily: '"Courier New", monospace' }}>{address}</p>
-                        ) : null;
-                      })()}
-                    </div>
-                    <p className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>${selectedDish.price.toFixed(2)} • {selectedDish.numRatings} ratings</p>
-                  </div>
-                </div>
-                {/* Rate this Dish button */}
-                <button
-                  onClick={() => {
-                    setRestaurant(selectedDish.restaurantName);
-                    setDishName(selectedDish.name);
-                    setIsSubmissionModalOpen(true);
-                    handleCloseDish();
-                  }}
-                  className="w-full py-2 bg-[#33a29b] text-white rounded-lg font-bold hover:bg-[#2a8a84] transition text-sm mb-2"
-                  style={{ fontFamily: '"Courier New", monospace' }}
-                >
-                  Rate this Dish
-                </button>
+              {/* SCROLLABLE BODY */}
+              <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
 
-                {/* Overall Score Display - Matching Restaurant Style */}
-                <div className="bg-gradient-to-r from-[#33a29b]/10 to-[#2a8a84]/10 rounded-lg px-3 py-1.5 border border-[#33a29b]/30 mb-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-[8px] text-gray-600 uppercase" style={{ fontFamily: '"Courier New", monospace' }}>Overall Score</div>
-                      <div className={`text-2xl font-bold leading-none ${getSRRColor(overallSRR)}`} style={{ fontFamily: '"Courier New", monospace' }}>{typeof overallSRR === "number" ? overallSRR.toFixed(2) : overallSRR}</div>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDishModalView('photos');
-                        }}
-                        className="flex items-center gap-1 hover:bg-gray-100 px-1 py-0.5 rounded transition"
-                      >
-                        <Image size={14} className="text-gray-400" />
-                        <span className="text-xs font-bold" style={{ fontFamily: '"Courier New", monospace' }}>{selectedDish.photos || 0}</span>
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDishModalView('comments');
-                        }}
-                        className="flex items-center gap-1 hover:bg-gray-100 px-1 py-0.5 rounded transition ml-1"
-                      >
-                        <MessageSquare size={14} className="text-gray-400" />
-                        <span className="text-xs font-bold" style={{ fontFamily: '"Courier New", monospace' }}>{selectedDish.comments || 0}</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Tab Buttons */}
-                <div className="flex gap-2 mb-3 border-b">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDishModalView('scores');
-                    }}
-                    className={`px-3 py-1.5 text-xs font-semibold transition ${
-                      dishModalView === 'scores'
-                        ? 'text-[#33a29b] border-b-2 border-[#33a29b]'
-                        : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                    style={{ fontFamily: '"Courier New", monospace' }}
-                  >
-                    SCORES
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDishModalView('photos');
-                    }}
-                    className={`px-3 py-1.5 text-xs font-semibold transition ${
-                      dishModalView === 'photos'
-                        ? 'text-[#33a29b] border-b-2 border-[#33a29b]'
-                        : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                    style={{ fontFamily: '"Courier New", monospace' }}
-                  >
-                    PHOTOS ({selectedDish.photos || 0})
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDishModalView('comments');
-                    }}
-                    className={`px-3 py-1.5 text-xs font-semibold transition ${
-                      dishModalView === 'comments'
-                        ? 'text-[#33a29b] border-b-2 border-[#33a29b]'
-                        : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                    style={{ fontFamily: '"Courier New", monospace' }}
-                  >
-                    COMMENTS ({dishComments.filter(c => c.dish_id === selectedDish?.id || allRatings.some(r => r.id === c.rating_id && r.dish_id === selectedDish?.id)).length || selectedDish.comments || 0})
-                  </button>
-                </div>
-
-                {/* Scores View */}
-                {dishModalView === 'scores' && (
-                  <>
-                    {/* Score Breakdown - 3 Scores Like Restaurant */}
+                {/* Score Breakdown — taste | price | portion */}
                 <div>
-                  <h3 className="text-[9px] font-bold mb-1.5 text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>SCORE BREAKDOWN</h3>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    <div className="bg-orange-50 rounded p-1.5 text-center border border-orange-100">
-                      <div className="text-[7px] text-gray-600" style={{ fontFamily: '"Courier New", monospace' }}>taste</div>
-                      <div className="text-base font-bold text-orange-600" style={{ fontFamily: '"Courier New", monospace' }}>
-                        {tasteScore}
+                  <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3" style={{ fontFamily: '"Courier New", monospace' }}>score breakdown</h3>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-orange-50 rounded-xl p-3 text-center border border-orange-100">
+                      <div className="text-[10px] text-gray-400 mb-2" style={{ fontFamily: '"Courier New", monospace' }}>taste</div>
+                      <ScoreBar target={tasteScore} color="#ea580c" bgColor="rgba(234,88,12,0.15)" />
+                    </div>
+                    <div className="bg-green-50 rounded-xl p-3 text-center border border-green-100">
+                      <div className="text-[10px] text-gray-400 mb-2" style={{ fontFamily: '"Courier New", monospace' }}>price</div>
+                      <ScoreBar target={priceScore} color="#16a34a" bgColor="rgba(22,163,74,0.15)" />
+                      <div className="text-[10px] text-gray-400 mt-2 leading-tight" style={{ fontFamily: '"Courier New", monospace' }}>
+                        <span className="font-bold text-gray-600">${selectedDish.price.toFixed(2)}</span>
+                        <span className="text-gray-300"> vs </span>
+                        <span className="font-bold text-gray-600">${avgPrice.toFixed(2)}</span>
+                        <span className="block text-[9px] text-gray-300">avg</span>
                       </div>
                     </div>
-                    <div className="bg-blue-50 rounded p-1.5 text-center border border-blue-100">
-                      <div className="text-[7px] text-gray-600" style={{ fontFamily: '"Courier New", monospace' }}>portion</div>
-                      <div className="text-base font-bold text-blue-600" style={{ fontFamily: '"Courier New", monospace' }}>
-                        {portionScore}
-                      </div>
-                    </div>
-                    <div className="bg-green-50 rounded p-1.5 text-center border border-green-100">
-                      <div className="text-[7px] text-gray-600" style={{ fontFamily: '"Courier New", monospace' }}>price</div>
-                      <div className="text-base font-bold text-green-600" style={{ fontFamily: '"Courier New", monospace' }}>
-                        {priceScore}
-                      </div>
-                      <div className="text-[6px] text-gray-500 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
-                        ${selectedDish.price.toFixed(2)} vs ${avgPrice.toFixed(2)}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Tags Section */}
-                  <div className="mt-2 pt-2 border-t">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="text-xs text-gray-600 font-semibold" style={{ fontFamily: '"Courier New", monospace' }}>
-                        TAGS
-                      </div>
-                      {user && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenTagsModal(selectedDish.id, 'dish', selectedDish.name);
-                          }}
-                          className="text-xs text-[#33a29b] hover:text-[#2a8a84] font-semibold px-2 py-1 rounded hover:bg-teal-50 transition"
-                          style={{ fontFamily: '"Courier New", monospace' }}
-                        >
-                          + add tags
-                        </button>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {dishTags[selectedDish.id]?.length > 0 ? (
-                        dishTags[selectedDish.id].map(tag => {
-                          const tagData = allTags.find(t => t.id === tag.tag_id);
-                          if (!tagData) return null;
-                          
-                          // Public tags (3+ votes) get shiny effect
-                          const isPublic = tag.vote_count >= 3;
-                          
-                          return (
-                            <div
-                              key={tag.tag_id}
-                              className="group relative"
-                              title={`${tagData.name} (${tag.vote_count})`}
-                            >
-                              <div 
-                                className="w-6 h-6 rounded-full cursor-pointer hover:ring-2 ring-offset-1 transition"
-                                style={{ 
-                                  backgroundColor: tagData.color,
-                                  ringColor: tagData.color,
-                                  boxShadow: isPublic ? `0 2px 8px ${tagData.color}80, inset 0 1px 2px rgba(255,255,255,0.5)` : 'none',
-                                  background: isPublic 
-                                    ? `linear-gradient(135deg, ${tagData.color} 0%, ${tagData.color}dd 50%, ${tagData.color} 100%)`
-                                    : tagData.color
-                                }}
-                              />
-                              {/* Tooltip */}
-                              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
-                                {tagData.name} ({tag.vote_count}) {isPublic && '✨'}
-                                <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
-                              </div>
-                            </div>
-                          );
-                        })
-                      ) : (
-                        <div className="text-xs text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>
-                          no tags yet
-                        </div>
-                      )}
+                    <div className="bg-blue-50 rounded-xl p-3 text-center border border-blue-100">
+                      <div className="text-[10px] text-gray-400 mb-2" style={{ fontFamily: '"Courier New", monospace' }}>portion</div>
+                      <ScoreBar target={portionScore} color="#2563eb" bgColor="rgba(37,99,235,0.15)" />
                     </div>
                   </div>
                 </div>
-                </>
-              )}
 
-              {/* Photos View */}
-                {dishModalView === 'photos' && (
-                  <div className="space-y-3">
-                    {/* Photo Upload Button */}
-                    <div className="flex justify-between items-center">
-                      <h3 className="text-xs font-bold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>
-                        PHOTO GALLERY
-                      </h3>
-                      <label className="px-3 py-1 bg-[#33a29b] text-white text-xs rounded-lg font-semibold hover:bg-[#2a8a84] transition cursor-pointer">
-                        <input
-                          type="file"
-                          accept="image/*"
-                          capture="environment"
-                          className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files[0];
-                            if (file && selectedDish) {
-                              handlePhotoUpload(file, selectedDish.id);
-                            }
-                          }}
-                        />
-                        {uploadingPhoto ? 'uploading...' : '+ add photo'}
-                      </label>
+                {/* Your score vs community avg */}
+                {communityAvg !== null && (
+                  <div className="bg-gray-50 rounded-xl p-3">
+                    <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3" style={{ fontFamily: '"Courier New", monospace' }}>your score vs community</h3>
+                    <div className="flex items-center gap-4">
+                      <div className="flex-1">
+                        <div className="flex justify-between text-[10px] text-gray-400 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>
+                          <span>you</span><span>{userRating ? parseFloat(overallSRR.toFixed ? overallSRR.toFixed(1) : overallSRR) : '—'}</span>
+                        </div>
+                        <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                          {userRating && <div className="h-full rounded-full" style={{ width: overallSRR + '%', background: washColor }} />}
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex justify-between text-[10px] text-gray-400 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>
+                          <span>community</span><span>{communityAvg.toFixed(1)}</span>
+                        </div>
+                        <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                          <div className="h-full bg-gray-400 rounded-full" style={{ width: communityAvg + '%' }} />
+                        </div>
+                      </div>
                     </div>
-                    
-                    {loadingPhotos ? (
-                      <div className="text-center py-8">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#33a29b] mx-auto"></div>
-                      </div>
-                    ) : selectedDishPhotos.length > 0 ? (
-                      <div className="space-y-3">
-                        {/* Carousel */}
-                        <div className="relative bg-gray-100 rounded-lg overflow-hidden">
-                          <img 
-                            src={selectedDishPhotos[currentPhotoIndex]?.url} 
-                            alt="Dish"
-                            className="w-full h-64 object-cover"
-                          />
-                          
-                          {/* Photo Info Overlay */}
-                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3">
-                            <div className="flex items-center justify-between text-white">
-                              <div className="flex items-center gap-2">
-                                <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">
-                                  {selectedDishPhotos[currentPhotoIndex]?.username?.charAt(0).toUpperCase()}
-                                </div>
-                                <span className="text-xs font-semibold" style={{ fontFamily: '"Courier New", monospace' }}>
-                                  @{selectedDishPhotos[currentPhotoIndex]?.username}
-                                </span>
-                              </div>
-                              <button
-                                onClick={() => handlePhotoLike(selectedDishPhotos[currentPhotoIndex]?.id)}
-                                className="flex items-center gap-1 px-2 py-1 bg-white/20 rounded-full hover:bg-white/30 transition"
-                              >
-                                <Heart 
-                                  size={14} 
-                                  className={selectedDishPhotos[currentPhotoIndex]?.user_liked ? 'fill-red-500 text-red-500' : ''} 
-                                />
-                                <span className="text-xs font-bold">{selectedDishPhotos[currentPhotoIndex]?.likes_count || 0}</span>
-                              </button>
-                            </div>
-                          </div>
-                          
-                          {/* Navigation Arrows */}
-                          {selectedDishPhotos.length > 1 && (
-                            <>
-                              <button 
-                                onClick={() => setCurrentPhotoIndex(i => (i - 1 + selectedDishPhotos.length) % selectedDishPhotos.length)}
-                                className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 rounded-full flex items-center justify-center hover:bg-white transition shadow-lg"
-                              >
-                                ←
-                              </button>
-                              <button 
-                                onClick={() => setCurrentPhotoIndex(i => (i + 1) % selectedDishPhotos.length)}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 rounded-full flex items-center justify-center hover:bg-white transition shadow-lg"
-                              >
-                                →
-                              </button>
-                            </>
-                          )}
-                          
-                          {/* Photo Counter */}
-                          <div className="absolute top-2 right-2 px-2 py-1 bg-black/50 text-white text-xs rounded-full font-semibold">
-                            {currentPhotoIndex + 1} / {selectedDishPhotos.length}
-                          </div>
-                        </div>
-                        
-                        {/* Thumbnail Strip */}
-                        {selectedDishPhotos.length > 1 && (
-                          <div className="flex gap-2 overflow-x-auto pb-2">
-                            {selectedDishPhotos.map((photo, idx) => (
-                              <button
-                                key={photo.id}
-                                onClick={() => setCurrentPhotoIndex(idx)}
-                                className={`flex-shrink-0 w-16 h-16 rounded overflow-hidden border-2 transition ${
-                                  idx === currentPhotoIndex ? 'border-[#33a29b]' : 'border-transparent'
-                                }`}
-                              >
-                                <img 
-                                  src={photo.url} 
-                                  alt={`Photo ${idx + 1}`}
-                                  className="w-full h-full object-cover"
-                                />
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                        
-                        {/* Photo Date */}
-                        <div className="text-xs text-gray-500 text-center" style={{ fontFamily: '"Courier New", monospace' }}>
-                          Uploaded {new Date(selectedDishPhotos[currentPhotoIndex]?.created_at).toLocaleDateString()}
-                        </div>
-                      </div>
-                    ) : (
-                      <EmptyState
-                        icon={Image}
-                        title="no photos yet"
-                        message="Be the first to add a photo of this dish!"
-                        actionText="add photo"
-                        onAction={() => {
-                          document.querySelector('input[type="file"][accept="image/*"]').click();
-                        }}
-                      />
-                    )}
                   </div>
                 )}
 
-                {/* Comments View */}
-                {dishModalView === 'comments' && (() => {
-                  // Group comments by rating
-                  const dishRatings = allRatings.filter(r => r.dish_id === selectedDish.id && !r.is_deleted);
-                  const totalComments = dishComments.filter(c => !c.parent_id).length;
+                {/* Others who rated */}
+                {othersWhoRated.length > 0 && (
+                  <div>
+                    <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3" style={{ fontFamily: '"Courier New", monospace' }}>who rated this</h3>
+                    <div className="flex gap-4 flex-wrap">
+                      {othersWhoRated.map(r => (
+                        <button key={r.id} onClick={(e) => { e.stopPropagation(); const u = allUsers.find(u => u.id === r.user_id); if (u) setSelectedExploreUser({ ...u, isFollowing: userFollows.some(f => f.following_id === u.id) }); }} className="flex flex-col items-center gap-1 hover:opacity-75 transition">
+                          <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-sm font-bold shadow-sm">{(r.username || '?')[0].toUpperCase()}</div>
+                          <span className="text-[10px] text-gray-400 max-w-[52px] truncate" style={{ fontFamily: '"Courier New", monospace' }}>@{r.username}</span>
+                          {r.srr != null && <span className={`text-xs font-bold ${getSRRColor(r.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{r.srr.toFixed(1)}</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
+                {/* Tags */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest" style={{ fontFamily: '"Courier New", monospace' }}>tags</h3>
+                    {user && <button onClick={(e) => { e.stopPropagation(); handleOpenTagsModal(selectedDish.id, 'dish', selectedDish.name); }} className="text-xs text-[#33a29b] font-semibold px-2 py-1 rounded hover:bg-teal-50 transition" style={{ fontFamily: '"Courier New", monospace' }}>+ add tags</button>}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {dishTags[selectedDish.id]?.length > 0 ? dishTags[selectedDish.id].map(tag => {
+                      const tagData = allTags.find(t => t.id === tag.tag_id);
+                      if (!tagData) return null;
+                      const isPublic = tag.vote_count >= 3;
+                      return (
+                        <div key={tag.tag_id} className="flex items-center gap-1.5 px-3 py-1 rounded-full text-white text-xs font-semibold" style={{ background: isPublic ? `linear-gradient(135deg, ${tagData.color} 0%, ${tagData.color}cc 100%)` : tagData.color, boxShadow: isPublic ? `0 2px 8px ${tagData.color}50` : 'none', fontFamily: '"Courier New", monospace' }} title={`${tagData.name} (${tag.vote_count} votes)`}>
+                          {tagData.name}{isPublic && <span className="text-[10px]">✨</span>}
+                        </div>
+                      );
+                    }) : <span className="text-xs text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>no tags yet</span>}
+                  </div>
+                </div>
+
+                {/* Photos & Comments links */}
+                <div className="flex gap-3 pb-2">
+                  <button onClick={(e) => { e.stopPropagation(); setDishModalView(dishModalView === 'photos' ? 'scores' : 'photos'); }} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs transition border ${dishModalView === 'photos' ? 'bg-[#33a29b]/10 border-[#33a29b]/30 text-[#33a29b]' : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'}`} style={{ fontFamily: '"Courier New", monospace' }}>
+                    <Image size={14} />photos ({selectedDish.photos || 0})
+                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); if (dishModalView !== 'comments') { setDishModalView('comments'); fetchDishComments(selectedDish.id); } else setDishModalView('scores'); }} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs transition border ${dishModalView === 'comments' ? 'bg-[#33a29b]/10 border-[#33a29b]/30 text-[#33a29b]' : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'}`} style={{ fontFamily: '"Courier New", monospace' }}>
+                    <MessageSquare size={14} />comments ({dishComments.filter(c => allRatings.some(r => r.id === c.rating_id && r.dish_id === selectedDish?.id)).length || selectedDish.comments || 0})
+                  </button>
+                </div>
+
+                {/* Photos inline */}
+                {dishModalView === 'photos' && (
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-xs font-bold text-gray-600" style={{ fontFamily: '"Courier New", monospace' }}>PHOTO GALLERY</h3>
+                      <label className="px-3 py-1 bg-[#33a29b] text-white text-xs rounded-lg font-semibold hover:bg-[#2a8a84] transition cursor-pointer">
+                        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { const file = e.target.files[0]; if (file && selectedDish) handlePhotoUpload(file, selectedDish.id); }} />
+                        {uploadingPhoto ? 'uploading...' : '+ add photo'}
+                      </label>
+                    </div>
+                    {loadingPhotos ? <div className="text-center py-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#33a29b] mx-auto"></div></div> : selectedDishPhotos.length > 0 ? (
+                      <div className="space-y-3">
+                        <div className="relative bg-gray-100 rounded-lg overflow-hidden">
+                          <img src={selectedDishPhotos[currentPhotoIndex]?.url} alt="Dish" className="w-full h-64 object-cover" />
+                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3">
+                            <div className="flex items-center justify-between text-white">
+                              <div className="flex items-center gap-2"><div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">{selectedDishPhotos[currentPhotoIndex]?.username?.charAt(0).toUpperCase()}</div><span className="text-xs font-semibold" style={{ fontFamily: '"Courier New", monospace' }}>@{selectedDishPhotos[currentPhotoIndex]?.username}</span></div>
+                              <button onClick={() => handlePhotoLike(selectedDishPhotos[currentPhotoIndex]?.id)} className="flex items-center gap-1 px-2 py-1 bg-white/20 rounded-full hover:bg-white/30 transition"><Heart size={14} className={selectedDishPhotos[currentPhotoIndex]?.user_liked ? 'fill-red-500 text-red-500' : ''} /><span className="text-xs font-bold">{selectedDishPhotos[currentPhotoIndex]?.likes_count || 0}</span></button>
+                            </div>
+                          </div>
+                          {selectedDishPhotos.length > 1 && (<><button onClick={() => setCurrentPhotoIndex(i => (i - 1 + selectedDishPhotos.length) % selectedDishPhotos.length)} className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 rounded-full flex items-center justify-center hover:bg-white transition shadow-lg">←</button><button onClick={() => setCurrentPhotoIndex(i => (i + 1) % selectedDishPhotos.length)} className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 rounded-full flex items-center justify-center hover:bg-white transition shadow-lg">→</button></>)}
+                          <div className="absolute top-2 right-2 px-2 py-1 bg-black/50 text-white text-xs rounded-full font-semibold">{currentPhotoIndex + 1} / {selectedDishPhotos.length}</div>
+                        </div>
+                        {selectedDishPhotos.length > 1 && <div className="flex gap-2 overflow-x-auto pb-2">{selectedDishPhotos.map((photo, idx) => <button key={photo.id} onClick={() => setCurrentPhotoIndex(idx)} className={`flex-shrink-0 w-16 h-16 rounded overflow-hidden border-2 transition ${idx === currentPhotoIndex ? 'border-[#33a29b]' : 'border-transparent'}`}><img src={photo.url} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" /></button>)}</div>}
+                      </div>
+                    ) : <EmptyState icon={Image} title="no photos yet" message="Be the first to add a photo!" actionText="add photo" onAction={() => document.querySelector('input[type="file"][accept="image/*"]')?.click()} />}
+                  </div>
+                )}
+
+                {/* Comments inline */}
+                {dishModalView === 'comments' && (() => {
+                  const dishRatings = allRatings.filter(r => r.dish_id === selectedDish.id && !r.is_deleted);
                   return (
                     <div className="space-y-3">
-                      {dishCommentsLoading ? (
-                        <LoadingSpinner />
-                      ) : dishRatings.length === 0 ? (
-                        <EmptyState icon={MessageSquare} title="no ratings yet" message="Rate this dish to start the conversation!" />
-                      ) : (
+                      {dishCommentsLoading ? <LoadingSpinner /> : dishRatings.length === 0 ? <EmptyState icon={MessageSquare} title="no ratings yet" message="Rate this dish to start the conversation!" /> : (
                         <>
                           {dishRatings.map(rating => {
                             const ratingUsername = rating.username || (user && rating.user_id === user.id ? (user.user_metadata?.username || user.email?.split('@')[0]) : 'user');
-                            const computedSrr = rating.overall_score
-                              ? parseFloat(rating.overall_score.toFixed(2))
-                              : rating.taste_score != null ? parseFloat(((rating.taste_score + rating.portion_score + rating.price_score) / 3).toFixed(2)) : null;
+                            const computedSrr = rating.overall_score ? parseFloat(rating.overall_score.toFixed(2)) : rating.taste_score != null ? parseFloat(((rating.taste_score + rating.portion_score + rating.price_score) / 3).toFixed(2)) : null;
                             const isExpanded = expandedComments.has(rating.id);
                             const commentsForRating = ratingComments[rating.id]?.comments?.filter(c => !c.parent_id) || [];
                             return (
                               <div key={rating.id} className="bg-gray-50 rounded-xl overflow-hidden">
-                                {/* Rating header */}
-                                <div
-                                  className="flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-100 transition"
-                                  onClick={() => handleToggleComments(rating.id)}
-                                >
-                                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                                    {(ratingUsername || '?')[0].toUpperCase()}
-                                  </div>
+                                <div className="flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-100 transition" onClick={() => handleToggleComments(rating.id)}>
+                                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">{(ratingUsername || '?')[0].toUpperCase()}</div>
                                   <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-sm font-bold" style={{ fontFamily: '"Courier New", monospace' }}>@{ratingUsername}</span>
-                                      {computedSrr != null && (
-                                        <span className={`text-sm font-bold ${getSRRColor(computedSrr)}`} style={{ fontFamily: '"Courier New", monospace' }}>({computedSrr.toFixed(2)})</span>
-                                      )}
-                                    </div>
-                                    {rating.comment && (
-                                      <p className="text-xs text-gray-500 italic truncate" style={{ fontFamily: '"Courier New", monospace' }}>"{rating.comment}"</p>
-                                    )}
+                                    <div className="flex items-center gap-2"><span className="text-sm font-bold" style={{ fontFamily: '"Courier New", monospace' }}>@{ratingUsername}</span>{computedSrr != null && <span className={`text-sm font-bold ${getSRRColor(computedSrr)}`} style={{ fontFamily: '"Courier New", monospace' }}>({computedSrr.toFixed(2)})</span>}</div>
+                                    {rating.comment && <p className="text-xs text-gray-500 italic truncate" style={{ fontFamily: '"Courier New", monospace' }}>"{rating.comment}"</p>}
                                   </div>
-                                  <div className="flex items-center gap-2 flex-shrink-0">
-                                    <span className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>
-                                      {commentsForRating.length > 0 ? `${commentsForRating.length} comment${commentsForRating.length !== 1 ? 's' : ''}` : 'no comments'}
-                                    </span>
-                                    <MessageSquare size={14} className={isExpanded ? 'text-[#33a29b]' : 'text-gray-300'} />
-                                  </div>
+                                  <div className="flex items-center gap-2 flex-shrink-0"><span className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>{commentsForRating.length > 0 ? `${commentsForRating.length} comment${commentsForRating.length !== 1 ? 's' : ''}` : 'no comments'}</span><MessageSquare size={14} className={isExpanded ? 'text-[#33a29b]' : 'text-gray-300'} /></div>
                                 </div>
-                                {/* Thread */}
                                 {isExpanded && renderCommentThread(rating.id, rating.comment, ratingUsername, 'bg-gray-50')}
                               </div>
                             );
                           })}
-                          {totalComments === 0 && !dishCommentsLoading && (
-                            <p className="text-xs text-gray-400 text-center py-4" style={{ fontFamily: '"Courier New", monospace' }}>no comments yet — tap a rating above to start!</p>
-                          )}
                         </>
                       )}
                     </div>
                   );
                 })()}
+
               </div>
+
+              {/* FLOATING BOTTOM BUTTON */}
+              <div className="flex-shrink-0 px-4 py-3 border-t bg-white rounded-b-2xl">
+                <button
+                  onClick={() => { setRestaurant(selectedDish.restaurantName); setDishName(selectedDish.name); setIsSubmissionModalOpen(true); handleCloseDish(); }}
+                  className={`w-full py-3 rounded-xl font-bold text-sm transition ${userHasRatedDish ? 'bg-gray-100 text-gray-500 hover:bg-gray-200 border border-gray-200' : 'bg-[#33a29b] text-white hover:bg-[#2a8a84] shadow-md'}`}
+                  style={{ fontFamily: '"Courier New", monospace' }}
+                >{userHasRatedDish ? 'edit your rating' : 'rate this dish'}</button>
+              </div>
+
             </div>
           </div>
         </>
