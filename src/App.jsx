@@ -388,6 +388,9 @@ const HuntersFindsApp = () => {
   
   // Logout confirmation modal
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showWelcomeModal, setShowWelcomeModal] = useState(() => {
+    return localStorage.getItem('hf_welcome_dismissed') !== 'true';
+  });
   
   // Error modal state
   const [errorModal, setErrorModal] = useState({ show: false, title: '', message: '' });
@@ -9496,6 +9499,66 @@ const HuntersFindsApp = () => {
       )}
       
       {/* Error Modal */}
+      {/* Welcome Modal */}
+      {showWelcomeModal && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-[70] animate-fade-in" style={{ backdropFilter: 'blur(4px)' }} />
+          <div className="fixed inset-0 flex items-center justify-center z-[71] p-4 pointer-events-none">
+            <div className="bg-white rounded-2xl max-w-sm w-full p-6 pointer-events-auto animate-slide-up-fade-simple shadow-2xl">
+              {/* Logo / title */}
+              <div className="text-center mb-4">
+                <h1 className="text-2xl font-bold mb-1" style={{ fontFamily: '"Courier New", monospace' }}>hunters finds</h1>
+                <div className="w-8 h-0.5 bg-[#33a29b] mx-auto rounded-full" />
+              </div>
+
+              {/* Description */}
+              <p className="text-sm text-gray-600 text-center leading-relaxed mb-6" style={{ fontFamily: '"Courier New", monospace' }}>
+                hunters finds is a personal food rating app built around one idea: price matters. rate dishes on taste, portion, and price value — and see how your finds stack up.
+              </p>
+
+              {/* Buttons */}
+              <div className="space-y-2">
+                {/* Sign up CTA - only for logged-out users */}
+                {!user && (
+                  <button
+                    onClick={() => {
+                      setShowWelcomeModal(false);
+                      setActiveTab('you');
+                      setTimeout(() => setYouView('auth'), 50);
+                    }}
+                    className="w-full py-3 bg-[#33a29b] text-white rounded-xl font-bold text-sm hover:bg-[#2a8a84] transition shadow-md"
+                    style={{ fontFamily: '"Courier New", monospace' }}
+                  >
+                    create an account
+                  </button>
+                )}
+
+                {/* Got it */}
+                <button
+                  onClick={() => setShowWelcomeModal(false)}
+                  className={`w-full py-3 rounded-xl font-bold text-sm transition ${user ? 'bg-[#33a29b] text-white hover:bg-[#2a8a84] shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                  style={{ fontFamily: '"Courier New", monospace' }}
+                >
+                  got it
+                </button>
+
+                {/* Don't show again */}
+                <button
+                  onClick={() => {
+                    localStorage.setItem('hf_welcome_dismissed', 'true');
+                    setShowWelcomeModal(false);
+                  }}
+                  className="w-full py-2 text-xs text-gray-400 hover:text-gray-600 transition"
+                  style={{ fontFamily: '"Courier New", monospace' }}
+                >
+                  don't show again
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {errorModal.show && (() => {
         const isSuccess = errorModal.title && (
           errorModal.title.endsWith('!') &&
