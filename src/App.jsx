@@ -8037,10 +8037,10 @@ const HuntersFindsApp = () => {
                     <h3 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide" style={{ fontFamily: '"Courier New", monospace' }}>rating scores</h3>
                     <div className="group relative flex-shrink-0">
                       <div className="w-4 h-4 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-[9px] font-bold cursor-help hover:bg-[#33a29b] hover:text-white transition">?</div>
-                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 bg-gray-900 text-white text-[10px] rounded-lg px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl" style={{ fontFamily: '"Courier New", monospace' }}>
-                        <p className="mb-1">your score is the average of taste, price, and portion. each is rated 1–100.</p>
-                        <p>the price score is why i built this app — it's calculated automatically based on what you paid vs. the average price of this dish across the database. value matters.</p>
-                        <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                      <div className="absolute bottom-full left-0 mb-2 w-56 bg-gray-900 text-white text-[10px] rounded-lg px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl" style={{ fontFamily: '"Courier New", monospace' }}>
+                        <p className="mb-1">score = average of taste, portion + price.</p>
+                        <p>price is why i built this — your price vs. the avg for this dish.</p>
+                        <div className="absolute top-full left-4 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
                       </div>
                     </div>
                   </div>
