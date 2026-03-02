@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient'
 import React, { useState, useEffect } from 'react';
-import { MapPin, TrendingUp, Plus, Search, X, Image, MessageSquare, Users, Compass, User, UserPlus, Bookmark, Star, List, Settings, Lock, Activity, Bell, AtSign, MessageCircle, Tag, Heart } from 'lucide-react';
+import { MapPin, TrendingUp, Plus, Search, X, Image, MessageSquare, Users, Compass, User, UserPlus, Bookmark, Star, List, Settings, Lock, Activity, Bell, AtSign, MessageCircle, Tag, Heart, ChevronRight } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import LoadingSpinner from './components/LoadingSpinner';
 import EmptyState from './components/EmptyState';
@@ -2314,51 +2314,41 @@ const HuntersFindsApp = () => {
     if (!user) return;
     
     try {
-      // Get people user follows with their stats
-      const { data: follows, error } = await supabase
-        .rpc('get_user_follows_with_stats', { target_user_id: user.id });
+      // Fetch directly from user_follows + users tables (RPC doesn't exist yet)
+      const { data: followData } = await supabase
+        .from('user_follows')
+        .select('following_id')
+        .eq('follower_id', user.id);
       
-      if (error) {
-        // Fallback to manual query if function doesn't exist yet
-        const { data: followData } = await supabase
-          .from('user_follows')
-          .select('following_id')
-          .eq('follower_id', user.id);
-        
-        if (!followData || followData.length === 0) {
-          setUserFollows([]);
-          return;
-        }
-        
-        const followingIds = followData.map(f => f.following_id);
-        
-        // Get user details from the public users table (works client-side)
-        const { data: usersData } = await supabase
-          .from('users')
-          .select('id, username, email')
-          .in('id', followingIds);
-
-        const friendsWithStats = (usersData || []).map(u => ({
-          id: u.id,
-          username: u.username || u.email?.split('@')[0] || 'user',
-          email: u.email,
-          ratingsCount: 0,
-        }));
-
-        // Enrich with ratings counts
-        await Promise.all(friendsWithStats.map(async (f) => {
-          const { count } = await supabase
-            .from('ratings')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', f.id)
-            .eq('is_deleted', false);
-          f.ratingsCount = count || 0;
-        }));
-        
-        setUserFollows(friendsWithStats);
-      } else {
-        setUserFollows(follows || []);
+      if (!followData || followData.length === 0) {
+        setUserFollows([]);
+        return;
       }
+      
+      const followingIds = followData.map(f => f.following_id);
+      
+      const { data: usersData } = await supabase
+        .from('users')
+        .select('id, username, email')
+        .in('id', followingIds);
+
+      const friendsWithStats = (usersData || []).map(u => ({
+        id: u.id,
+        username: u.username || u.email?.split('@')[0] || 'user',
+        email: u.email,
+        ratingsCount: 0,
+      }));
+
+      await Promise.all(friendsWithStats.map(async (f) => {
+        const { count } = await supabase
+          .from('ratings')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', f.id)
+          .eq('is_deleted', false);
+        f.ratingsCount = count || 0;
+      }));
+      
+      setUserFollows(friendsWithStats);
     } catch (error) {
       console.error('Error fetching follows:', error);
       setUserFollows([]);
