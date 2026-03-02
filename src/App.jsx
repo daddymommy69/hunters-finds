@@ -148,6 +148,107 @@ const ScoreBar = ({ target, color, bgColor }) => {
   );
 };
 
+// ============================================
+// BADGE SYSTEM
+// ============================================
+const BADGE_DEFS = {
+  castle_wood:    { id:'castle_wood',    category:'castle',      name:'apprentice rater',      desc:'rated your first dish',                tier:'wood',    color:'#8B5E3C', autoCompute:(s)=>s.ratingsCount>=1 },
+  castle_bronze:  { id:'castle_bronze',  category:'castle',      name:'bronze rater',          desc:'rated 5+ dishes',                      tier:'bronze',  color:'#CD7F32', autoCompute:(s)=>s.ratingsCount>=5 },
+  castle_silver:  { id:'castle_silver',  category:'castle',      name:'silver rater',          desc:'rated 25+ dishes',                     tier:'silver',  color:'#C0C0C0', autoCompute:(s)=>s.ratingsCount>=25 },
+  castle_gold:    { id:'castle_gold',    category:'castle',      name:'gold rater',            desc:'rated 100+ dishes',                    tier:'gold',    color:'#FFD700', autoCompute:(s)=>s.ratingsCount>=100 },
+  castle_diamond: { id:'castle_diamond', category:'castle',      name:'diamond rater',         desc:'rated 500+ dishes',                    tier:'diamond', color:'#7dd3fc', autoCompute:(s)=>s.ratingsCount>=500 },
+  followers_1:    { id:'followers_1',    category:'social',      name:'first follower',        desc:'gained your first follower',            icon:'follower', autoCompute:(s)=>s.followersCount>=1 },
+  followers_10:   { id:'followers_10',   category:'social',      name:'local fame',            desc:'10+ followers',                         icon:'follower', autoCompute:(s)=>s.followersCount>=10 },
+  followers_100:  { id:'followers_100',  category:'social',      name:'rising star',           desc:'100+ followers',                        icon:'follower', autoCompute:(s)=>s.followersCount>=100 },
+  followers_1000: { id:'followers_1000', category:'social',      name:'influencer',            desc:'1000+ followers',                       icon:'follower', autoCompute:(s)=>s.followersCount>=1000 },
+  followers_10000:{ id:'followers_10000',category:'social',      name:'food legend',           desc:'10000+ followers',                      icon:'follower', autoCompute:(s)=>s.followersCount>=10000 },
+  pioneer:        { id:'pioneer',        category:'social',      name:'pioneer',               desc:'first to rate a dish',                  icon:'pioneer',  autoCompute:(s)=>s.pioneerCount>=1 },
+  most_liked:     { id:'most_liked',     category:'social',      name:'crowd pleaser',         desc:'your ratings got 10+ likes',            icon:'liked',    autoCompute:(s)=>s.totalLikes>=10 },
+  most_commented: { id:'most_commented', category:'social',      name:'conversation starter',  desc:'your ratings got 10+ comments',         icon:'commented',autoCompute:(s)=>s.totalCommentsReceived>=10 },
+  trendsetter:    { id:'trendsetter',    category:'social',      name:'trendsetter',           desc:'rated something before it got popular', icon:'trend',    autoCompute:(s)=>s.trendsetterCount>=1 },
+  local_bronze:   { id:'local_bronze',   category:'explorer',    name:'local eater',           desc:'rated 10+ restaurants in same city',    icon:'local', tier:'bronze', color:'#8B5E3C', autoCompute:(s)=>s.maxSameCity>=10 },
+  local_silver:   { id:'local_silver',   category:'explorer',    name:'neighborhood expert',   desc:'rated 50+ restaurants in same city',    icon:'local', tier:'silver', color:'#e11d48', autoCompute:(s)=>s.maxSameCity>=50 },
+  local_diamond:  { id:'local_diamond',  category:'explorer',    name:'city master',           desc:'rated 100+ restaurants in same city',   icon:'local', tier:'diamond',color:'#7dd3fc', autoCompute:(s)=>s.maxSameCity>=100 },
+  city_hopper:    { id:'city_hopper',    category:'explorer',    name:'city hopper',           desc:'rated in 10+ different cities',          icon:'city',     autoCompute:(s)=>s.uniqueCities>=10 },
+  state_wanderer: { id:'state_wanderer', category:'explorer',    name:'state wanderer',        desc:'rated in 5+ different states',           icon:'state',    autoCompute:(s)=>s.uniqueStates>=5 },
+  foreign_eater:  { id:'foreign_eater',  category:'explorer',    name:'foreign eater',         desc:'rated in 5+ different countries',        icon:'foreign',  autoCompute:(s)=>s.uniqueCountries>=5 },
+  mr_worldwide:   { id:'mr_worldwide',   category:'explorer',    name:'mr. worldwide',         desc:'rated on 3+ continents',                 icon:'pitbull',  autoCompute:(s)=>s.uniqueContinents>=3 },
+  streak_7:       { id:'streak_7',       category:'consistency', name:'7-day streak',          desc:'rated dishes 7 days in a row',           icon:'streak',   autoCompute:(s)=>s.longestStreak>=7 },
+  four_weeks:     { id:'four_weeks',     category:'consistency', name:'consistent eater',      desc:'rated in 4 different weeks',             icon:'calendar', autoCompute:(s)=>s.activeWeeks>=4 },
+  loyal:          { id:'loyal',          category:'consistency', name:'loyal hunter',          desc:'on hunters finds for 6+ months',         icon:'loyal',    autoCompute:(s)=>s.monthsOnApp>=6 },
+  master_rat:     { id:'master_rat',     category:'other',       name:'master rat',            desc:'consistently rates price value',         icon:'masterrat',autoCompute:(s)=>s.ratingsCount>=10 },
+  critic:         { id:'critic',         category:'other',       name:'the critic',            desc:'left comments on 10+ ratings',           icon:'critic',   autoCompute:(s)=>s.commentsGiven>=10 },
+  unsure_eater:   { id:'unsure_eater',   category:'other',       name:'unsure eater',          desc:'changed a rating',                       icon:'unsure',   autoCompute:(s)=>s.rateditsCount>=1 },
+  photographer:   { id:'photographer',   category:'other',       name:'photographer',          desc:'added photos to 5+ restaurants',         icon:'photo',    autoCompute:(s)=>s.restaurantsWithPhotos>=5 },
+  rat_helper:     { id:'rat_helper',     category:'special',     name:'rat helper',            desc:'helped debug hunters finds',             icon:'bug',      adminOnly:true },
+  founder:        { id:'founder',        category:'special',     name:'founder',               desc:'OG user of hunters finds',               icon:'founder',  adminOnly:true },
+  castle_lord:    { id:'castle_lord',    category:'special',     name:'castle lord',           desc:'lord of hunters castle',                 icon:'crown',    adminOnly:true },
+  taste_maker:    { id:'taste_maker',    category:'special',     name:'taste maker',           desc:'influential reviewer',                   icon:'tastemaker',adminOnly:true },
+  ambassador:     { id:'ambassador',     category:'special',     name:'ambassador',            desc:'brought people to the app',              icon:'ambassador',adminOnly:true },
+};
+
+const BADGE_CATEGORIES = ['castle','social','explorer','consistency','other','special'];
+const BADGE_CATEGORY_LABELS = { castle:'castle trophies', social:'social', explorer:'explorer', consistency:'consistency', other:'achievements', special:'special' };
+
+const BadgeSVGIcon = ({ iconKey, size=20, color='white' }) => {
+  const s = size;
+  const icons = {
+    castle: <svg width={s} height={s} viewBox="0 0 100 100"><path d="M20,80 L20,35 L15,35 L15,25 L10,25 L10,15 L20,15 L20,25 L30,25 L30,15 L40,15 L40,25 L60,25 L60,15 L70,15 L70,25 L80,25 L80,35 L70,35 L70,80 Z" fill={color}/><rect x="38" y="55" width="24" height="25" fill={color} opacity="0.4" rx="2"/></svg>,
+    follower: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
+    pioneer: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>,
+    liked: <svg width={s} height={s} viewBox="0 0 24 24" fill={color} stroke={color} strokeWidth="1.5"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>,
+    commented: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>,
+    trend: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>,
+    local: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
+    city: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="2" x2="12" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>,
+    state: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>,
+    foreign: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>,
+    pitbull: <svg width={s} height={s} viewBox="0 0 100 100"><defs><radialGradient id="baldg" cx="40%" cy="35%" r="60%"><stop offset="0%" stopColor="#f9d97a"/><stop offset="60%" stopColor="#d4a017"/><stop offset="100%" stopColor="#a07010"/></radialGradient></defs><ellipse cx="50" cy="42" rx="28" ry="30" fill="url(#baldg)"/><ellipse cx="40" cy="35" rx="6" ry="3" fill="white" opacity="0.4"/><ellipse cx="50" cy="72" rx="20" ry="8" fill="#d4a017"/><rect x="30" y="78" width="40" height="18" rx="4" fill="#1a1a2e"/><circle cx="40" cy="63" r="2.5" fill="#4a3000"/><circle cx="60" cy="63" r="2.5" fill="#4a3000"/><path d="M 42,73 Q 50,78 58,73" stroke="#8B6914" strokeWidth="1.5" fill="none"/></svg>,
+    streak: <svg width={s} height={s} viewBox="0 0 24 24" fill={color}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>,
+    calendar: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
+    loyal: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
+    masterrat: <svg width={s} height={s} viewBox="0 0 100 100"><circle cx="50" cy="35" r="20" fill={color} opacity="0.9"/><path d="M 34,46 Q 32,62 50,67 Q 68,62 66,46 Q 58,58 50,59 Q 42,58 34,46 Z" fill={color} opacity="0.6"/><rect x="34" y="30" width="12" height="8" rx="3" fill="#1a1a1a"/><rect x="54" y="30" width="12" height="8" rx="3" fill="#1a1a1a"/><line x1="46" y1="34" x2="54" y2="34" stroke="#1a1a1a" strokeWidth="2"/><line x1="32" y1="40" x2="20" y2="38" stroke={color} strokeWidth="1.5" opacity="0.8"/><line x1="68" y1="40" x2="80" y2="38" stroke={color} strokeWidth="1.5" opacity="0.8"/></svg>,
+    critic: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>,
+    unsure: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>,
+    photo: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>,
+    bug: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round"><path d="M8 2l1.88 1.88M14.12 3.88L16 2M9 7.13v-1a3.003 3.003 0 1 1 6 0v1M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6zM12 20v-9M6.53 9C4.6 8.8 3 7.1 3 5M6 13H2M3 21c0-2.1 1.7-3.9 3.8-4M20.97 5c0 2.1-1.6 3.8-3.5 4M22 13h-4M17.2 17c2.1.1 3.8 1.9 3.8 4"/></svg>,
+    founder: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/><circle cx="12" cy="7" r="2" fill={color}/></svg>,
+    crown: <svg width={s} height={s} viewBox="0 0 24 24" fill={color} stroke={color} strokeWidth="1.5" strokeLinecap="round"><path d="M2 19h20v2H2z"/><path d="M2 19l3-9 4.5 4.5L12 5l2.5 9.5L19 10l3 9z"/></svg>,
+    tastemaker: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>,
+    ambassador: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>,
+  };
+  return icons[iconKey] || icons['pioneer'];
+};
+
+const BadgeChip = ({ badge, earnedAt, small=false, showName=true }) => {
+  const def = typeof badge === 'string' ? BADGE_DEFS[badge] : badge;
+  if (!def) return null;
+  const isSpecial = def.category === 'special';
+  const isCastle = def.category === 'castle';
+  const castleColors = { wood:'#8B5E3C', bronze:'#CD7F32', silver:'#C0C0C0', gold:'#FFD700', diamond:'#7dd3fc' };
+  const bg = isCastle ? (castleColors[def.tier] || '#888') : def.color || '#33a29b';
+  const size = small ? 13 : 18;
+  const padding = small ? 'px-1.5 py-0.5' : 'px-2.5 py-1.5';
+  const fontSize = small ? 'text-[9px]' : 'text-[11px]';
+  return (
+    <div
+      title={`${def.name}: ${def.desc}${earnedAt ? ` · earned ${new Date(earnedAt).toLocaleDateString()}` : ''}`}
+      className={`inline-flex items-center gap-1 rounded-full ${padding} font-bold ${fontSize} cursor-default`}
+      style={{ background:`linear-gradient(135deg, ${bg}ee, ${bg}99)`, color:'white', fontFamily:'"Courier New",monospace',
+        border: isSpecial ? `2px solid ${bg}` : `1px solid ${bg}88`,
+        boxShadow: isSpecial ? `0 0 10px ${bg}70, 0 2px 6px ${bg}40` : `0 2px 6px ${bg}30` }}
+    >
+      {isCastle ? (
+        <svg width={size} height={size} viewBox="0 0 100 100">
+          <path d="M20,80 L20,35 L15,35 L15,25 L10,25 L10,15 L20,15 L20,25 L30,25 L30,15 L40,15 L40,25 L60,25 L60,15 L70,15 L70,25 L80,25 L80,35 L70,35 L70,80 Z" fill="white"/>
+          <rect x="38" y="55" width="24" height="25" fill="white" opacity="0.4" rx="2"/>
+        </svg>
+      ) : <BadgeSVGIcon iconKey={def.icon} size={size} color="white" />}
+      {showName && <span>{def.name}</span>}
+    </div>
+  );
+};
+
 const HuntersFindsApp = () => {
   // ===== AUTHENTICATION =====
   const { user, loading: authLoading, signOut, signUpWithEmail, signInWithEmail, error: authError } = useAuth();
@@ -1481,6 +1582,10 @@ const HuntersFindsApp = () => {
   const [globalActivityLoading, setGlobalActivityLoading] = useState(false);
   const [exploreActivityNearMe, setExploreActivityNearMe] = useState(false);
   const [userFollowers, setUserFollowers] = useState([]);
+  const [userBadges, setUserBadges] = useState([]);
+  const [viewingUserBadges, setViewingUserBadges] = useState({});
+  const [showGrantBadgeModal, setShowGrantBadgeModal] = useState(false);
+  const [grantBadgeTarget, setGrantBadgeTarget] = useState(null);
   const [ratingLikes, setRatingLikes] = useState({});
   const [selectedRatingDetail, setSelectedRatingDetail] = useState(null);
   const [ratingComments, setRatingComments] = useState({}); // { ratingId: { comments, loading, loaded } }
@@ -2378,6 +2483,102 @@ const HuntersFindsApp = () => {
   };
   
   // Fetch suggested friends
+  // ===================== BADGE SYSTEM =====================
+  const fetchUserBadges = async (targetUserId = null) => {
+    const uid = targetUserId || user?.id;
+    if (!uid) return [];
+    try {
+      const { data } = await supabase.from('user_badges').select('*').eq('user_id', uid).order('granted_at', { ascending: false });
+      if (!targetUserId) setUserBadges(data || []);
+      else setViewingUserBadges(prev => ({ ...prev, [uid]: data || [] }));
+      return data || [];
+    } catch (e) { return []; }
+  };
+
+  const computeAndAwardBadges = async () => {
+    if (!user) return;
+    const myRatings = activeUserRatings;
+    const ratingsCount = myRatings.length;
+    const followersCount = userFollowers.length;
+
+    // Pioneer: first to rate a dish (with at least 1 other rater so it's meaningful)
+    const pioneerCount = myRatings.filter(r => {
+      const all = allRatings.filter(x => x.dish_id === r.dish_id && !x.is_deleted);
+      if (all.length < 2) return false;
+      const sorted = [...all].sort((a,b) => new Date(a.created_at)-new Date(b.created_at));
+      return sorted[0]?.user_id === user.id;
+    }).length;
+
+    // Trendsetter: early rater (top-3) on dish that now has 5+ ratings
+    const trendsetterCount = myRatings.filter(r => {
+      const all = allRatings.filter(x => x.dish_id === r.dish_id && !x.is_deleted);
+      if (all.length < 5) return false;
+      const sorted = [...all].sort((a,b) => new Date(a.created_at)-new Date(b.created_at));
+      return sorted.slice(0,3).some(x => x.user_id === user.id);
+    }).length;
+
+    // Streaks
+    const dates = [...new Set(myRatings.map(r => r.created_at?.slice(0,10)))].sort();
+    let longestStreak = 0, cur = 0;
+    for (let i = 0; i < dates.length; i++) {
+      if (i === 0) { cur = 1; }
+      else { const d = (new Date(dates[i]) - new Date(dates[i-1])) / 86400000; cur = d === 1 ? cur+1 : 1; }
+      longestStreak = Math.max(longestStreak, cur);
+    }
+    const activeWeeks = new Set(myRatings.map(r => { const d = new Date(r.created_at); const j = new Date(d.getFullYear(),0,1); return `${d.getFullYear()}-${Math.ceil(((d-j)/86400000+j.getDay()+1)/7)}`; })).size;
+    const firstDate = myRatings.length ? new Date(myRatings[myRatings.length-1]?.created_at) : null;
+    const monthsOnApp = firstDate ? Math.floor((Date.now()-firstDate)/(1000*60*60*24*30)) : 0;
+    const rateditsCount = myRatings.filter(r => r.edit_count > 0).length;
+
+    // Geography from restaurant addresses
+    const myRestaurants = [...new Set(myRatings.map(r => r.dish?.restaurant_name || r.restaurant_name).filter(Boolean))].map(n => restaurants.find(x => x.name===n)).filter(Boolean);
+    const getCont = (c) => ({'United States':'North America','Canada':'North America','Mexico':'North America','United Kingdom':'Europe','France':'Europe','Germany':'Europe','Italy':'Europe','Spain':'Europe','Japan':'Asia','China':'Asia','India':'Asia','Thailand':'Asia','Vietnam':'Asia','Australia':'Oceania','Brazil':'South America','Argentina':'South America','South Africa':'Africa'}[c]||null);
+    const cities={}, states=new Set(), countries=new Set(), continents=new Set();
+    myRestaurants.forEach(r => {
+      const addr = r.google_data?.formatted_address || r.address || '';
+      const p = addr.split(',').map(s=>s.trim());
+      if (p.length >= 3) {
+        const city = p[p.length-3]; const country = p[p.length-1];
+        const stateRaw = p[p.length-2]?.split(' ')[0];
+        if (city) cities[city] = (cities[city]||0)+1;
+        if (stateRaw) states.add(stateRaw);
+        if (country) { countries.add(country); const ct = getCont(country); if(ct) continents.add(ct); }
+      }
+    });
+    const maxSameCity = Math.max(0, ...Object.values(cities));
+
+    const stats = { ratingsCount, followersCount, pioneerCount, trendsetterCount, totalLikes:0, totalCommentsReceived:0, longestStreak, activeWeeks, monthsOnApp, rateditsCount, commentsGiven:0, restaurantsWithPhotos:0, maxSameCity, uniqueCities:Object.keys(cities).length, uniqueStates:states.size, uniqueCountries:countries.size, uniqueContinents:continents.size };
+
+    const existing = await fetchUserBadges();
+    const existingIds = new Set(existing.map(b => b.badge_id));
+    const toAward = Object.values(BADGE_DEFS).filter(d => !d.adminOnly && d.autoCompute?.(stats) && !existingIds.has(d.id));
+
+    for (const def of toAward) {
+      try {
+        await supabase.from('user_badges').insert({ user_id:user.id, badge_id:def.id, granted_at:new Date().toISOString(), seen:false });
+        await supabase.from('notifications').insert({ user_id:user.id, type:'badge', content:{ badge_id:def.id, badge_name:def.name, badge_desc:def.desc }, read:false, created_at:new Date().toISOString() });
+      } catch(e) {}
+    }
+    if (toAward.length > 0) { await fetchUserBadges(); fetchNotifications(); }
+  };
+
+  const grantBadgeToUser = async (targetUserId, badgeId) => {
+    if (!user || (userRole !== 'admin' && userRole !== 'moderator')) return false;
+    const def = BADGE_DEFS[badgeId];
+    try {
+      const { error } = await supabase.from('user_badges').insert({ user_id:targetUserId, badge_id:badgeId, granted_by:user.id, granted_at:new Date().toISOString(), seen:false });
+      if (error && error.code !== '23505') throw error;
+      await supabase.from('notifications').insert({ user_id:targetUserId, type:'badge', content:{ badge_id:badgeId, badge_name:def?.name, badge_desc:def?.desc, from_admin:true }, read:false, created_at:new Date().toISOString() });
+      return true;
+    } catch(e) { console.error(e); return false; }
+  };
+
+  const revokeBadge = async (targetUserId, badgeId) => {
+    if (userRole !== 'admin') return;
+    await supabase.from('user_badges').delete().eq('user_id', targetUserId).eq('badge_id', badgeId);
+  };
+  // ===================== END BADGE SYSTEM =====================
+
   const fetchSuggestedFriends = async () => {
     if (!user) return;
     
@@ -2951,8 +3152,14 @@ const HuntersFindsApp = () => {
     if (user) {
       fetchUserFollows();
       fetchUserFollowers();
+      fetchUserBadges();
     }
   }, [user]);
+
+  // Compute badges when rating/follower data changes
+  React.useEffect(() => {
+    if (user && activeUserRatings.length > 0) computeAndAwardBadges();
+  }, [user?.id, activeUserRatings.length, userFollowers.length]);
 
   // Fetch suggested friends only when on people tab
   React.useEffect(() => {
@@ -5340,6 +5547,7 @@ const HuntersFindsApp = () => {
                               {notif.type === 'mention' && <AtSign size={14} className="text-[#33a29b]" />}
                               {notif.type === 'group_message' && <MessageCircle size={14} className="text-[#33a29b]" />}
                               {notif.type === 'group_invite' && <Users size={14} className="text-[#33a29b]" />}
+                              {notif.type === 'badge' && <span style={{ fontSize:14 }}>🏅</span>}
                             </div>
                             <div className="flex-1">
                               <p className="text-sm text-gray-800" style={{ fontFamily: '"Courier New", monospace' }}>
@@ -5349,6 +5557,7 @@ const HuntersFindsApp = () => {
                                 {notif.type === 'mention' && `@${notif.content.mentioner} mentioned you`}
                                 {notif.type === 'group_message' && `New message in ${notif.content.group_name}`}
                                 {notif.type === 'group_invite' && `@${notif.content.inviter} invited you to ${notif.content.group_name}`}
+                                {notif.type === 'badge' && (notif.content.from_admin ? `you were awarded the "${notif.content.badge_name}" badge!` : `you earned the "${notif.content.badge_name}" badge!`)}
                               </p>
                               <p className="text-xs text-gray-500 mt-1" style={{ fontFamily: '"Courier New", monospace' }}>
                                 {new Date(notif.created_at).toLocaleDateString()}
@@ -6834,6 +7043,12 @@ const HuntersFindsApp = () => {
                 )}
                 {!user && <Lock size={10} className="absolute top-1 right-1 text-gray-500" />}
               </button>
+              {user && (
+                <button onClick={() => setYouView('badges')} className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition relative ${youView === 'badges' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} style={{ fontFamily: '"Courier New", monospace' }}>
+                  badges
+                  {userBadges.length > 0 && <span className="ml-1 bg-[#33a29b] text-white text-[9px] px-1.5 py-0.5 rounded-full font-bold">{userBadges.length}</span>}
+                </button>
+              )}
               <button onClick={() => setYouView('settings')} className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition ${youView === 'settings' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} style={{ fontFamily: '"Courier New", monospace' }}>
                 <Settings size={18} />
               </button>
@@ -7000,6 +7215,12 @@ const HuntersFindsApp = () => {
                         <div className="text-xs text-gray-600">groups</div>
                       </div>
                     </div>
+                    {userBadges.length > 0 && (
+                      <div className="pt-3 flex flex-wrap gap-1.5">
+                        {userBadges.slice(0,8).map(b => <BadgeChip key={b.badge_id} badge={b.badge_id} earnedAt={b.granted_at} small />)}
+                        {userBadges.length > 8 && <span className="text-[10px] text-gray-400 self-center" style={{ fontFamily:'"Courier New",monospace' }}>+{userBadges.length-8} more</span>}
+                      </div>
+                    )}
                   </div>
 
                   <div className="bg-white rounded-lg p-4 shadow-sm">
@@ -7549,6 +7770,57 @@ const HuntersFindsApp = () => {
                 </div>
               )}
 
+              )}
+
+              {youView === 'badges' && user && (() => {
+                const grouped = BADGE_CATEGORIES.reduce((acc, cat) => { acc[cat] = []; return acc; }, {});
+                userBadges.forEach(b => { const def = BADGE_DEFS[b.badge_id]; if (def) grouped[def.category]?.push({ ...def, earnedAt: b.granted_at }); });
+                return (
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-lg font-bold" style={{ fontFamily:'"Courier New",monospace' }}>my badges</h2>
+                      <span className="text-sm text-gray-400" style={{ fontFamily:'"Courier New",monospace' }}>{userBadges.length} earned</span>
+                    </div>
+                    {userBadges.length === 0 && (
+                      <div className="text-center py-12 text-gray-400">
+                        <div style={{ fontSize:48 }}>🏰</div>
+                        <p className="mt-3 text-sm" style={{ fontFamily:'"Courier New",monospace' }}>no badges yet — start rating dishes!</p>
+                      </div>
+                    )}
+                    {BADGE_CATEGORIES.map(cat => grouped[cat].length === 0 ? null : (
+                      <div key={cat}>
+                        <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3" style={{ fontFamily:'"Courier New",monospace' }}>{BADGE_CATEGORY_LABELS[cat]}</h3>
+                        <div className="grid grid-cols-1 gap-3">
+                          {grouped[cat].map(def => {
+                            const isCastle = def.category === 'castle';
+                            const isSpecial = def.category === 'special';
+                            const castleColors = { wood:'#8B5E3C', bronze:'#CD7F32', silver:'#C0C0C0', gold:'#FFD700', diamond:'#7dd3fc' };
+                            const bg = isCastle ? (castleColors[def.tier]||'#888') : def.color || '#33a29b';
+                            return (
+                              <div key={def.id} className="flex items-center gap-3 p-3 rounded-xl border" style={{ background:`${bg}12`, borderColor:`${bg}40`, boxShadow: isSpecial ? `0 0 12px ${bg}40` : 'none' }}>
+                                <div className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0" style={{ background:`linear-gradient(135deg, ${bg}dd, ${bg}99)`, border: isSpecial ? `2px solid ${bg}` : 'none', boxShadow: isSpecial ? `0 0 10px ${bg}60` : `0 2px 6px ${bg}40` }}>
+                                  {isCastle ? (
+                                    <svg width={24} height={24} viewBox="0 0 100 100"><path d="M20,80 L20,35 L15,35 L15,25 L10,25 L10,15 L20,15 L20,25 L30,25 L30,15 L40,15 L40,25 L60,25 L60,15 L70,15 L70,25 L80,25 L80,35 L70,35 L70,80 Z" fill="white"/><rect x="38" y="55" width="24" height="25" fill="white" opacity="0.4" rx="2"/></svg>
+                                  ) : <BadgeSVGIcon iconKey={def.icon} size={24} color="white" />}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-bold text-sm" style={{ fontFamily:'"Courier New",monospace', color: bg }}>{def.name}</span>
+                                    {isSpecial && <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold text-white" style={{ background: bg, fontFamily:'"Courier New",monospace' }}>special</span>}
+                                  </div>
+                                  <p className="text-xs text-gray-500 mt-0.5" style={{ fontFamily:'"Courier New",monospace' }}>{def.desc}</p>
+                                  <p className="text-[10px] text-gray-400 mt-0.5" style={{ fontFamily:'"Courier New",monospace' }}>earned {new Date(def.earnedAt).toLocaleDateString()}</p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+
               {youView === 'settings' && (
                 <div className="space-y-3">
                   <h2 className="text-lg font-bold mb-4" style={{ fontFamily: '"Courier New", monospace' }}>settings</h2>
@@ -7667,6 +7939,14 @@ const HuntersFindsApp = () => {
                               style={{ fontFamily: '"Courier New", monospace' }}
                             >
                               Link Restaurants to Map
+                            </button>
+
+                            <button
+                              onClick={() => setShowGrantBadgeModal(true)}
+                              className="w-full text-left text-sm py-3 px-3 bg-white hover:bg-purple-50 rounded-lg transition border border-purple-200 font-medium"
+                              style={{ fontFamily: '"Courier New", monospace' }}
+                            >
+                              Grant Badge to User
                             </button>
                             
                             {userRole === 'admin' && (
@@ -8421,6 +8701,7 @@ const HuntersFindsApp = () => {
                           <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-sm font-bold shadow-sm">{(r.username || '?')[0].toUpperCase()}</div>
                           <span className="text-[10px] text-gray-400 max-w-[52px] truncate" style={{ fontFamily: '"Courier New", monospace' }}>@{r.username}</span>
                           {r.srr != null && <span className={`text-xs font-bold ${getSRRColor(r.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{r.srr.toFixed(1)}</span>}
+                          {(viewingUserBadges[r.user_id]||[]).slice(0,1).map(b => <BadgeChip key={b.badge_id} badge={b.badge_id} small showName={false}/>)}
                         </button>
                       ))}
                     </div>
@@ -9638,6 +9919,9 @@ const HuntersFindsApp = () => {
         const favCategory = categories.length > 0
           ? Object.entries(categories.reduce((acc, c) => { acc[c] = (acc[c] || 0) + 1; return acc; }, {})).sort((a, b) => b[1] - a[1])[0][0]
           : null;
+        const theirBadges = viewingUserBadges[u.id] || [];
+        // Fetch badges if not loaded yet
+        if (!viewingUserBadges[u.id]) fetchUserBadges(u.id);
 
         return (
           <>
@@ -9666,6 +9950,12 @@ const HuntersFindsApp = () => {
                     <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>fav category</div>
                   </div>
                 </div>
+
+                {theirBadges.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {theirBadges.map(b => <BadgeChip key={b.badge_id} badge={b.badge_id} earnedAt={b.granted_at} small />)}
+                  </div>
+                )}
 
                 {/* Overlap */}
                 {(u.dishOverlap > 0 || u.restaurantOverlap > 0) && (
@@ -9981,6 +10271,116 @@ const HuntersFindsApp = () => {
         </>
       )}
       
+      {/* Grant Badge Modal (Admin/Mod) */}
+      {showGrantBadgeModal && (userRole === 'admin' || userRole === 'moderator') && (() => {
+        const [gbSearch, setGbSearch] = React.useState('');
+        const [gbUser, setGbUser] = React.useState(null);
+        const [gbBadge, setGbBadge] = React.useState('');
+        const [gbLoading, setGbLoading] = React.useState(false);
+        const [gbMsg, setGbMsg] = React.useState('');
+        const [gbUserBadges, setGbUserBadges] = React.useState([]);
+
+        const searchUsers = async () => {
+          if (!gbSearch.trim()) return;
+          const { data } = await supabase.from('users').select('id,username,email').ilike('username', `%${gbSearch}%`).limit(10);
+          return data || [];
+        };
+        const [gbResults, setGbResults] = React.useState([]);
+        const runSearch = async () => { const r = await searchUsers(); setGbResults(r); };
+
+        const selectUser = async (u) => {
+          setGbUser(u);
+          setGbResults([]);
+          const { data } = await supabase.from('user_badges').select('badge_id').eq('user_id', u.id);
+          setGbUserBadges((data||[]).map(b=>b.badge_id));
+        };
+
+        const handleGrant = async () => {
+          if (!gbUser || !gbBadge) return;
+          setGbLoading(true);
+          const ok = await grantBadgeToUser(gbUser.id, gbBadge);
+          setGbMsg(ok ? `granted "${BADGE_DEFS[gbBadge]?.name}" to @${gbUser.username}` : 'already has this badge or error');
+          setGbLoading(false);
+          if (ok) setGbUserBadges(prev => [...prev, gbBadge]);
+        };
+
+        return (
+          <>
+            <div onClick={() => setShowGrantBadgeModal(false)} className="fixed inset-0 bg-black/60 z-50" />
+            <div className="fixed inset-0 flex items-center justify-center z-50 p-4 pointer-events-none">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md pointer-events-auto" style={{ fontFamily:'"Courier New",monospace' }}>
+                <div className="flex items-center justify-between p-4 border-b">
+                  <h2 className="font-bold text-base">Grant Badge</h2>
+                  <button onClick={() => setShowGrantBadgeModal(false)} className="text-gray-400 hover:text-gray-700"><X size={20}/></button>
+                </div>
+                <div className="p-4 space-y-4">
+                  {/* User search */}
+                  <div>
+                    <label className="text-xs text-gray-500 font-bold uppercase tracking-wider">User</label>
+                    {gbUser ? (
+                      <div className="flex items-center justify-between mt-1 p-2 bg-gray-50 rounded-lg border">
+                        <span className="text-sm font-bold">@{gbUser.username}</span>
+                        <button onClick={() => { setGbUser(null); setGbUserBadges([]); setGbMsg(''); }} className="text-xs text-red-400 hover:text-red-600">change</button>
+                      </div>
+                    ) : (
+                      <div className="mt-1 flex gap-2">
+                        <input value={gbSearch} onChange={e=>setGbSearch(e.target.value)} onKeyDown={e=>e.key==='Enter'&&runSearch()} placeholder="search username..." className="flex-1 border rounded-lg px-3 py-2 text-sm"/>
+                        <button onClick={runSearch} className="px-3 py-2 bg-[#33a29b] text-white rounded-lg text-sm font-bold hover:bg-[#2a8a84]">go</button>
+                      </div>
+                    )}
+                    {gbResults.length > 0 && (
+                      <div className="mt-1 border rounded-lg overflow-hidden shadow-sm">
+                        {gbResults.map(u => (
+                          <button key={u.id} onClick={()=>selectUser(u)} className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm border-b last:border-0">@{u.username}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Badge picker */}
+                  {gbUser && (
+                    <div>
+                      <label className="text-xs text-gray-500 font-bold uppercase tracking-wider">Badge</label>
+                      <div className="mt-2 space-y-2 max-h-60 overflow-y-auto pr-1">
+                        {BADGE_CATEGORIES.map(cat => (
+                          <div key={cat}>
+                            <div className="text-[10px] text-gray-400 uppercase font-bold tracking-wider mb-1">{BADGE_CATEGORY_LABELS[cat]}</div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {Object.values(BADGE_DEFS).filter(d=>d.category===cat).map(def => {
+                                const isCastle = def.category==='castle';
+                                const castleColors = { wood:'#8B5E3C', bronze:'#CD7F32', silver:'#C0C0C0', gold:'#FFD700', diamond:'#7dd3fc' };
+                                const bg = isCastle ? (castleColors[def.tier]||'#888') : def.color||'#33a29b';
+                                const owned = gbUserBadges.includes(def.id);
+                                const selected = gbBadge === def.id;
+                                return (
+                                  <button key={def.id} disabled={owned} onClick={()=>setGbBadge(def.id)}
+                                    className={`text-[11px] px-2 py-1 rounded-full font-bold transition border ${owned?'opacity-30 cursor-not-allowed':''} ${selected?'ring-2 ring-offset-1':''}`}
+                                    style={{ background: selected?`${bg}dd`:`${bg}22`, color: selected?'white':bg, borderColor:`${bg}55`, ringColor: bg }}>
+                                    {def.name}{owned?' ✓':''}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {gbMsg && <p className="text-sm text-center font-bold" style={{ color: gbMsg.includes('granted') ? '#33a29b' : '#ef4444' }}>{gbMsg}</p>}
+
+                  {gbUser && gbBadge && (
+                    <button onClick={handleGrant} disabled={gbLoading} className="w-full py-3 bg-[#33a29b] text-white rounded-xl font-bold hover:bg-[#2a8a84] transition disabled:opacity-50">
+                      {gbLoading ? 'granting...' : `grant "${BADGE_DEFS[gbBadge]?.name}" to @${gbUser?.username}`}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        );
+      })()}
+
       {/* Logout Confirmation Modal */}
       {showLogoutConfirm && (
         <>
