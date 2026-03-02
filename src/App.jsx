@@ -3780,8 +3780,37 @@ const HuntersFindsApp = () => {
       filteredRestaurants = filteredRestaurants.filter(r => r.avgSRR >= 85);
     }
     
-    // Add markers
+    // Deduplicate restaurants by coordinates (same lat/lng = same physical location)
+    const coordKey = (r) => {
+      if (!r.location?.lat || !r.location?.lng) return null;
+      return `${parseFloat(r.location.lat).toFixed(5)},${parseFloat(r.location.lng).toFixed(5)}`;
+    };
+    const deduped = [];
+    const seenCoords = new Map();
     filteredRestaurants.forEach(restaurant => {
+      const key = coordKey(restaurant);
+      if (!key) { deduped.push(restaurant); return; }
+      if (seenCoords.has(key)) {
+        // Merge top dishes into the existing entry
+        const existing = seenCoords.get(key);
+        const merged = [...(existing.topDishes || []), ...(restaurant.topDishes || [])];
+        // Dedupe merged dishes by id, keep highest scored
+        const dishMap = new Map();
+        merged.forEach(d => { if (!dishMap.has(d.id) || d.srr > (dishMap.get(d.id).srr || 0)) dishMap.set(d.id, d); });
+        existing.topDishes = Array.from(dishMap.values()).sort((a, b) => (b.srr || 0) - (a.srr || 0));
+        // Recalculate avgSRR across merged dishes
+        if (existing.topDishes.length > 0) {
+          const valid = existing.topDishes.filter(d => d.srr != null);
+          existing.avgSRR = valid.length > 0 ? valid.reduce((s, d) => s + d.srr, 0) / valid.length : existing.avgSRR;
+        }
+      } else {
+        seenCoords.set(key, restaurant);
+        deduped.push(restaurant);
+      }
+    });
+
+    // Add markers
+    deduped.forEach(restaurant => {
       if (!restaurant.location || !restaurant.location.lat || !restaurant.location.lng) return;
       
       const category = getRestaurantCategory(restaurant);
@@ -9513,7 +9542,7 @@ const HuntersFindsApp = () => {
 
               {/* Description */}
               <p className="text-sm text-gray-600 text-center leading-relaxed mb-6" style={{ fontFamily: '"Courier New", monospace' }}>
-                hunters finds is a personal food rating app built around one idea: price matters. rate dishes on taste, portion, and price value — and see how your finds stack up.
+                hunters finds is a personal food rating app built around one idea: price matters. rate dishes on taste, portion, and price value — and see how your finds stack up. powered by dtpx4 for hunters castle. please enjoy.
               </p>
 
               {/* Buttons */}
@@ -9524,7 +9553,7 @@ const HuntersFindsApp = () => {
                     onClick={() => {
                       setShowWelcomeModal(false);
                       setActiveTab('you');
-                      setTimeout(() => setYouView('auth'), 50);
+                      setTimeout(() => setYouView('login'), 50);
                     }}
                     className="w-full py-3 bg-[#33a29b] text-white rounded-xl font-bold text-sm hover:bg-[#2a8a84] transition shadow-md"
                     style={{ fontFamily: '"Courier New", monospace' }}
