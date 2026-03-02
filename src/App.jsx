@@ -1854,6 +1854,14 @@ const HuntersFindsApp = () => {
     
     return Object.values(restaurantMap);
   }, [restaurants, allDishes]);
+
+  // Global top 3 dish IDs by community avg score (used for purple highlighting)
+  const top3DishIds = React.useMemo(() => {
+    const scored = allDishes
+      .filter(d => d.srr != null)
+      .sort((a, b) => (b.srr || 0) - (a.srr || 0));
+    return new Set(scored.slice(0, 3).map(d => d.id));
+  }, [allDishes]);
   
   // Fetch tags for dishes when they're displayed
   React.useEffect(() => {
@@ -3808,12 +3816,14 @@ const HuntersFindsApp = () => {
               <div style="font-weight: bold; font-size: 18px; color: #10b981; margin-bottom: 8px;">${typeof restaurant.avgSRR === "number" ? restaurant.avgSRR.toFixed(2) : restaurant.avgSRR}</div>
               ${(restaurant.topDishes && restaurant.topDishes.length > 0) ? `
                 <div style="font-size: 10px; color: #666; text-transform: uppercase; margin-bottom: 4px; border-top: 1px solid #d1fae5; padding-top: 6px;">Top Rated Dishes</div>
-                ${restaurant.topDishes.slice(0, 3).map(dish => `
-                  <div style="font-size: 11px; padding: 3px 0; display: flex; justify-content: space-between;">
-                    <span>${dish.name}</span>
-                    <span style="font-weight: bold; color: #10b981;">${typeof dish.srr === "number" ? dish.srr.toFixed(2) : dish.srr}</span>
+                ${restaurant.topDishes.slice(0, 3).map(dish => {
+                  const isTop = top3DishIds.has(dish.id);
+                  return `
+                  <div style="font-size: 11px; padding: 3px 0; display: flex; justify-content: space-between; align-items: center;">
+                    <span>${isTop ? '<span style="font-size:9px;background:#a855f7;color:white;border-radius:3px;padding:1px 4px;margin-right:4px;">★</span>' : ''}${dish.name}</span>
+                    <span style="font-weight: bold; color: ${isTop ? '#a855f7' : '#10b981'};">${typeof dish.srr === "number" ? dish.srr.toFixed(2) : dish.srr}</span>
                   </div>
-                `).join('')}
+                `}).join('')}
               ` : ''}
             </div>
           ` : `
@@ -8830,27 +8840,33 @@ const HuntersFindsApp = () => {
                       <h3 className="text-[9px] font-bold mb-1.5 text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>TOP RATED DISHES</h3>
                       <div className="space-y-2">
                         {selectedRestaurant.topDishes && selectedRestaurant.topDishes.length > 0 ? (
-                          selectedRestaurant.topDishes.slice(0, 5).map((dish, idx) => (
+                          selectedRestaurant.topDishes.slice(0, 5).map((dish, idx) => {
+                            const isTop3 = top3DishIds.has(dish.id);
+                            return (
                             <div 
                               key={idx} 
                               onClick={() => setSelectedDish(dish)}
-                              className="bg-gray-50 rounded p-2 border border-gray-100 cursor-pointer hover:bg-gray-100 transition"
+                              className={`rounded p-2 border cursor-pointer hover:opacity-90 transition ${isTop3 ? 'bg-purple-50 border-purple-200' : 'bg-gray-50 border-gray-100 hover:bg-gray-100'}`}
                             >
                               <div className="flex items-center justify-between">
                                 <div className="flex-1">
-                                  <div className="text-sm font-bold" style={{ fontFamily: '"Courier New", monospace' }}>
-                                    {dish.name}
+                                  <div className="flex items-center gap-1.5">
+                                    {isTop3 && <span style={{ fontSize: 10, background: '#a855f7', color: 'white', borderRadius: 4, padding: '1px 5px', fontFamily: '"Courier New", monospace', fontWeight: 'bold' }}>top dish</span>}
+                                    <div className="text-sm font-bold" style={{ fontFamily: '"Courier New", monospace' }}>
+                                      {dish.name}
+                                    </div>
                                   </div>
                                   <div className="text-xs text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
                                     ${dish.price?.toFixed(2)} • {dish.cuisine}
                                   </div>
                                 </div>
-                                <div className={`text-xl font-bold ${getSRRColor(dish.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>
+                                <div className={`text-xl font-bold ${isTop3 ? 'text-purple-500' : getSRRColor(dish.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>
                                   {typeof dish.srr === "number" ? dish.srr.toFixed(2) : dish.srr}
                                 </div>
                               </div>
                             </div>
-                          ))
+                            );
+                          })
                         ) : (
                           <div className="text-xs text-gray-400 text-center py-4" style={{ fontFamily: '"Courier New", monospace' }}>
                             No rated dishes yet
