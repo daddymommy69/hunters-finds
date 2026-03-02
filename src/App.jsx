@@ -388,6 +388,7 @@ const HuntersFindsApp = () => {
   
   // Logout confirmation modal
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showFollowersModal, setShowFollowersModal] = useState(false); // 'followers' | 'following' | false
   const [showWelcomeModal, setShowWelcomeModal] = useState(() => {
     return localStorage.getItem('hf_welcome_dismissed') !== 'true';
   });
@@ -6983,9 +6984,13 @@ const HuntersFindsApp = () => {
                         <div className="font-bold" style={{ fontFamily: '"Courier New", monospace' }}>{userRatings?.length || 0}</div>
                         <div className="text-xs text-gray-600">ratings</div>
                       </div>
-                      <div className="flex-1 border-l">
-                        <div className="font-bold" style={{ fontFamily: '"Courier New", monospace' }}>0</div>
-                        <div className="text-xs text-gray-600">friends</div>
+                      <div className="flex-1 border-l" onClick={() => setShowFollowersModal('followers')} style={{ cursor: 'pointer' }}>
+                        <div className="font-bold" style={{ fontFamily: '"Courier New", monospace' }}>{userFollowers.length}</div>
+                        <div className="text-xs text-gray-600">followers</div>
+                      </div>
+                      <div className="flex-1 border-l" onClick={() => setShowFollowersModal('following')} style={{ cursor: 'pointer' }}>
+                        <div className="font-bold" style={{ fontFamily: '"Courier New", monospace' }}>{userFollows.length}</div>
+                        <div className="text-xs text-gray-600">following</div>
                       </div>
                       <div className="flex-1 border-l">
                         <div className="font-bold" style={{ fontFamily: '"Courier New", monospace' }}>{userGroups?.length || 0}</div>
@@ -7438,12 +7443,13 @@ const HuntersFindsApp = () => {
                     // Build personal feed from allRatings + activityFeed RPC data
                     const followingIdSet = new Set(userFollows.map(f => f.id));
                     
-                    // Filter activityFeed based on youActivityFilter
-                    let filtered = activityFeed;
-                    if (youActivityFilter === 'ratings') filtered = activityFeed.filter(a => a.activity_type === 'rating');
-                    else if (youActivityFilter === 'following') filtered = activityFeed.filter(a => followingIdSet.has(a.user_id) && a.activity_type === 'rating');
-                    else if (youActivityFilter === 'groups') filtered = activityFeed.filter(a => a.activity_type === 'group_join' || a.activity_type === 'group_rating');
-                    else if (youActivityFilter === 'likes') filtered = activityFeed.filter(a => a.activity_type === 'like');
+                    // Filter activityFeed based on youActivityFilter - exclude own activity
+                    const othersActivity = activityFeed.filter(a => a.user_id !== user.id);
+                    let filtered = othersActivity;
+                    if (youActivityFilter === 'ratings') filtered = othersActivity.filter(a => a.activity_type === 'rating');
+                    else if (youActivityFilter === 'following') filtered = othersActivity.filter(a => followingIdSet.has(a.user_id) && a.activity_type === 'rating');
+                    else if (youActivityFilter === 'groups') filtered = othersActivity.filter(a => a.activity_type === 'group_join' || a.activity_type === 'group_rating');
+                    else if (youActivityFilter === 'likes') filtered = othersActivity.filter(a => a.activity_type === 'like');
 
                     const getCardStyle = (activity) => {
                       const isOwn = user && activity.user_id === user.id;
@@ -9528,6 +9534,85 @@ const HuntersFindsApp = () => {
       )}
       
       {/* Error Modal */}
+      {/* Followers / Following Modal */}
+      {showFollowersModal && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-[70]" onClick={() => setShowFollowersModal(false)} style={{ backdropFilter: 'blur(4px)' }} />
+          <div className="fixed inset-0 flex items-center justify-center z-[71] p-4 pointer-events-none">
+            <div className="bg-white rounded-2xl w-full pointer-events-auto shadow-2xl" style={{ maxWidth: '380px', maxHeight: '70vh', display: 'flex', flexDirection: 'column' }}>
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0">
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => setShowFollowersModal('followers')}
+                    className={`text-sm font-bold pb-1 transition ${showFollowersModal === 'followers' ? 'text-gray-900 border-b-2 border-gray-900' : 'text-gray-400 hover:text-gray-600'}`}
+                    style={{ fontFamily: '"Courier New", monospace' }}
+                  >
+                    followers ({userFollowers.length})
+                  </button>
+                  <button
+                    onClick={() => setShowFollowersModal('following')}
+                    className={`text-sm font-bold pb-1 transition ${showFollowersModal === 'following' ? 'text-gray-900 border-b-2 border-gray-900' : 'text-gray-400 hover:text-gray-600'}`}
+                    style={{ fontFamily: '"Courier New", monospace' }}
+                  >
+                    following ({userFollows.length})
+                  </button>
+                </div>
+                <button onClick={() => setShowFollowersModal(false)} className="text-gray-400 hover:text-gray-600 transition"><X size={18} /></button>
+              </div>
+
+              {/* List */}
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {showFollowersModal === 'followers' && (
+                  userFollowers.length === 0 ? (
+                    <p className="text-center text-sm text-gray-400 py-8" style={{ fontFamily: '"Courier New", monospace' }}>no followers yet</p>
+                  ) : (
+                    userFollowers.map(u => (
+                      <button
+                        key={u.id}
+                        onClick={() => { setShowFollowersModal(false); setSelectedExploreUser({ ...u, isFollowing: userFollows.some(f => f.id === u.id) }); }}
+                        className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition text-left"
+                      >
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                          {(u.username || u.email || '?')[0].toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>@{u.username || u.email?.split('@')[0]}</div>
+                          <div className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>{u.ratingsCount || 0} ratings</div>
+                        </div>
+                        <ChevronRight size={16} className="text-gray-300 flex-shrink-0" />
+                      </button>
+                    ))
+                  )
+                )}
+                {showFollowersModal === 'following' && (
+                  userFollows.length === 0 ? (
+                    <p className="text-center text-sm text-gray-400 py-8" style={{ fontFamily: '"Courier New", monospace' }}>not following anyone yet</p>
+                  ) : (
+                    userFollows.map(u => (
+                      <button
+                        key={u.id}
+                        onClick={() => { setShowFollowersModal(false); setSelectedExploreUser({ ...u, isFollowing: true }); }}
+                        className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition text-left"
+                      >
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                          {(u.username || u.email || '?')[0].toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>@{u.username || u.email?.split('@')[0]}</div>
+                          <div className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>{u.ratingsCount || 0} ratings</div>
+                        </div>
+                        <ChevronRight size={16} className="text-gray-300 flex-shrink-0" />
+                      </button>
+                    ))
+                  )
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Welcome Modal */}
       {showWelcomeModal && (
         <>
