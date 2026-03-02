@@ -6586,8 +6586,8 @@ const HuntersFindsApp = () => {
               )}
             </div>
 
-            {/* User Profile Modal */}
-            {selectedExploreUser && (() => {
+            {/* User Profile Modal moved to global scope */}
+            {false && (() => {
               const u = selectedExploreUser;
               const theirRatings = allRatings.filter(r => r.user_id === u.id && !r.is_deleted);
               const topDishes = [...theirRatings].sort((a, b) => (b.srr || 0) - (a.srr || 0)).slice(0, 5);
@@ -9582,6 +9582,93 @@ const HuntersFindsApp = () => {
           </div>
         </>
       )}
+
+      {/* User Profile Modal - global so it works from any tab */}
+      {selectedExploreUser && (() => {
+        const u = selectedExploreUser;
+        const theirRatings = allRatings.filter(r => r.user_id === u.id && !r.is_deleted);
+        const topDishes = [...theirRatings].sort((a, b) => (b.srr || 0) - (a.srr || 0)).slice(0, 5);
+        const avgScore = theirRatings.length > 0 ? theirRatings.reduce((s, r) => s + (r.srr || 0), 0) / theirRatings.length : 0;
+        const categories = theirRatings.map(r => r.dish?.category || r.category).filter(Boolean);
+        const favCategory = categories.length > 0
+          ? Object.entries(categories.reduce((acc, c) => { acc[c] = (acc[c] || 0) + 1; return acc; }, {})).sort((a, b) => b[1] - a[1])[0][0]
+          : null;
+
+        return (
+          <>
+            <div onClick={() => setSelectedExploreUser(null)} className="fixed inset-0 bg-black/40 z-[60]" />
+            <div className="fixed z-[61] bg-white rounded-2xl shadow-xl flex flex-col"
+              style={{ top: '10%', left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 500px)', maxHeight: '80vh' }}>
+              <div className="sticky top-0 bg-white border-b px-4 py-3 flex items-center justify-between rounded-t-2xl flex-shrink-0">
+                <h2 className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>
+                  @{u.username || u.email?.split('@')[0]}
+                </h2>
+                <button onClick={() => setSelectedExploreUser(null)}><X size={20} /></button>
+              </div>
+              <div className="overflow-y-auto p-4 space-y-4">
+                {/* Stats row */}
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="bg-gray-50 rounded-lg p-2">
+                    <div className="text-lg font-bold" style={{ fontFamily: '"Courier New", monospace' }}>{theirRatings.length}</div>
+                    <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>ratings</div>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-2">
+                    <div className={`text-lg font-bold ${getSRRColor(avgScore)}`} style={{ fontFamily: '"Courier New", monospace' }}>{avgScore.toFixed(1)}</div>
+                    <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>avg score</div>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-2">
+                    <div className="text-lg font-bold truncate" style={{ fontFamily: '"Courier New", monospace' }}>{favCategory || '—'}</div>
+                    <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>fav category</div>
+                  </div>
+                </div>
+
+                {/* Overlap */}
+                {(u.dishOverlap > 0 || u.restaurantOverlap > 0) && (
+                  <div className="bg-[#33a29b]/10 rounded-lg p-2 text-xs text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>
+                    you share {u.dishOverlap} dishes and {u.restaurantOverlap} restaurants in common
+                  </div>
+                )}
+
+                {/* Top dishes */}
+                <div>
+                  <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2" style={{ fontFamily: '"Courier New", monospace' }}>top dishes</h3>
+                  {topDishes.length === 0 ? (
+                    <p className="text-xs text-gray-400 italic" style={{ fontFamily: '"Courier New", monospace' }}>no ratings yet</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {topDishes.map((r, idx) => (
+                        <div key={r.id} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+                          <span className="text-xs text-gray-400 w-5" style={{ fontFamily: '"Courier New", monospace' }}>#{idx + 1}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-bold truncate" style={{ fontFamily: '"Courier New", monospace' }}>{r.dish?.name || r.dish_name}</div>
+                            <div className="text-[10px] text-gray-500 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{r.dish?.restaurant_name || r.restaurant_name}</div>
+                          </div>
+                          <div className={`text-sm font-bold ${getSRRColor(r.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{r.srr?.toFixed(2)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Follow button */}
+                {user && (
+                  <button
+                    onClick={async () => {
+                      await handleFollowUser(u);
+                      setSelectedExploreUser(prev => ({ ...prev, isFollowing: !prev.isFollowing }));
+                      setAllUsers(prev => prev.map(p => p.id === u.id ? { ...p, isFollowing: !p.isFollowing } : p));
+                    }}
+                    className={`w-full py-2 rounded-lg text-sm font-bold transition ${u.isFollowing ? 'bg-gray-200 text-gray-700 hover:bg-red-100 hover:text-red-600' : 'bg-[#33a29b] text-white hover:bg-[#2a8a84]'}`}
+                    style={{ fontFamily: '"Courier New", monospace' }}
+                  >
+                    {u.isFollowing ? 'unfollow' : 'follow'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </>
+        );
+      })()}
 
       {/* Welcome Modal */}
       {showWelcomeModal && (
