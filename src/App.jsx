@@ -3622,44 +3622,16 @@ const HuntersFindsApp = () => {
       if (layer instanceof window.L.Marker) {
         mapInstance.removeLayer(layer);
       }
-      // Check for marker cluster group safely
       if (window.L.MarkerClusterGroup && layer instanceof window.L.MarkerClusterGroup) {
         mapInstance.removeLayer(layer);
       }
-      // Also check by class name as fallback
-      if (layer.options?.className === 'marker-cluster') {
+      if (layer instanceof window.L.LayerGroup) {
         mapInstance.removeLayer(layer);
       }
     });
     
-    // Create marker cluster group
-    const markers = window.L.markerClusterGroup ? window.L.markerClusterGroup({
-      maxClusterRadius: 50,
-      spiderfyOnMaxZoom: true,
-      showCoverageOnHover: false,
-      zoomToBoundsOnClick: true,
-      iconCreateFunction: (cluster) => {
-        const count = cluster.getChildCount();
-        return window.L.divIcon({
-          html: `<div style="
-            width: 40px;
-            height: 40px;
-            background: linear-gradient(135deg, #33a29b 0%, #2a8a84 100%);
-            border: 3px solid white;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-weight: bold;
-            font-size: 14px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-          ">${count}</div>`,
-          className: 'marker-cluster',
-          iconSize: [40, 40]
-        });
-      }
-    }) : window.L.layerGroup();
+    // Use plain layer group — no clustering, every pin shows individually
+    const markers = window.L.layerGroup();
     
     // Filter restaurants
     let filteredRestaurants = restaurants;
