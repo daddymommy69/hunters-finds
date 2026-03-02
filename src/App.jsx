@@ -8526,8 +8526,9 @@ const HuntersFindsApp = () => {
       {selectedUser && !hasModalInStack() && (() => {
         const u = selectedUser;
         const theirRatings = allRatings.filter(r => r.user_id === u.id && !r.is_deleted);
-        const topDishes = [...theirRatings].sort((a, b) => (b.srr || 0) - (a.srr || 0)).slice(0, 5);
-        const avgScore = theirRatings.length > 0 ? theirRatings.reduce((s, r) => s + (r.srr || 0), 0) / theirRatings.length : 0;
+        const getScore = (r) => r.overall_score || (r.taste_score != null && r.portion_score != null && r.price_score != null ? (r.taste_score + r.portion_score + r.price_score) / 3 : r.srr) || 0;
+        const topDishes = [...theirRatings].sort((a, b) => getScore(b) - getScore(a)).slice(0, 5);
+        const avgScore = theirRatings.length > 0 ? theirRatings.reduce((s, r) => s + getScore(r), 0) / theirRatings.length : 0;
         const cats = theirRatings.map(r => r.dish?.category || r.category).filter(Boolean);
         const favCat = cats.length > 0 ? Object.entries(cats.reduce((acc, c) => { acc[c] = (acc[c] || 0) + 1; return acc; }, {})).sort((a, b) => b[1] - a[1])[0][0] : null;
         const myDishIds = new Set(userRatings.map(r => r.dish_id));
@@ -9587,8 +9588,9 @@ const HuntersFindsApp = () => {
       {selectedExploreUser && (() => {
         const u = selectedExploreUser;
         const theirRatings = allRatings.filter(r => r.user_id === u.id && !r.is_deleted);
-        const topDishes = [...theirRatings].sort((a, b) => (b.srr || 0) - (a.srr || 0)).slice(0, 5);
-        const avgScore = theirRatings.length > 0 ? theirRatings.reduce((s, r) => s + (r.srr || 0), 0) / theirRatings.length : 0;
+        const getScore = (r) => r.overall_score || (r.taste_score != null && r.portion_score != null && r.price_score != null ? (r.taste_score + r.portion_score + r.price_score) / 3 : r.srr) || 0;
+        const topDishes = [...theirRatings].sort((a, b) => getScore(b) - getScore(a)).slice(0, 5);
+        const avgScore = theirRatings.length > 0 ? theirRatings.reduce((s, r) => s + getScore(r), 0) / theirRatings.length : 0;
         const categories = theirRatings.map(r => r.dish?.category || r.category).filter(Boolean);
         const favCategory = categories.length > 0
           ? Object.entries(categories.reduce((acc, c) => { acc[c] = (acc[c] || 0) + 1; return acc; }, {})).sort((a, b) => b[1] - a[1])[0][0]
