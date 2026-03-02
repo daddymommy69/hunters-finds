@@ -2934,11 +2934,17 @@ const HuntersFindsApp = () => {
   // PHASE 4: USEEFFECTS
   // ============================================
   
-  // Fetch follows/followers when on people tab
+  // Fetch follows/followers on login (needed for profile counts) and when on people tab
   React.useEffect(() => {
-    if (user && youView === 'people') {
+    if (user) {
       fetchUserFollows();
       fetchUserFollowers();
+    }
+  }, [user]);
+
+  // Fetch suggested friends only when on people tab
+  React.useEffect(() => {
+    if (user && youView === 'people') {
       fetchSuggestedFriends();
     }
   }, [user, youView]);
