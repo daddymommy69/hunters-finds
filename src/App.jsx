@@ -1586,6 +1586,13 @@ const HuntersFindsApp = () => {
   const [viewingUserBadges, setViewingUserBadges] = useState({});
   const [showGrantBadgeModal, setShowGrantBadgeModal] = useState(false);
   const [grantBadgeTarget, setGrantBadgeTarget] = useState(null);
+  const [gbSearch, setGbSearch] = useState('');
+  const [gbUser, setGbUser] = useState(null);
+  const [gbBadge, setGbBadge] = useState('');
+  const [gbLoading, setGbLoading] = useState(false);
+  const [gbMsg, setGbMsg] = useState('');
+  const [gbResults, setGbResults] = useState([]);
+  const [gbUserBadges, setGbUserBadges] = useState([]);
   const [ratingLikes, setRatingLikes] = useState({});
   const [selectedRatingDetail, setSelectedRatingDetail] = useState(null);
   const [ratingComments, setRatingComments] = useState({}); // { ratingId: { comments, loading, loaded } }
@@ -3167,6 +3174,13 @@ const HuntersFindsApp = () => {
       fetchSuggestedFriends();
     }
   }, [user, youView]);
+
+  // Fetch badges for viewed user profile
+  React.useEffect(() => {
+    if (selectedExploreUser?.id && !viewingUserBadges[selectedExploreUser.id]) {
+      fetchUserBadges(selectedExploreUser.id);
+    }
+  }, [selectedExploreUser?.id]);
   
   // activityFilter kept for RPC compat (unused in UI now)
 
@@ -9920,8 +9934,6 @@ const HuntersFindsApp = () => {
           ? Object.entries(categories.reduce((acc, c) => { acc[c] = (acc[c] || 0) + 1; return acc; }, {})).sort((a, b) => b[1] - a[1])[0][0]
           : null;
         const theirBadges = viewingUserBadges[u.id] || [];
-        // Fetch badges if not loaded yet
-        if (!viewingUserBadges[u.id]) fetchUserBadges(u.id);
 
         return (
           <>
@@ -10272,116 +10284,83 @@ const HuntersFindsApp = () => {
       )}
       
       {/* Grant Badge Modal (Admin/Mod) */}
-      {showGrantBadgeModal && (userRole === 'admin' || userRole === 'moderator') && (() => {
-        const [gbSearch, setGbSearch] = React.useState('');
-        const [gbUser, setGbUser] = React.useState(null);
-        const [gbBadge, setGbBadge] = React.useState('');
-        const [gbLoading, setGbLoading] = React.useState(false);
-        const [gbMsg, setGbMsg] = React.useState('');
-        const [gbUserBadges, setGbUserBadges] = React.useState([]);
-
-        const searchUsers = async () => {
-          if (!gbSearch.trim()) return;
-          const { data } = await supabase.from('users').select('id,username,email').ilike('username', `%${gbSearch}%`).limit(10);
-          return data || [];
-        };
-        const [gbResults, setGbResults] = React.useState([]);
-        const runSearch = async () => { const r = await searchUsers(); setGbResults(r); };
-
-        const selectUser = async (u) => {
-          setGbUser(u);
-          setGbResults([]);
-          const { data } = await supabase.from('user_badges').select('badge_id').eq('user_id', u.id);
-          setGbUserBadges((data||[]).map(b=>b.badge_id));
-        };
-
-        const handleGrant = async () => {
-          if (!gbUser || !gbBadge) return;
-          setGbLoading(true);
-          const ok = await grantBadgeToUser(gbUser.id, gbBadge);
-          setGbMsg(ok ? `granted "${BADGE_DEFS[gbBadge]?.name}" to @${gbUser.username}` : 'already has this badge or error');
-          setGbLoading(false);
-          if (ok) setGbUserBadges(prev => [...prev, gbBadge]);
-        };
-
-        return (
-          <>
-            <div onClick={() => setShowGrantBadgeModal(false)} className="fixed inset-0 bg-black/60 z-50" />
-            <div className="fixed inset-0 flex items-center justify-center z-50 p-4 pointer-events-none">
-              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md pointer-events-auto" style={{ fontFamily:'"Courier New",monospace' }}>
-                <div className="flex items-center justify-between p-4 border-b">
-                  <h2 className="font-bold text-base">Grant Badge</h2>
-                  <button onClick={() => setShowGrantBadgeModal(false)} className="text-gray-400 hover:text-gray-700"><X size={20}/></button>
-                </div>
-                <div className="p-4 space-y-4">
-                  {/* User search */}
-                  <div>
-                    <label className="text-xs text-gray-500 font-bold uppercase tracking-wider">User</label>
-                    {gbUser ? (
-                      <div className="flex items-center justify-between mt-1 p-2 bg-gray-50 rounded-lg border">
-                        <span className="text-sm font-bold">@{gbUser.username}</span>
-                        <button onClick={() => { setGbUser(null); setGbUserBadges([]); setGbMsg(''); }} className="text-xs text-red-400 hover:text-red-600">change</button>
-                      </div>
-                    ) : (
-                      <div className="mt-1 flex gap-2">
-                        <input value={gbSearch} onChange={e=>setGbSearch(e.target.value)} onKeyDown={e=>e.key==='Enter'&&runSearch()} placeholder="search username..." className="flex-1 border rounded-lg px-3 py-2 text-sm"/>
-                        <button onClick={runSearch} className="px-3 py-2 bg-[#33a29b] text-white rounded-lg text-sm font-bold hover:bg-[#2a8a84]">go</button>
-                      </div>
-                    )}
-                    {gbResults.length > 0 && (
-                      <div className="mt-1 border rounded-lg overflow-hidden shadow-sm">
-                        {gbResults.map(u => (
-                          <button key={u.id} onClick={()=>selectUser(u)} className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm border-b last:border-0">@{u.username}</button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Badge picker */}
-                  {gbUser && (
-                    <div>
-                      <label className="text-xs text-gray-500 font-bold uppercase tracking-wider">Badge</label>
-                      <div className="mt-2 space-y-2 max-h-60 overflow-y-auto pr-1">
-                        {BADGE_CATEGORIES.map(cat => (
-                          <div key={cat}>
-                            <div className="text-[10px] text-gray-400 uppercase font-bold tracking-wider mb-1">{BADGE_CATEGORY_LABELS[cat]}</div>
-                            <div className="flex flex-wrap gap-1.5">
-                              {Object.values(BADGE_DEFS).filter(d=>d.category===cat).map(def => {
-                                const isCastle = def.category==='castle';
-                                const castleColors = { wood:'#8B5E3C', bronze:'#CD7F32', silver:'#C0C0C0', gold:'#FFD700', diamond:'#7dd3fc' };
-                                const bg = isCastle ? (castleColors[def.tier]||'#888') : def.color||'#33a29b';
-                                const owned = gbUserBadges.includes(def.id);
-                                const selected = gbBadge === def.id;
-                                return (
-                                  <button key={def.id} disabled={owned} onClick={()=>setGbBadge(def.id)}
-                                    className={`text-[11px] px-2 py-1 rounded-full font-bold transition border ${owned?'opacity-30 cursor-not-allowed':''} ${selected?'ring-2 ring-offset-1':''}`}
-                                    style={{ background: selected?`${bg}dd`:`${bg}22`, color: selected?'white':bg, borderColor:`${bg}55`, ringColor: bg }}>
-                                    {def.name}{owned?' ✓':''}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+      {showGrantBadgeModal && (userRole === 'admin' || userRole === 'moderator') && (
+        <>
+          <div onClick={() => { setShowGrantBadgeModal(false); setGbUser(null); setGbSearch(''); setGbResults([]); setGbBadge(''); setGbMsg(''); setGbUserBadges([]); }} className="fixed inset-0 bg-black/60 z-50" />
+          <div className="fixed inset-0 flex items-center justify-center z-50 p-4 pointer-events-none">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md pointer-events-auto" style={{ fontFamily:'"Courier New",monospace', maxHeight:'85vh', display:'flex', flexDirection:'column' }}>
+              <div className="flex items-center justify-between p-4 border-b flex-shrink-0">
+                <h2 className="font-bold text-base">Grant Badge</h2>
+                <button onClick={() => { setShowGrantBadgeModal(false); setGbUser(null); setGbSearch(''); setGbResults([]); setGbBadge(''); setGbMsg(''); setGbUserBadges([]); }}><X size={20}/></button>
+              </div>
+              <div className="p-4 space-y-4 overflow-y-auto flex-1">
+                {/* User search */}
+                <div>
+                  <label className="text-xs text-gray-500 font-bold uppercase tracking-wider">User</label>
+                  {gbUser ? (
+                    <div className="flex items-center justify-between mt-1 p-2 bg-gray-50 rounded-lg border">
+                      <span className="text-sm font-bold">@{gbUser.username}</span>
+                      <button onClick={() => { setGbUser(null); setGbUserBadges([]); setGbMsg(''); setGbBadge(''); }} className="text-xs text-red-400 hover:text-red-600">change</button>
+                    </div>
+                  ) : (
+                    <div className="mt-1 flex gap-2">
+                      <input value={gbSearch} onChange={e=>setGbSearch(e.target.value)} onKeyDown={async e=>{ if(e.key==='Enter'){ const {data}=await supabase.from('users').select('id,username,email').ilike('username',`%${gbSearch}%`).limit(10); setGbResults(data||[]); }}} placeholder="search username..." className="flex-1 border rounded-lg px-3 py-2 text-sm"/>
+                      <button onClick={async()=>{ const {data}=await supabase.from('users').select('id,username,email').ilike('username',`%${gbSearch}%`).limit(10); setGbResults(data||[]); }} className="px-3 py-2 bg-[#33a29b] text-white rounded-lg text-sm font-bold hover:bg-[#2a8a84]">go</button>
                     </div>
                   )}
-
-                  {gbMsg && <p className="text-sm text-center font-bold" style={{ color: gbMsg.includes('granted') ? '#33a29b' : '#ef4444' }}>{gbMsg}</p>}
-
-                  {gbUser && gbBadge && (
-                    <button onClick={handleGrant} disabled={gbLoading} className="w-full py-3 bg-[#33a29b] text-white rounded-xl font-bold hover:bg-[#2a8a84] transition disabled:opacity-50">
-                      {gbLoading ? 'granting...' : `grant "${BADGE_DEFS[gbBadge]?.name}" to @${gbUser?.username}`}
-                    </button>
+                  {gbResults.length > 0 && (
+                    <div className="mt-1 border rounded-lg overflow-hidden shadow-sm">
+                      {gbResults.map(u => (
+                        <button key={u.id} onClick={async()=>{ setGbUser(u); setGbResults([]); const {data}=await supabase.from('user_badges').select('badge_id').eq('user_id',u.id); setGbUserBadges((data||[]).map(b=>b.badge_id)); }} className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm border-b last:border-0">@{u.username}</button>
+                      ))}
+                    </div>
                   )}
                 </div>
+
+                {/* Badge picker */}
+                {gbUser && (
+                  <div>
+                    <label className="text-xs text-gray-500 font-bold uppercase tracking-wider">Badge</label>
+                    <div className="mt-2 space-y-3">
+                      {BADGE_CATEGORIES.map(cat => (
+                        <div key={cat}>
+                          <div className="text-[10px] text-gray-400 uppercase font-bold tracking-wider mb-1">{BADGE_CATEGORY_LABELS[cat]}</div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {Object.values(BADGE_DEFS).filter(d=>d.category===cat).map(def => {
+                              const isCastle = def.category==='castle';
+                              const castleColors = { wood:'#8B5E3C', bronze:'#CD7F32', silver:'#C0C0C0', gold:'#FFD700', diamond:'#7dd3fc' };
+                              const bg = isCastle ? (castleColors[def.tier]||'#888') : def.color||'#33a29b';
+                              const owned = gbUserBadges.includes(def.id);
+                              const selected = gbBadge === def.id;
+                              return (
+                                <button key={def.id} disabled={owned} onClick={()=>setGbBadge(def.id)}
+                                  className={`text-[11px] px-2 py-1 rounded-full font-bold transition border ${owned?'opacity-30 cursor-not-allowed':''}`}
+                                  style={{ background: selected?`${bg}dd`:`${bg}22`, color: selected?'white':bg, borderColor:`${bg}55`, outline: selected?`2px solid ${bg}`:'' }}>
+                                  {def.name}{owned?' ✓':''}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {gbMsg && <p className="text-sm text-center font-bold py-2" style={{ color: gbMsg.includes('granted') ? '#33a29b' : '#ef4444' }}>{gbMsg}</p>}
+
+                {gbUser && gbBadge && (
+                  <button onClick={async()=>{ setGbLoading(true); const ok=await grantBadgeToUser(gbUser.id,gbBadge); setGbMsg(ok?`granted "${BADGE_DEFS[gbBadge]?.name}" to @${gbUser?.username}`:'already has this badge or error'); setGbLoading(false); if(ok) setGbUserBadges(prev=>[...prev,gbBadge]); }} disabled={gbLoading} className="w-full py-3 bg-[#33a29b] text-white rounded-xl font-bold hover:bg-[#2a8a84] transition disabled:opacity-50">
+                    {gbLoading ? 'granting...' : `grant "${BADGE_DEFS[gbBadge]?.name}" to @${gbUser?.username}`}
+                  </button>
+                )}
               </div>
             </div>
-          </>
-        );
-      })()}
+          </div>
+        </>
+      )}
 
-      {/* Logout Confirmation Modal */}
+      {/* Logout Confirmation Modal */}}
       {showLogoutConfirm && (
         <>
           <div onClick={() => setShowLogoutConfirm(false)} className="fixed inset-0 bg-black/50 z-50 animate-fade-in" />
