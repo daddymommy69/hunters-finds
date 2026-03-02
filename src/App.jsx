@@ -3538,19 +3538,21 @@ const HuntersFindsApp = () => {
   };
   
   // Determine restaurant category
-  const getRestaurantCategory = (restaurant) => {
+  const getRestaurantCategory = (restaurant, top3RestaurantIds, top3DishRestaurantIds) => {
+    if (top3RestaurantIds?.has(restaurant.id)) return 'top3_restaurant';
+    if (top3DishRestaurantIds?.has(restaurant.id)) return 'top3_dish';
     if (user && restaurant.rated_by_user) return 'user';
-    if (restaurant.avgSRR >= 85) return 'high_rated';
     if (restaurant.avgSRR) return 'others';
     return 'google';
   };
   
   // Pin styles configuration
   const pinConfig = {
-    user: { color: '#10b981', size: 40 },
-    high_rated: { color: '#f59e0b', size: 36 },
-    others: { color: '#3b82f6', size: 32 },
-    google: { color: '#9ca3af', size: 28 }
+    top3_restaurant: { color: '#a855f7', size: 44 },  // vivid purple - top 3 restaurants
+    top3_dish:       { color: '#c084fc', size: 40 },  // soft lavender purple - top 3 dishes
+    user:            { color: '#33a29b', size: 38 },  // teal - you rated it
+    others:          { color: '#3b82f6', size: 32 },  // blue - community rated
+    google:          { color: '#9ca3af', size: 28 }   // gray - unrated
   };
   
   // Get user's current location
@@ -3752,11 +3754,27 @@ const HuntersFindsApp = () => {
       }
     });
 
+    // Compute top 3 restaurants by community avg score
+    const scoredRestaurants = deduped
+      .filter(r => r.avgSRR)
+      .sort((a, b) => b.avgSRR - a.avgSRR);
+    const top3RestaurantIds = new Set(scoredRestaurants.slice(0, 3).map(r => r.id));
+
+    // Compute top 3 dishes (by community avg) and map to their restaurant
+    const allDishScores = [];
+    deduped.forEach(r => {
+      (r.topDishes || []).forEach(d => {
+        if (d.srr != null) allDishScores.push({ restaurantId: r.id, score: d.srr });
+      });
+    });
+    allDishScores.sort((a, b) => b.score - a.score);
+    const top3DishRestaurantIds = new Set(allDishScores.slice(0, 3).map(d => d.restaurantId));
+
     // Add markers
     deduped.forEach(restaurant => {
       if (!restaurant.location || !restaurant.location.lat || !restaurant.location.lng) return;
       
-      const category = getRestaurantCategory(restaurant);
+      const category = getRestaurantCategory(restaurant, top3RestaurantIds, top3DishRestaurantIds);
       const config = pinConfig[category];
       
       const icon = window.L.divIcon({
@@ -5697,47 +5715,23 @@ const HuntersFindsApp = () => {
                   <h4 className="text-xs font-bold mb-2">Legend</h4>
                   <div className="space-y-2 text-xs">
                     <div className="flex items-center gap-2">
-                      <div style={{
-                        width: 16,
-                        height: 16,
-                        background: '#10b981',
-                        borderRadius: '50%',
-                        border: '2px solid white',
-                        boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
-                      }}></div>
+                      <div style={{ width: 16, height: 16, background: '#a855f7', borderRadius: '50%', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}></div>
+                      <span>Top 3 Restaurants</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div style={{ width: 16, height: 16, background: '#c084fc', borderRadius: '50%', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}></div>
+                      <span>Top 3 Dishes</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div style={{ width: 16, height: 16, background: '#33a29b', borderRadius: '50%', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}></div>
                       <span>Your Restaurants</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div style={{
-                        width: 16,
-                        height: 16,
-                        background: '#f59e0b',
-                        borderRadius: '50%',
-                        border: '2px solid white',
-                        boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
-                      }}></div>
-                      <span>High Rated (85+)</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div style={{
-                        width: 16,
-                        height: 16,
-                        background: '#3b82f6',
-                        borderRadius: '50%',
-                        border: '2px solid white',
-                        boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
-                      }}></div>
+                      <div style={{ width: 16, height: 16, background: '#3b82f6', borderRadius: '50%', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}></div>
                       <span>Community Rated</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div style={{
-                        width: 16,
-                        height: 16,
-                        background: '#9ca3af',
-                        borderRadius: '50%',
-                        border: '2px solid white',
-                        boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
-                      }}></div>
+                      <div style={{ width: 16, height: 16, background: '#9ca3af', borderRadius: '50%', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}></div>
                       <span>Unrated</span>
                     </div>
                   </div>
