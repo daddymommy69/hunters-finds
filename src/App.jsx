@@ -3544,6 +3544,43 @@ const HuntersFindsApp = () => {
       </svg>
     `;
   };
+
+  // Crystal glassy castle pin for top 3 restaurants
+  const createCrystalCastlePin = (size) => {
+    const id = `crystal-${size}`;
+    return `
+      <svg width="${size}" height="${size * 1.2}" viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="crystalBody-${id}" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#e0f7ff;stop-opacity:0.95"/>
+            <stop offset="40%" style="stop-color:#bae6fd;stop-opacity:0.85"/>
+            <stop offset="100%" style="stop-color:#7dd3fc;stop-opacity:0.9"/>
+          </linearGradient>
+          <linearGradient id="crystalSheen-${id}" x1="0%" y1="0%" x2="60%" y2="100%">
+            <stop offset="0%" style="stop-color:white;stop-opacity:0.7"/>
+            <stop offset="100%" style="stop-color:white;stop-opacity:0"/>
+          </linearGradient>
+          <filter id="crystalShadow-${id}">
+            <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#7dd3fc" flood-opacity="0.6"/>
+          </filter>
+        </defs>
+        <g filter="url(#crystalShadow-${id})">
+          <path d="M 30,90 L 30,40 L 25,40 L 25,30 L 20,30 L 20,20 L 30,20 L 30,30 L 40,30 L 40,20 L 50,20 L 50,30 L 60,30 L 60,20 L 70,20 L 70,30 L 75,30 L 75,40 L 70,40 L 70,90 Z"
+                fill="url(#crystalBody-${id})" stroke="white" stroke-width="3.5"/>
+          <!-- sheen overlay -->
+          <path d="M 30,90 L 30,40 L 25,40 L 25,30 L 20,30 L 20,20 L 30,20 L 30,30 L 40,30 L 40,20 L 50,20 L 50,30 L 60,30 L 60,20 L 70,20 L 70,30 L 75,30 L 75,40 L 70,40 L 70,90 Z"
+                fill="url(#crystalSheen-${id})" opacity="0.6"/>
+          <!-- door window -->
+          <rect x="42" y="65" width="16" height="25" fill="white" opacity="0.5" rx="2"/>
+          <!-- sparkle top-left -->
+          <polygon points="28,25 30,22 32,25 30,28" fill="white" opacity="0.9"/>
+          <!-- dot tail -->
+          <circle cx="50" cy="105" r="8" fill="url(#crystalBody-${id})" stroke="white" stroke-width="3"/>
+        </g>
+      </svg>
+    `;
+  };
+  };
   
   // Determine restaurant category
   const getRestaurantCategory = (restaurant, top3RestaurantIds, top3DishRestaurantIds) => {
@@ -3781,13 +3818,21 @@ const HuntersFindsApp = () => {
     // Add markers
     deduped.forEach(restaurant => {
       if (!restaurant.location || !restaurant.location.lat || !restaurant.location.lng) return;
-      
-      const category = getRestaurantCategory(restaurant, top3RestaurantIds, top3DishRestaurantIds);
+
+      // Check if current user has rated this restaurant (rated_by_user may not be set)
+      const userRatedThis = user && activeUserRatings.some(r =>
+        r.restaurant_id === restaurant.id ||
+        r.dish?.restaurant_id === restaurant.id ||
+        (r.dish?.restaurant_name || r.restaurant_name || '').toLowerCase() === restaurant.name.toLowerCase()
+      );
+      const restaurantForCategory = { ...restaurant, rated_by_user: userRatedThis };
+
+      const category = getRestaurantCategory(restaurantForCategory, top3RestaurantIds, top3DishRestaurantIds);
       const config = pinConfig[category];
       
       const icon = window.L.divIcon({
         className: 'custom-castle-marker',
-        html: createCastlePin(config.color, config.size),
+        html: category === 'top3_restaurant' ? createCrystalCastlePin(config.size) : createCastlePin(config.color, config.size),
         iconSize: [config.size, config.size * 1.2],
         iconAnchor: [config.size / 2, config.size * 1.2]
       });
@@ -5725,7 +5770,7 @@ const HuntersFindsApp = () => {
                   <h4 className="text-xs font-bold mb-2">Legend</h4>
                   <div className="space-y-2 text-xs">
                     <div className="flex items-center gap-2">
-                      <div style={{ width: 16, height: 16, background: '#a855f7', borderRadius: '50%', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}></div>
+                      <div style={{ width: 16, height: 16, background: 'linear-gradient(135deg, #e0f7ff 0%, #bae6fd 50%, #7dd3fc 100%)', borderRadius: '50%', border: '2px solid white', boxShadow: '0 1px 4px rgba(125,211,252,0.7)' }}></div>
                       <span>Top 3 Restaurants</span>
                     </div>
                     <div className="flex items-center gap-2">
