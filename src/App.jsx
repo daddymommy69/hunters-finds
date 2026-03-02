@@ -7653,7 +7653,7 @@ const HuntersFindsApp = () => {
                 </div>
               )}
 
-                            {youView === 'activity' && (
+              {youView === 'activity' && (
                 <div className="space-y-3">
                   <div className="flex justify-between items-center mb-2">
                     <h2 className="text-lg font-bold" style={{ fontFamily: '"Courier New", monospace' }}>activity feed</h2>
