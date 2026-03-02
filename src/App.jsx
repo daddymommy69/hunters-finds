@@ -2332,56 +2332,30 @@ const HuntersFindsApp = () => {
         
         const followingIds = followData.map(f => f.following_id);
         
-        // Get user details for each followed user
-        const friendsWithStats = await Promise.all(
-          followingIds.map(async (friendId) => {
-            // Get user data from auth.users
-            const { data: userData } = await supabase.auth.admin.getUserById(friendId);
-            if (!userData) return null;
-            
-            // Get ratings count
-            const { count: ratingsCount } = await supabase
-              .from('ratings')
-              .select('*', { count: 'exact', head: true })
-              .eq('user_id', friendId);
-            
-            // Get followers count
-            const { count: followersCount } = await supabase
-              .from('user_follows')
-              .select('*', { count: 'exact', head: true })
-              .eq('following_id', friendId);
-            
-            // Calculate overlap
-            const { data: myRatings } = await supabase
-              .from('ratings')
-              .select('dish_id')
-              .eq('user_id', user.id);
-            
-            const { data: theirRatings } = await supabase
-              .from('ratings')
-              .select('dish_id')
-              .eq('user_id', friendId);
-            
-            const myDishIds = new Set(myRatings?.map(r => r.dish_id) || []);
-            const theirDishIds = theirRatings?.map(r => r.dish_id) || [];
-            const overlap = theirDishIds.filter(id => myDishIds.has(id)).length;
-            const overlapPercent = theirRatings.length > 0 
-              ? Math.round((overlap / theirRatings.length) * 100) 
-              : 0;
-            
-            return {
-              id: friendId,
-              username: userData.user.user_metadata?.username || userData.user.email?.split('@')[0] || 'user',
-              email: userData.user.email,
-              location: userData.user.user_metadata?.location || 'Unknown',
-              ratings: ratingsCount || 0,
-              friends: followersCount || 0,
-              overlap: overlapPercent
-            };
-          })
-        );
+        // Get user details from the public users table (works client-side)
+        const { data: usersData } = await supabase
+          .from('users')
+          .select('id, username, email')
+          .in('id', followingIds);
+
+        const friendsWithStats = (usersData || []).map(u => ({
+          id: u.id,
+          username: u.username || u.email?.split('@')[0] || 'user',
+          email: u.email,
+          ratingsCount: 0,
+        }));
+
+        // Enrich with ratings counts
+        await Promise.all(friendsWithStats.map(async (f) => {
+          const { count } = await supabase
+            .from('ratings')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', f.id)
+            .eq('is_deleted', false);
+          f.ratingsCount = count || 0;
+        }));
         
-        setUserFollows(friendsWithStats.filter(f => f !== null));
+        setUserFollows(friendsWithStats);
       } else {
         setUserFollows(follows || []);
       }
