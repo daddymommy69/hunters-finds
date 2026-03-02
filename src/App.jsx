@@ -8413,7 +8413,11 @@ const HuntersFindsApp = () => {
                     <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3" style={{ fontFamily: '"Courier New", monospace' }}>who rated this</h3>
                     <div className="flex gap-4 flex-wrap">
                       {othersWhoRated.map(r => (
-                        <button key={r.id} onClick={(e) => { e.stopPropagation(); const u = allUsers.find(u => u.id === r.user_id); if (u) setSelectedExploreUser({ ...u, isFollowing: userFollows.some(f => f.following_id === u.id) }); }} className="flex flex-col items-center gap-1 hover:opacity-75 transition">
+                        <button key={r.id} onClick={(e) => { 
+                          e.stopPropagation(); 
+                          const u = allUsers.find(u => u.id === r.user_id) || { id: r.user_id, username: r.username, ratingsCount: 0 };
+                          setSelectedExploreUser({ ...u, isFollowing: userFollows.some(f => f.following_id === r.user_id) }); 
+                        }} className="flex flex-col items-center gap-1 hover:opacity-75 transition">
                           <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-sm font-bold shadow-sm">{(r.username || '?')[0].toUpperCase()}</div>
                           <span className="text-[10px] text-gray-400 max-w-[52px] truncate" style={{ fontFamily: '"Courier New", monospace' }}>@{r.username}</span>
                           {r.srr != null && <span className={`text-xs font-bold ${getSRRColor(r.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{r.srr.toFixed(1)}</span>}
