@@ -3580,7 +3580,6 @@ const HuntersFindsApp = () => {
       </svg>
     `;
   };
-  };
   
   // Determine restaurant category
   const getRestaurantCategory = (restaurant, top3RestaurantIds, top3DishRestaurantIds) => {
@@ -3863,12 +3862,11 @@ const HuntersFindsApp = () => {
                 <div style="font-size: 10px; color: #666; text-transform: uppercase; margin-bottom: 4px; border-top: 1px solid #d1fae5; padding-top: 6px;">Top Rated Dishes</div>
                 ${restaurant.topDishes.slice(0, 3).map(dish => {
                   const isTop = top3DishIds.has(dish.id);
-                  return `
-                  <div style="font-size: 11px; padding: 3px 0; display: flex; justify-content: space-between; align-items: center;">
-                    <span>${isTop ? '<span style="font-size:9px;background:#a855f7;color:white;border-radius:3px;padding:1px 4px;margin-right:4px;">★</span>' : ''}${dish.name}</span>
-                    <span style="font-weight: bold; color: ${isTop ? '#a855f7' : '#10b981'};">${typeof dish.srr === "number" ? dish.srr.toFixed(2) : dish.srr}</span>
-                  </div>
-                `}).join('')}
+                  const badge = isTop ? '<span style="font-size:9px;background:#a855f7;color:white;border-radius:3px;padding:1px 4px;margin-right:4px;">★</span>' : '';
+                  const scoreColor = isTop ? '#a855f7' : '#10b981';
+                  const scoreStr = typeof dish.srr === 'number' ? dish.srr.toFixed(2) : dish.srr;
+                  return '<div style="font-size: 11px; padding: 3px 0; display: flex; justify-content: space-between; align-items: center;"><span>' + badge + dish.name + '</span><span style="font-weight: bold; color: ' + scoreColor + ';">' + scoreStr + '</span></div>';
+                }).join('')}
               ` : ''}
             </div>
           ` : `
