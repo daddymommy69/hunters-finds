@@ -283,6 +283,20 @@ const HuntersFindsApp = () => {
       fetchAllRatings();
     }
   }, [dishes]);
+
+  // Also re-fetch allRatings when userRatings changes (catches rating deletions/edits
+  // without a dish count change)
+  const prevUserRatingsCountRef = React.useRef(-1);
+  React.useEffect(() => {
+    if (prevUserRatingsCountRef.current === -1) {
+      prevUserRatingsCountRef.current = userRatings.length;
+      return;
+    }
+    if (userRatings.length !== prevUserRatingsCountRef.current) {
+      prevUserRatingsCountRef.current = userRatings.length;
+      fetchAllRatings();
+    }
+  }, [userRatings]);
   
   // Fetch user's groups and all public groups
   const [hasAttemptedGroupFetch, setHasAttemptedGroupFetch] = React.useState(false);
