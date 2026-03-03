@@ -182,7 +182,7 @@ const BADGE_DEFS = {
   photographer:   { id:'photographer',   category:'other',       name:'photographer',          desc:'added photos to 5+ restaurants',         icon:'photo',    autoCompute:(s)=>s.restaurantsWithPhotos>=5 },
   rat_helper:     { id:'rat_helper',     category:'special',     name:'rat helper',            desc:'helped debug hunters finds',             icon:'bug',      adminOnly:true },
   founder:        { id:'founder',        category:'special',     name:'founder',               desc:'OG user of hunters finds',               icon:'founder',  adminOnly:true },
-  castle_lord:    { id:'castle_lord',    category:'special',     name:'castle lord',           desc:'lord of hunters castle',                 icon:'crown',    adminOnly:true },
+  castle_lord:    { id:'castle_lord',    category:'special',     name:'castle lord',           desc:'lord of hunters castle',                 icon:'crown',    adminOnly:true, color:'#ef4444' },
   taste_maker:    { id:'taste_maker',    category:'special',     name:'taste maker',           desc:'influential reviewer',                   icon:'tastemaker',adminOnly:true },
   ambassador:     { id:'ambassador',     category:'special',     name:'ambassador',            desc:'brought people to the app',              icon:'ambassador',adminOnly:true },
 };
@@ -246,6 +246,16 @@ const sortByPrestige = (arr) =>
     const bi = BADGE_PRESTIGE.indexOf(id(b));
     return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
   });
+
+// Returns ordered badges to show in profile header — uses featured list if set, else prestige order top-5
+const getDisplayBadges = (earnedBadges, featuredIds) => {
+  if (featuredIds && featuredIds.length > 0) {
+    return featuredIds
+      .map(fid => earnedBadges.find(b => (b.badge_id || b.id) === fid))
+      .filter(Boolean);
+  }
+  return sortByPrestige(collapseToHighestTier(earnedBadges)).slice(0, 5);
+};
 
 // Badge groups where only the highest tier should show
 const BADGE_TIER_GROUPS = [
@@ -1664,6 +1674,11 @@ const HuntersFindsApp = () => {
   const [userFollowers, setUserFollowers] = useState([]);
   const [userBadges, setUserBadges] = useState([]);
   const [viewingUserBadges, setViewingUserBadges] = useState({});
+  const [featuredBadges, setFeaturedBadges] = useState([]);
+  const [showBadgeCustomizer, setShowBadgeCustomizer] = useState(false);
+  const [custDragging, setCustDragging] = useState(null);
+  const [custDragOver, setCustDragOver] = useState(null);
+  const [viewingUserFeatured, setViewingUserFeatured] = useState({});
   const [showGrantBadgeModal, setShowGrantBadgeModal] = useState(false);
   const [grantBadgeTarget, setGrantBadgeTarget] = useState(null);
   const [gbSearch, setGbSearch] = useState('');
@@ -2597,10 +2612,25 @@ const HuntersFindsApp = () => {
         badges = inferred;
       }
 
-      if (!targetUserId) setUserBadges(badges);
-      else setViewingUserBadges(prev => ({ ...prev, [uid]: badges }));
+      if (!targetUserId) {
+        setUserBadges(badges);
+        // Also fetch own featured_badges order from users table
+        const { data: userData } = await supabase.from('users').select('featured_badges').eq('id', uid).single();
+        setFeaturedBadges(userData?.featured_badges || []);
+      } else {
+        setViewingUserBadges(prev => ({ ...prev, [uid]: badges }));
+        // Fetch their featured_badges too
+        const { data: userData } = await supabase.from('users').select('featured_badges').eq('id', uid).single();
+        setViewingUserFeatured(prev => ({ ...prev, [uid]: userData?.featured_badges || [] }));
+      }
       return badges;
     } catch (e) { return []; }
+  };
+
+  const saveFeaturedBadges = async (orderedIds) => {
+    if (!user) return;
+    setFeaturedBadges(orderedIds);
+    await supabase.from('users').update({ featured_badges: orderedIds }).eq('id', user.id);
   };
 
   const computeAndAwardBadges = async () => {
@@ -7411,7 +7441,19 @@ const HuntersFindsApp = () => {
                       <div className="flex items-center gap-2 flex-wrap">
                         <h2 className="text-xl font-bold">@{user?.user_metadata?.username || user?.email?.split('@')[0] || 'user'}</h2>
                         <div className="flex items-center gap-1">
-                          {sortByPrestige(collapseToHighestTier(userBadges)).slice(0,5).map(b => <BadgeIcon key={b.badge_id} badgeId={b.badge_id} size={18} />)}
+                          {getDisplayBadges(userBadges, featuredBadges).map(b => <BadgeIcon key={b.badge_id} badgeId={b.badge_id} size={18} />)}
+                          {userBadges.length > 0 && (
+                            <button
+                              onClick={() => setShowBadgeCustomizer(true)}
+                              title="customize displayed badges"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 2px', color: '#9ca3af', display: 'flex', alignItems: 'center' }}
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                              </svg>
+                            </button>
+                          )}
                         </div>
                       </div>
                       <button 
@@ -9103,7 +9145,7 @@ const HuntersFindsApp = () => {
                   <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
                     <h2 className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>@{u.username || u.email?.split('@')[0]}</h2>
                     <div className="flex items-center gap-1">
-                      {sortByPrestige(collapseToHighestTier(theirBadges)).slice(0,5).map(b => <BadgeIcon key={b.badge_id} badgeId={b.badge_id} size={18} />)}
+                      {getDisplayBadges(theirBadges, viewingUserFeatured[u.id] || []).map(b => <BadgeIcon key={b.badge_id} badgeId={b.badge_id} size={18} />)}
                     </div>
                   </div>
                   <button onClick={handleCloseUser}><X size={20} /></button>
@@ -10499,7 +10541,7 @@ const HuntersFindsApp = () => {
                     @{u.username || u.email?.split('@')[0]}
                   </h2>
                   <div className="flex items-center gap-1">
-                    {sortByPrestige(collapseToHighestTier(theirBadges)).slice(0,5).map(b => <BadgeIcon key={b.badge_id} badgeId={b.badge_id} size={18} />)}
+                    {getDisplayBadges(theirBadges, viewingUserFeatured[u.id] || []).map(b => <BadgeIcon key={b.badge_id} badgeId={b.badge_id} size={18} />)}
                   </div>
                 </div>
                 <button onClick={() => setSelectedExploreUser(null)}><X size={20} /></button>
@@ -10710,6 +10752,126 @@ const HuntersFindsApp = () => {
       })()}
       
       {/* Edit Profile Modal */}
+      {/* Badge Customizer Modal */}
+      {showBadgeCustomizer && (() => {
+        const earnedCollapsed = sortByPrestige(collapseToHighestTier(userBadges));
+        const initSelected = featuredBadges.length > 0
+          ? featuredBadges.map(fid => earnedCollapsed.find(b => (b.badge_id||b.id) === fid)).filter(Boolean)
+          : earnedCollapsed.slice(0, 5);
+        const initAvail = earnedCollapsed.filter(b => !new Set(initSelected.map(x => x.badge_id||x.id)).has(b.badge_id||b.id));
+        const BadgeCustomizerInner = () => {
+          const [sel, setSel] = React.useState(initSelected);
+          const [avail, setAvail] = React.useState(initAvail);
+          const [dragSrc, setDragSrc] = React.useState(null);
+          const [dragSrcList, setDragSrcList] = React.useState(null);
+          const [dragOver, setDragOver] = React.useState(null);
+          const [saving, setSaving] = React.useState(false);
+          const moveBadge = (fromList, fromIdx, toList, toIdx) => {
+            if (fromList === 'sel' && toList === 'sel') {
+              setSel(s => { const n=[...s]; const [m]=n.splice(fromIdx,1); n.splice(toIdx,0,m); return n; });
+            } else if (fromList === 'avail' && toList === 'sel') {
+              if (sel.length >= 5) return;
+              const badge = avail[fromIdx];
+              setSel(s => { const n=[...s]; n.splice(toIdx,0,badge); return n; });
+              setAvail(a => a.filter((_,i)=>i!==fromIdx));
+            } else if (fromList === 'sel' && toList === 'avail') {
+              const badge = sel[fromIdx];
+              setSel(s => s.filter((_,i)=>i!==fromIdx));
+              setAvail(a => { const n=[...a]; n.splice(toIdx,0,badge); return n; });
+            }
+          };
+          const onDrop = (e, toList, toIdx) => {
+            e.preventDefault();
+            if (dragSrc !== null) moveBadge(dragSrcList, dragSrc, toList, toIdx);
+            setDragSrc(null); setDragSrcList(null); setDragOver(null);
+          };
+          const BadgeRow = ({ badge, idx, list }) => {
+            const def = BADGE_DEFS[badge.badge_id||badge.id];
+            const color = getBadgeColor(def);
+            const dkey = `${list}-${idx}`;
+            return (
+              <div draggable
+                onDragStart={()=>{ setDragSrc(idx); setDragSrcList(list); }}
+                onDragEnter={e=>{ e.preventDefault(); setDragOver(dkey); }}
+                onDragOver={e=>e.preventDefault()}
+                onDrop={e=>onDrop(e,list,idx)}
+                onDragEnd={()=>{ setDragSrc(null); setDragSrcList(null); setDragOver(null); }}
+                style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 10px', borderRadius:10,
+                  background: dragOver===dkey?'#dbeafe':list==='sel'?'#f0fdf9':'#f9fafb',
+                  border:`2px solid ${dragOver===dkey?'#93c5fd':list==='sel'?'#33a29b33':'#e5e7eb'}`,
+                  cursor:'grab', userSelect:'none', opacity:dragSrc===idx&&dragSrcList===list?0.4:1, transition:'all 0.1s' }}>
+                <div style={{ width:28,height:28,borderRadius:'50%',background:color,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
+                  <BadgeIcon badgeId={badge.badge_id||badge.id} size={16} />
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:12,fontWeight:'bold',fontFamily:'"Courier New",monospace',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }}>{def?.name||(badge.badge_id||badge.id)}</div>
+                  <div style={{ fontSize:10,color:'#9ca3af',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }}>{def?.desc}</div>
+                </div>
+                <span style={{ color:'#d1d5db',fontSize:16 }}>⠿</span>
+              </div>
+            );
+          };
+          return (
+            <>
+              <div onClick={()=>setShowBadgeCustomizer(false)} className="fixed inset-0 bg-black/50 z-[70] animate-fade-in" />
+              <div className="fixed inset-0 flex items-center justify-center z-[71] p-4 pointer-events-none">
+                <div className="bg-white rounded-2xl pointer-events-auto animate-slide-up-fade-simple flex flex-col"
+                  style={{ width:'min(92vw,420px)',maxHeight:'85vh',fontFamily:'"Courier New",monospace' }}>
+                  <div style={{ padding:'16px 18px 12px',borderBottom:'1px solid #f3f4f6',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0 }}>
+                    <div>
+                      <div style={{ fontSize:15,fontWeight:'bold' }}>customize badges</div>
+                      <div style={{ fontSize:11,color:'#9ca3af',marginTop:2 }}>drag to reorder · up to 5 shown next to your name</div>
+                    </div>
+                    <button onClick={()=>setShowBadgeCustomizer(false)} style={{ background:'none',border:'none',cursor:'pointer',color:'#6b7280' }}><X size={18}/></button>
+                  </div>
+                  <div className="overflow-y-auto flex-1" style={{ padding:'14px 18px' }}>
+                    <div style={{ marginBottom:16 }}>
+                      <div style={{ fontSize:11,fontWeight:'bold',color:'#33a29b',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.05em' }}>displayed ({sel.length}/5)</div>
+                      {sel.length===0?(
+                        <div onDragOver={e=>e.preventDefault()} onDrop={e=>onDrop(e,'sel',0)}
+                          style={{ border:'2px dashed #e5e7eb',borderRadius:10,padding:'16px',textAlign:'center',color:'#9ca3af',fontSize:12 }}>
+                          drag badges here to display
+                        </div>
+                      ):(
+                        <div style={{ display:'flex',flexDirection:'column',gap:6 }}>
+                          {sel.map((b,i)=><BadgeRow key={b.badge_id||b.id} badge={b} idx={i} list="sel"/>)}
+                          {sel.length<5&&(
+                            <div onDragOver={e=>e.preventDefault()} onDrop={e=>onDrop(e,'sel',sel.length)}
+                              style={{ border:'2px dashed #d1fae5',borderRadius:10,padding:'8px',textAlign:'center',color:'#33a29b',fontSize:11 }}>
+                              + drop here
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    {avail.length>0&&(
+                      <div>
+                        <div style={{ fontSize:11,fontWeight:'bold',color:'#6b7280',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.05em' }}>earned · not displayed</div>
+                        <div style={{ display:'flex',flexDirection:'column',gap:6 }}>
+                          {avail.map((b,i)=><BadgeRow key={b.badge_id||b.id} badge={b} idx={i} list="avail"/>)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ padding:'12px 18px',borderTop:'1px solid #f3f4f6',display:'flex',gap:8,flexShrink:0 }}>
+                    <button onClick={async()=>{ await saveFeaturedBadges([]); setShowBadgeCustomizer(false); }}
+                      style={{ padding:'9px 14px',borderRadius:10,border:'1px solid #e5e7eb',background:'white',fontSize:12,cursor:'pointer',color:'#6b7280',fontFamily:'inherit' }}>
+                      reset to default
+                    </button>
+                    <button onClick={async()=>{ setSaving(true); await saveFeaturedBadges(sel.map(b=>b.badge_id||b.id)); setSaving(false); setShowBadgeCustomizer(false); }}
+                      disabled={saving}
+                      style={{ flex:1,padding:'10px',borderRadius:10,border:'none',background:saving?'#9ca3af':'#33a29b',color:'white',fontSize:13,fontWeight:'bold',cursor:saving?'not-allowed':'pointer',fontFamily:'inherit' }}>
+                      {saving?'saving…':'save'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
+          );
+        };
+        return <BadgeCustomizerInner key="badge-customizer" />;
+      })()}
+
       {isEditProfileModalOpen && (
         <>
           <div onClick={() => setIsEditProfileModalOpen(false)} className="fixed inset-0 bg-black/50 z-50 animate-fade-in" />
