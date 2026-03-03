@@ -359,8 +359,7 @@ const BadgeCustomizerModal = ({ earnedCollapsed, featuredBadges, onClose, onSave
     return earnedCollapsed.slice(0, 5);
   }, []);
   const initAvail = React.useMemo(() =>
-    earnedCollapsed.filter(b => !new Set(initSelected.map(x => x.badge_id||x.id)).has(b.badge_id||b.id)),
-  []);
+    earnedCollapsed.filter(b => !new Set(initSelected.map(x => x.badge_id||x.id)).has(b.badge_id||b.id)), []);
 
   const [sel, setSel] = React.useState(initSelected);
   const [avail, setAvail] = React.useState(initAvail);
@@ -389,7 +388,6 @@ const BadgeCustomizerModal = ({ earnedCollapsed, featuredBadges, onClose, onSave
     e.preventDefault();
     pointerOrigin.current = { x: e.clientX ?? e.touches?.[0]?.clientX, y: e.clientY ?? e.touches?.[0]?.clientY };
     isDragging.current = false;
-
     const startDrag = (cx, cy) => {
       isDragging.current = true;
       setDragging({ list, idx, badge });
@@ -400,7 +398,6 @@ const BadgeCustomizerModal = ({ earnedCollapsed, featuredBadges, onClose, onSave
       document.body.appendChild(ghost);
       ghostRef.current = ghost;
     };
-
     const onMove = (e) => {
       const cx = e.clientX ?? e.touches?.[0]?.clientX;
       const cy = e.clientY ?? e.touches?.[0]?.clientY;
@@ -414,7 +411,6 @@ const BadgeCustomizerModal = ({ earnedCollapsed, featuredBadges, onClose, onSave
       for (const el of els) { if (el.dataset?.dropkey) { found = el.dataset.dropkey; break; } }
       setDragOver(found);
     };
-
     const onUp = (e) => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
@@ -434,7 +430,6 @@ const BadgeCustomizerModal = ({ earnedCollapsed, featuredBadges, onClose, onSave
       }
       setDragging(null); setDragOver(null); isDragging.current = false;
     };
-
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     window.addEventListener('touchmove', onMove, { passive: false });
@@ -448,9 +443,7 @@ const BadgeCustomizerModal = ({ earnedCollapsed, featuredBadges, onClose, onSave
     const isBeingDragged = dragging?.list === list && dragging?.idx === idx;
     const isOver = dragOver === dkey;
     return (
-      <div data-dropkey={dkey}
-        onMouseDown={e => onPointerDown(e, list, idx, badge)}
-        onTouchStart={e => onPointerDown(e, list, idx, badge)}
+      <div data-dropkey={dkey} onMouseDown={e => onPointerDown(e, list, idx, badge)} onTouchStart={e => onPointerDown(e, list, idx, badge)}
         style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 10px', borderRadius:10,
           background: isOver ? '#dbeafe' : list==='sel' ? '#f0fdf9' : '#f9fafb',
           border: `2px solid ${isOver ? '#93c5fd' : list==='sel' ? '#33a29b33' : '#e5e7eb'}`,
@@ -486,20 +479,14 @@ const BadgeCustomizerModal = ({ earnedCollapsed, featuredBadges, onClose, onSave
             <div style={{ marginBottom:16 }}>
               <div style={{ fontSize:11, fontWeight:'bold', color:'#33a29b', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.05em' }}>displayed ({sel.length}/5)</div>
               {sel.length === 0 ? (
-                <div data-dropkey="sel-0"
-                  style={{ border:'2px dashed #e5e7eb', borderRadius:10, padding:'16px', textAlign:'center',
-                    color: dragOver === 'sel-0' ? '#33a29b' : '#9ca3af', fontSize:12,
-                    background: dragOver === 'sel-0' ? '#f0fdf9' : 'transparent', transition:'all 0.1s' }}>
+                <div data-dropkey="sel-0" style={{ border:'2px dashed #e5e7eb', borderRadius:10, padding:'16px', textAlign:'center', color: dragOver === 'sel-0' ? '#33a29b' : '#9ca3af', fontSize:12, background: dragOver === 'sel-0' ? '#f0fdf9' : 'transparent', transition:'all 0.1s' }}>
                   drag badges here to display
                 </div>
               ) : (
                 <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
                   {sel.map((b,i) => <BadgeRow key={b.badge_id||b.id} badge={b} idx={i} list="sel"/>)}
                   {sel.length < 5 && (
-                    <div data-dropkey={`sel-${sel.length}`}
-                      style={{ border:'2px dashed #d1fae5', borderRadius:10, padding:'8px', textAlign:'center',
-                        color: dragOver === `sel-${sel.length}` ? '#33a29b' : '#a7f3d0', fontSize:11,
-                        background: dragOver === `sel-${sel.length}` ? '#ecfdf5' : 'transparent', transition:'all 0.1s' }}>
+                    <div data-dropkey={`sel-${sel.length}`} style={{ border:'2px dashed #d1fae5', borderRadius:10, padding:'8px', textAlign:'center', color: dragOver === `sel-${sel.length}` ? '#33a29b' : '#a7f3d0', fontSize:11, background: dragOver === `sel-${sel.length}` ? '#ecfdf5' : 'transparent', transition:'all 0.1s' }}>
                       + drop here
                     </div>
                   )}
@@ -516,12 +503,8 @@ const BadgeCustomizerModal = ({ earnedCollapsed, featuredBadges, onClose, onSave
             )}
           </div>
           <div style={{ padding:'12px 18px', borderTop:'1px solid #f3f4f6', display:'flex', gap:8, flexShrink:0 }}>
-            <button onClick={async () => { await onSave([]); }}
-              style={{ padding:'9px 14px', borderRadius:10, border:'1px solid #e5e7eb', background:'white', fontSize:12, cursor:'pointer', color:'#6b7280', fontFamily:'inherit' }}>
-              reset to default
-            </button>
-            <button onClick={async () => { setSaving(true); await onSave(sel.map(b => b.badge_id||b.id)); setSaving(false); }}
-              disabled={saving}
+            <button onClick={async () => { await onSave([]); }} style={{ padding:'9px 14px', borderRadius:10, border:'1px solid #e5e7eb', background:'white', fontSize:12, cursor:'pointer', color:'#6b7280', fontFamily:'inherit' }}>reset to default</button>
+            <button onClick={async () => { setSaving(true); await onSave(sel.map(b => b.badge_id||b.id)); setSaving(false); }} disabled={saving}
               style={{ flex:1, padding:'10px', borderRadius:10, border:'none', background:saving?'#9ca3af':'#33a29b', color:'white', fontSize:13, fontWeight:'bold', cursor:saving?'not-allowed':'pointer', fontFamily:'inherit' }}>
               {saving ? 'saving…' : 'save'}
             </button>
@@ -4590,7 +4573,7 @@ const HuntersFindsApp = () => {
     }).slice(0, 5);
   }, [dishName, allDishes, restaurant, restaurantLocked]);
 
-  // Category suggestions filtered by restaurant when locked — defined AFTER categorySuggestions
+  // Must be defined AFTER categorySuggestions
   const categorySuggestionsFiltered = React.useMemo(() => {
     if (!restaurantLocked || !restaurant) return categorySuggestions;
     const dishesAtRestaurant = allDishes.filter(d =>
@@ -8741,14 +8724,21 @@ const HuntersFindsApp = () => {
                   </div>
 
                   <div className="relative">
-                    <label className="block text-[10px] font-semibold text-gray-700 mb-0.5" style={{ fontFamily: '"Courier New", monospace' }}>food</label>
+                    <label className="block text-[10px] font-semibold text-gray-700 mb-0.5 flex items-center gap-1" style={{ fontFamily: '"Courier New", monospace' }}>
+                      dish
+                      <span
+                        title="the exact dish you ordered — be specific! e.g. 'margherita pizza' not just 'pizza'"
+                        className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-gray-300 text-gray-600 text-[9px] font-bold cursor-help flex-shrink-0"
+                        style={{ fontFamily: '"Courier New", monospace' }}
+                      >?</span>
+                    </label>
                     <input
                       type="text"
                       value={dishName}
                       onChange={(e) => { setDishName(e.target.value); setShowFoodSuggestions(true); }}
                       onFocus={() => { if (dishName.length > 0) setShowFoodSuggestions(true); }}
                       onBlur={() => setTimeout(() => setShowFoodSuggestions(false), 150)}
-                      placeholder="e.g., carne asada tacos"
+                      placeholder="e.g., margherita pizza"
                       className="w-full px-2 py-1 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
                       style={{ fontFamily: '"Courier New", monospace' }}
                     />
@@ -8831,17 +8821,23 @@ const HuntersFindsApp = () => {
                           const val = e.target.value.toLowerCase();
                           setCategoryInput(val);
                           setCategoryLocked(false);
-                          setDishCategory(''); // require explicit selection
+                          setDishCategory('');
                           setShowCategorySuggestions(true);
                           setCategoryShowAll(false);
                           setCategoryConfirmNew(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if ((e.key === 'Backspace' || e.key === 'Delete') && categoryLocked) {
+                            setCategoryLocked(false);
+                            setDishCategory('');
+                            setShowCategorySuggestions(true);
+                          }
                         }}
                         onFocus={() => { setShowCategorySuggestions(true); setCategoryShowAll(false); setCategoryConfirmNew(null); }}
                         onBlur={() => setTimeout(() => setShowCategorySuggestions(false), 150)}
                         placeholder="start typing or pick below..."
                         className={`w-full px-2 py-1.5 text-xs border-2 rounded-lg focus:outline-none ${categoryLocked ? 'border-[#33a29b] bg-[#33a29b]/5' : 'border-gray-200 focus:border-[#33a29b]'}`}
                         style={{ fontFamily: '"Courier New", monospace' }}
-                        readOnly={categoryLocked}
                       />
                       {categoryLocked && (
                         <button
@@ -11565,7 +11561,7 @@ const HuntersFindsApp = () => {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>food</label>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>dish</label>
                     <input 
                       type="text" 
                       value={editDishName} 
