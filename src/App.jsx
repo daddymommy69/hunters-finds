@@ -345,22 +345,16 @@ const BadgeCustomizerModal = ({ earnedCollapsed, featuredBadges, onClose, onSave
       const seen = new Set();
       return featuredBadges.map(fid => {
         let badge = earnedCollapsed.find(b => (b.badge_id||b.id) === fid);
-        if (!badge) {
-          const group = BADGE_TIER_GROUPS.find(g => g.includes(fid));
-          if (group) badge = earnedCollapsed.find(b => group.includes(b.badge_id||b.id));
-        }
+        if (!badge) { const group = BADGE_TIER_GROUPS.find(g => g.includes(fid)); if (group) badge = earnedCollapsed.find(b => group.includes(b.badge_id||b.id)); }
         if (!badge) return null;
         const key = badge.badge_id||badge.id;
         if (seen.has(key)) return null;
-        seen.add(key);
-        return badge;
+        seen.add(key); return badge;
       }).filter(Boolean);
     }
     return earnedCollapsed.slice(0, 5);
   }, []);
-  const initAvail = React.useMemo(() =>
-    earnedCollapsed.filter(b => !new Set(initSelected.map(x => x.badge_id||x.id)).has(b.badge_id||b.id)), []);
-
+  const initAvail = React.useMemo(() => earnedCollapsed.filter(b => !new Set(initSelected.map(x => x.badge_id||x.id)).has(b.badge_id||b.id)), []);
   const [sel, setSel] = React.useState(initSelected);
   const [avail, setAvail] = React.useState(initAvail);
   const [saving, setSaving] = React.useState(false);
@@ -369,145 +363,92 @@ const BadgeCustomizerModal = ({ earnedCollapsed, featuredBadges, onClose, onSave
   const ghostRef = React.useRef(null);
   const pointerOrigin = React.useRef(null);
   const isDragging = React.useRef(false);
-
   const moveBadge = (fromList, fromIdx, toList, toIdx) => {
-    if (fromList === 'sel' && toList === 'sel') {
-      setSel(s => { const n=[...s]; const [m]=n.splice(fromIdx,1); n.splice(toIdx,0,m); return n; });
-    } else if (fromList === 'avail' && toList === 'sel') {
-      setSel(s => { if (s.length >= 5) return s; const n=[...s]; n.splice(toIdx,0,avail[fromIdx]); return n; });
-      setAvail(a => a.filter((_,i)=>i!==fromIdx));
-    } else if (fromList === 'sel' && toList === 'avail') {
-      const badge = sel[fromIdx];
-      setSel(s => s.filter((_,i)=>i!==fromIdx));
-      setAvail(a => { const n=[...a]; n.splice(toIdx,0,badge); return n; });
-    }
+    if (fromList === 'sel' && toList === 'sel') { setSel(s => { const n=[...s]; const [m]=n.splice(fromIdx,1); n.splice(toIdx,0,m); return n; }); }
+    else if (fromList === 'avail' && toList === 'sel') { setSel(s => { if (s.length >= 5) return s; const n=[...s]; n.splice(toIdx,0,avail[fromIdx]); return n; }); setAvail(a => a.filter((_,i)=>i!==fromIdx)); }
+    else if (fromList === 'sel' && toList === 'avail') { const badge = sel[fromIdx]; setSel(s => s.filter((_,i)=>i!==fromIdx)); setAvail(a => { const n=[...a]; n.splice(toIdx,0,badge); return n; }); }
   };
-
   const onPointerDown = React.useCallback((e, list, idx, badge) => {
     if (e.button !== undefined && e.button !== 0) return;
     e.preventDefault();
     pointerOrigin.current = { x: e.clientX ?? e.touches?.[0]?.clientX, y: e.clientY ?? e.touches?.[0]?.clientY };
     isDragging.current = false;
     const startDrag = (cx, cy) => {
-      isDragging.current = true;
-      setDragging({ list, idx, badge });
+      isDragging.current = true; setDragging({ list, idx, badge });
       const ghost = document.createElement('div');
       ghost.style.cssText = 'position:fixed;pointer-events:none;z-index:9999;opacity:0.85;background:white;border:2px solid #33a29b;border-radius:10px;padding:8px 12px;font-family:"Courier New",monospace;font-size:12px;font-weight:bold;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.15);transform:translate(-50%,-50%);';
       ghost.textContent = BADGE_DEFS[badge.badge_id||badge.id]?.name || (badge.badge_id||badge.id);
       ghost.style.left = cx + 'px'; ghost.style.top = cy + 'px';
-      document.body.appendChild(ghost);
-      ghostRef.current = ghost;
+      document.body.appendChild(ghost); ghostRef.current = ghost;
     };
     const onMove = (e) => {
-      const cx = e.clientX ?? e.touches?.[0]?.clientX;
-      const cy = e.clientY ?? e.touches?.[0]?.clientY;
-      if (!isDragging.current) {
-        if (Math.abs(cx - pointerOrigin.current.x) > 5 || Math.abs(cy - pointerOrigin.current.y) > 5) startDrag(cx, cy);
-        return;
-      }
-      if (ghostRef.current) { ghostRef.current.style.left = cx + 'px'; ghostRef.current.style.top = cy + 'px'; }
-      const els = document.elementsFromPoint(cx, cy);
-      let found = null;
-      for (const el of els) { if (el.dataset?.dropkey) { found = el.dataset.dropkey; break; } }
-      setDragOver(found);
+      const cx = e.clientX ?? e.touches?.[0]?.clientX; const cy = e.clientY ?? e.touches?.[0]?.clientY;
+      if (!isDragging.current) { if (Math.abs(cx-pointerOrigin.current.x)>5||Math.abs(cy-pointerOrigin.current.y)>5) startDrag(cx,cy); return; }
+      if (ghostRef.current) { ghostRef.current.style.left=cx+'px'; ghostRef.current.style.top=cy+'px'; }
+      const els = document.elementsFromPoint(cx,cy); let found=null;
+      for (const el of els) { if (el.dataset?.dropkey) { found=el.dataset.dropkey; break; } } setDragOver(found);
     };
     const onUp = (e) => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-      window.removeEventListener('touchmove', onMove);
-      window.removeEventListener('touchend', onUp);
-      if (ghostRef.current) { ghostRef.current.remove(); ghostRef.current = null; }
+      window.removeEventListener('mousemove',onMove); window.removeEventListener('mouseup',onUp);
+      window.removeEventListener('touchmove',onMove); window.removeEventListener('touchend',onUp);
+      if (ghostRef.current) { ghostRef.current.remove(); ghostRef.current=null; }
       if (!isDragging.current) { setDragging(null); setDragOver(null); return; }
-      const cx = e.clientX ?? e.changedTouches?.[0]?.clientX;
-      const cy = e.clientY ?? e.changedTouches?.[0]?.clientY;
-      const els = document.elementsFromPoint(cx, cy);
-      let dropKey = null;
-      for (const el of els) { if (el.dataset?.dropkey) { dropKey = el.dataset.dropkey; break; } }
-      if (dropKey) {
-        const [toList, toIdxStr] = dropKey.split('-');
-        const toIdx = parseInt(toIdxStr);
-        if (!(list === toList && idx === toIdx)) moveBadge(list, idx, toList, isNaN(toIdx) ? (toList === 'sel' ? sel.length : avail.length) : toIdx);
-      }
-      setDragging(null); setDragOver(null); isDragging.current = false;
+      const cx=e.clientX??e.changedTouches?.[0]?.clientX; const cy=e.clientY??e.changedTouches?.[0]?.clientY;
+      const els=document.elementsFromPoint(cx,cy); let dropKey=null;
+      for (const el of els) { if (el.dataset?.dropkey) { dropKey=el.dataset.dropkey; break; } }
+      if (dropKey) { const [toList,toIdxStr]=dropKey.split('-'); const toIdx=parseInt(toIdxStr); if (!(list===toList&&idx===toIdx)) moveBadge(list,idx,toList,isNaN(toIdx)?(toList==='sel'?sel.length:avail.length):toIdx); }
+      setDragging(null); setDragOver(null); isDragging.current=false;
     };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    window.addEventListener('touchmove', onMove, { passive: false });
-    window.addEventListener('touchend', onUp);
+    window.addEventListener('mousemove',onMove); window.addEventListener('mouseup',onUp);
+    window.addEventListener('touchmove',onMove,{passive:false}); window.addEventListener('touchend',onUp);
   }, [sel, avail]);
-
   const BadgeRow = ({ badge, idx, list }) => {
-    const def = BADGE_DEFS[badge.badge_id||badge.id];
-    const color = getBadgeColor(def);
-    const dkey = `${list}-${idx}`;
-    const isBeingDragged = dragging?.list === list && dragging?.idx === idx;
-    const isOver = dragOver === dkey;
+    const def = BADGE_DEFS[badge.badge_id||badge.id]; const color = getBadgeColor(def);
+    const dkey = `${list}-${idx}`; const isBeingDragged = dragging?.list===list&&dragging?.idx===idx; const isOver = dragOver===dkey;
     return (
-      <div data-dropkey={dkey} onMouseDown={e => onPointerDown(e, list, idx, badge)} onTouchStart={e => onPointerDown(e, list, idx, badge)}
-        style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 10px', borderRadius:10,
-          background: isOver ? '#dbeafe' : list==='sel' ? '#f0fdf9' : '#f9fafb',
-          border: `2px solid ${isOver ? '#93c5fd' : list==='sel' ? '#33a29b33' : '#e5e7eb'}`,
-          cursor: dragging ? 'grabbing' : 'grab', userSelect:'none',
-          opacity: isBeingDragged ? 0.35 : 1, transition:'background 0.1s, border-color 0.1s, opacity 0.1s',
-          transform: isOver ? 'scale(1.01)' : 'scale(1)' }}>
-        <div style={{ width:28,height:28,borderRadius:'50%',background:color,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
-          <BadgeIcon badgeId={badge.badge_id||badge.id} size={16} />
+      <div data-dropkey={dkey} onMouseDown={e=>onPointerDown(e,list,idx,badge)} onTouchStart={e=>onPointerDown(e,list,idx,badge)}
+        style={{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:10,
+          background:isOver?'#dbeafe':list==='sel'?'#f0fdf9':'#f9fafb',
+          border:`2px solid ${isOver?'#93c5fd':list==='sel'?'#33a29b33':'#e5e7eb'}`,
+          cursor:dragging?'grabbing':'grab',userSelect:'none',opacity:isBeingDragged?0.35:1,
+          transition:'background 0.1s,border-color 0.1s,opacity 0.1s',transform:isOver?'scale(1.01)':'scale(1)'}}>
+        <div style={{width:28,height:28,borderRadius:'50%',background:color,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+          <BadgeIcon badgeId={badge.badge_id||badge.id} size={16}/>
         </div>
-        <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ fontSize:12,fontWeight:'bold',fontFamily:'"Courier New",monospace',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }}>{def?.name||(badge.badge_id||badge.id)}</div>
-          <div style={{ fontSize:10,color:'#9ca3af',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }}>{def?.desc}</div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:12,fontWeight:'bold',fontFamily:'"Courier New",monospace',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{def?.name||(badge.badge_id||badge.id)}</div>
+          <div style={{fontSize:10,color:'#9ca3af',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{def?.desc}</div>
         </div>
-        <span style={{ color:'#d1d5db',fontSize:16,lineHeight:1 }}>⠿</span>
+        <span style={{color:'#d1d5db',fontSize:16,lineHeight:1}}>⠿</span>
       </div>
     );
   };
-
   return (
     <>
-      <div onClick={onClose} className="fixed inset-0 bg-black/50 z-[70] animate-fade-in" />
+      <div onClick={onClose} className="fixed inset-0 bg-black/50 z-[70] animate-fade-in"/>
       <div className="fixed inset-0 flex items-center justify-center z-[71] p-4 pointer-events-none">
-        <div className="bg-white rounded-2xl pointer-events-auto animate-slide-up-fade-simple flex flex-col"
-          style={{ width:'min(92vw,420px)', maxHeight:'85vh', fontFamily:'"Courier New",monospace' }}>
-          <div style={{ padding:'16px 18px 12px', borderBottom:'1px solid #f3f4f6', display:'flex', justifyContent:'space-between', alignItems:'center', flexShrink:0 }}>
-            <div>
-              <div style={{ fontSize:15, fontWeight:'bold' }}>customize badges</div>
-              <div style={{ fontSize:11, color:'#9ca3af', marginTop:2 }}>drag to reorder · up to 5 shown next to your name</div>
-            </div>
-            <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', color:'#6b7280' }}><X size={18}/></button>
+        <div className="bg-white rounded-2xl pointer-events-auto animate-slide-up-fade-simple flex flex-col" style={{width:'min(92vw,420px)',maxHeight:'85vh',fontFamily:'"Courier New",monospace'}}>
+          <div style={{padding:'16px 18px 12px',borderBottom:'1px solid #f3f4f6',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
+            <div><div style={{fontSize:15,fontWeight:'bold'}}>customize badges</div><div style={{fontSize:11,color:'#9ca3af',marginTop:2}}>drag to reorder · up to 5 shown next to your name</div></div>
+            <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',color:'#6b7280'}}><X size={18}/></button>
           </div>
-          <div className="overflow-y-auto flex-1" style={{ padding:'14px 18px' }}>
-            <div style={{ marginBottom:16 }}>
-              <div style={{ fontSize:11, fontWeight:'bold', color:'#33a29b', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.05em' }}>displayed ({sel.length}/5)</div>
-              {sel.length === 0 ? (
-                <div data-dropkey="sel-0" style={{ border:'2px dashed #e5e7eb', borderRadius:10, padding:'16px', textAlign:'center', color: dragOver === 'sel-0' ? '#33a29b' : '#9ca3af', fontSize:12, background: dragOver === 'sel-0' ? '#f0fdf9' : 'transparent', transition:'all 0.1s' }}>
-                  drag badges here to display
-                </div>
-              ) : (
-                <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-                  {sel.map((b,i) => <BadgeRow key={b.badge_id||b.id} badge={b} idx={i} list="sel"/>)}
-                  {sel.length < 5 && (
-                    <div data-dropkey={`sel-${sel.length}`} style={{ border:'2px dashed #d1fae5', borderRadius:10, padding:'8px', textAlign:'center', color: dragOver === `sel-${sel.length}` ? '#33a29b' : '#a7f3d0', fontSize:11, background: dragOver === `sel-${sel.length}` ? '#ecfdf5' : 'transparent', transition:'all 0.1s' }}>
-                      + drop here
-                    </div>
-                  )}
+          <div className="overflow-y-auto flex-1" style={{padding:'14px 18px'}}>
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:11,fontWeight:'bold',color:'#33a29b',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.05em'}}>displayed ({sel.length}/5)</div>
+              {sel.length===0?(
+                <div data-dropkey="sel-0" style={{border:'2px dashed #e5e7eb',borderRadius:10,padding:'16px',textAlign:'center',color:dragOver==='sel-0'?'#33a29b':'#9ca3af',fontSize:12,background:dragOver==='sel-0'?'#f0fdf9':'transparent',transition:'all 0.1s'}}>drag badges here to display</div>
+              ):(
+                <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                  {sel.map((b,i)=><BadgeRow key={b.badge_id||b.id} badge={b} idx={i} list="sel"/>)}
+                  {sel.length<5&&(<div data-dropkey={`sel-${sel.length}`} style={{border:'2px dashed #d1fae5',borderRadius:10,padding:'8px',textAlign:'center',color:dragOver===`sel-${sel.length}`?'#33a29b':'#a7f3d0',fontSize:11,background:dragOver===`sel-${sel.length}`?'#ecfdf5':'transparent',transition:'all 0.1s'}}>+ drop here</div>)}
                 </div>
               )}
             </div>
-            {avail.length > 0 && (
-              <div>
-                <div style={{ fontSize:11, fontWeight:'bold', color:'#6b7280', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.05em' }}>earned · not displayed</div>
-                <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-                  {avail.map((b,i) => <BadgeRow key={b.badge_id||b.id} badge={b} idx={i} list="avail"/>)}
-                </div>
-              </div>
-            )}
+            {avail.length>0&&(<div><div style={{fontSize:11,fontWeight:'bold',color:'#6b7280',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.05em'}}>earned · not displayed</div><div style={{display:'flex',flexDirection:'column',gap:6}}>{avail.map((b,i)=><BadgeRow key={b.badge_id||b.id} badge={b} idx={i} list="avail"/>)}</div></div>)}
           </div>
-          <div style={{ padding:'12px 18px', borderTop:'1px solid #f3f4f6', display:'flex', gap:8, flexShrink:0 }}>
-            <button onClick={async () => { await onSave([]); }} style={{ padding:'9px 14px', borderRadius:10, border:'1px solid #e5e7eb', background:'white', fontSize:12, cursor:'pointer', color:'#6b7280', fontFamily:'inherit' }}>reset to default</button>
-            <button onClick={async () => { setSaving(true); await onSave(sel.map(b => b.badge_id||b.id)); setSaving(false); }} disabled={saving}
-              style={{ flex:1, padding:'10px', borderRadius:10, border:'none', background:saving?'#9ca3af':'#33a29b', color:'white', fontSize:13, fontWeight:'bold', cursor:saving?'not-allowed':'pointer', fontFamily:'inherit' }}>
-              {saving ? 'saving…' : 'save'}
-            </button>
+          <div style={{padding:'12px 18px',borderTop:'1px solid #f3f4f6',display:'flex',gap:8,flexShrink:0}}>
+            <button onClick={async()=>{await onSave([]);}} style={{padding:'9px 14px',borderRadius:10,border:'1px solid #e5e7eb',background:'white',fontSize:12,cursor:'pointer',color:'#6b7280',fontFamily:'inherit'}}>reset to default</button>
+            <button onClick={async()=>{setSaving(true);await onSave(sel.map(b=>b.badge_id||b.id));setSaving(false);}} disabled={saving} style={{flex:1,padding:'10px',borderRadius:10,border:'none',background:saving?'#9ca3af':'#33a29b',color:'white',fontSize:13,fontWeight:'bold',cursor:saving?'not-allowed':'pointer',fontFamily:'inherit'}}>{saving?'saving…':'save'}</button>
           </div>
         </div>
       </div>
@@ -881,6 +822,8 @@ const HuntersFindsApp = () => {
   const [dishCategory, setDishCategory] = useState('');
   const [categoryInput, setCategoryInput] = useState('');
   const [showCategorySuggestions, setShowCategorySuggestions] = useState(false);
+  const [showDishTooltip, setShowDishTooltip] = useState(false);
+  const [showCategoryTooltip, setShowCategoryTooltip] = useState(false);
   const [showFoodSuggestions, setShowFoodSuggestions] = useState(false);
   const foodDropdownRef = React.useRef(null);
   const [restaurantLocked, setRestaurantLocked] = useState(false);
@@ -4573,7 +4516,6 @@ const HuntersFindsApp = () => {
     }).slice(0, 5);
   }, [dishName, allDishes, restaurant, restaurantLocked]);
 
-  // Must be defined AFTER categorySuggestions
   const categorySuggestionsFiltered = React.useMemo(() => {
     if (!restaurantLocked || !restaurant) return categorySuggestions;
     const dishesAtRestaurant = allDishes.filter(d =>
@@ -8650,7 +8592,7 @@ const HuntersFindsApp = () => {
                       onBlur={() => {
                         setTimeout(() => setShowRestaurantSearch(false), 300);
                       }}
-                      placeholder="e.g., pho huong que" 
+                      placeholder="e.g., taco palace" 
                       className="w-full px-2 py-1.5 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
                       style={{ fontFamily: '"Courier New", monospace' }}
                     />
@@ -8724,21 +8666,30 @@ const HuntersFindsApp = () => {
                   </div>
 
                   <div className="relative">
-                    <label className="block text-[10px] font-semibold text-gray-700 mb-0.5 flex items-center gap-1" style={{ fontFamily: '"Courier New", monospace' }}>
-                      dish
-                      <span
-                        title="the exact dish you ordered — be specific! e.g. 'margherita pizza' not just 'pizza'"
-                        className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-gray-300 text-gray-600 text-[9px] font-bold cursor-help flex-shrink-0"
-                        style={{ fontFamily: '"Courier New", monospace' }}
-                      >?</span>
-                    </label>
+                    <div className="flex items-center gap-1 mb-0.5 relative">
+                      <label className="text-[10px] font-semibold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>dish</label>
+                      <div className="relative flex-shrink-0">
+                        <div
+                          className="w-4 h-4 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-[9px] font-bold cursor-help hover:bg-[#33a29b] hover:text-white transition"
+                          onMouseEnter={() => setShowDishTooltip(true)}
+                          onMouseLeave={() => setShowDishTooltip(false)}
+                          onClick={() => setShowDishTooltip(v => !v)}
+                        >?</div>
+                        {showDishTooltip && (
+                          <div className="absolute bottom-full left-0 mb-2 w-52 bg-gray-900 text-white text-[10px] rounded-lg px-3 py-2 z-50 shadow-xl pointer-events-none" style={{ fontFamily: '"Courier New", monospace' }}>
+                            <p>add the exact dish you ordered. instead of just "pizza", add "margherita pizza".</p>
+                            <div className="absolute top-full left-3 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                     <input
                       type="text"
                       value={dishName}
                       onChange={(e) => { setDishName(e.target.value); setShowFoodSuggestions(true); }}
                       onFocus={() => { if (dishName.length > 0) setShowFoodSuggestions(true); }}
                       onBlur={() => setTimeout(() => setShowFoodSuggestions(false), 150)}
-                      placeholder="e.g., margherita pizza"
+                      placeholder="e.g., carne asada tacos"
                       className="w-full px-2 py-1 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
                       style={{ fontFamily: '"Courier New", monospace' }}
                     />
@@ -8784,7 +8735,23 @@ const HuntersFindsApp = () => {
 
                 <div className="grid grid-cols-2 gap-2">
                   <div className="relative">
-                    <label className="block text-[10px] font-semibold text-gray-700 mb-0.5" style={{ fontFamily: '"Courier New", monospace' }}>category</label>
+                    <div className="flex items-center gap-1 mb-0.5 relative">
+                      <label className="text-[10px] font-semibold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>category</label>
+                      <div className="relative flex-shrink-0">
+                        <div
+                          className="w-4 h-4 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-[9px] font-bold cursor-help hover:bg-[#33a29b] hover:text-white transition"
+                          onMouseEnter={() => setShowCategoryTooltip(true)}
+                          onMouseLeave={() => setShowCategoryTooltip(false)}
+                          onClick={() => setShowCategoryTooltip(v => !v)}
+                        >?</div>
+                        {showCategoryTooltip && (
+                          <div className="absolute bottom-full left-0 mb-2 w-56 bg-gray-900 text-white text-[10px] rounded-lg px-3 py-2 z-50 shadow-xl pointer-events-none" style={{ fontFamily: '"Courier New", monospace' }}>
+                            <p>this is the type of food, not cuisine. a "pho ga" dish would be in the "pho" category, not "vietnamese".</p>
+                            <div className="absolute top-full left-3 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
 
                     {/* Confirm new category prompt */}
                     {categoryConfirmNew && (
@@ -8821,11 +8788,16 @@ const HuntersFindsApp = () => {
                           const val = e.target.value.toLowerCase();
                           setCategoryInput(val);
                           setCategoryLocked(false);
-                          setDishCategory('');
+                          setDishCategory(''); // require explicit selection
                           setShowCategorySuggestions(true);
                           setCategoryShowAll(false);
                           setCategoryConfirmNew(null);
                         }}
+                        onFocus={() => { setShowCategorySuggestions(true); setCategoryShowAll(false); setCategoryConfirmNew(null); }}
+                        onBlur={() => setTimeout(() => setShowCategorySuggestions(false), 150)}
+                        placeholder="start typing or pick below..."
+                        className={`w-full px-2 py-1.5 text-xs border-2 rounded-lg focus:outline-none ${categoryLocked ? 'border-[#33a29b] bg-[#33a29b]/5' : 'border-gray-200 focus:border-[#33a29b]'}`}
+                        style={{ fontFamily: '"Courier New", monospace' }}
                         onKeyDown={(e) => {
                           if ((e.key === 'Backspace' || e.key === 'Delete') && categoryLocked) {
                             setCategoryLocked(false);
@@ -8833,11 +8805,6 @@ const HuntersFindsApp = () => {
                             setShowCategorySuggestions(true);
                           }
                         }}
-                        onFocus={() => { setShowCategorySuggestions(true); setCategoryShowAll(false); setCategoryConfirmNew(null); }}
-                        onBlur={() => setTimeout(() => setShowCategorySuggestions(false), 150)}
-                        placeholder="start typing or pick below..."
-                        className={`w-full px-2 py-1.5 text-xs border-2 rounded-lg focus:outline-none ${categoryLocked ? 'border-[#33a29b] bg-[#33a29b]/5' : 'border-gray-200 focus:border-[#33a29b]'}`}
-                        style={{ fontFamily: '"Courier New", monospace' }}
                       />
                       {categoryLocked && (
                         <button
@@ -11043,10 +11010,7 @@ const HuntersFindsApp = () => {
           earnedCollapsed={sortByPrestige(collapseToHighestTier(userBadges))}
           featuredBadges={featuredBadges}
           onClose={() => setShowBadgeCustomizer(false)}
-          onSave={async (orderedIds) => {
-            await saveFeaturedBadges(orderedIds);
-            setShowBadgeCustomizer(false);
-          }}
+          onSave={async (orderedIds) => { await saveFeaturedBadges(orderedIds); setShowBadgeCustomizer(false); }}
         />
       )}
 
@@ -11530,7 +11494,7 @@ const HuntersFindsApp = () => {
                       onBlur={() => {
                         setTimeout(() => setShowEditRestaurantSearch(false), 200);
                       }}
-                      placeholder="e.g., pho huong que" 
+                      placeholder="e.g., taco palace" 
                       className="w-full px-2 py-1.5 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
                       style={{ fontFamily: '"Courier New", monospace' }}
                     />
@@ -11561,7 +11525,7 @@ const HuntersFindsApp = () => {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>dish</label>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>food</label>
                     <input 
                       type="text" 
                       value={editDishName} 
