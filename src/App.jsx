@@ -250,9 +250,22 @@ const sortByPrestige = (arr) =>
 // Returns ordered badges to show in profile header — uses featured list if set, else prestige order top-5
 const getDisplayBadges = (earnedBadges, featuredIds) => {
   if (featuredIds && featuredIds.length > 0) {
-    return featuredIds
-      .map(fid => earnedBadges.find(b => (b.badge_id || b.id) === fid))
-      .filter(Boolean);
+    const collapsed = collapseToHighestTier(earnedBadges);
+    const seen = new Set();
+    return featuredIds.map(fid => {
+      // Direct match first
+      let badge = collapsed.find(b => (b.badge_id || b.id) === fid);
+      // If not found, fid may have been replaced by a higher tier
+      if (!badge) {
+        const group = BADGE_TIER_GROUPS.find(g => g.includes(fid));
+        if (group) badge = collapsed.find(b => group.includes(b.badge_id || b.id));
+      }
+      if (!badge) return null;
+      const key = badge.badge_id || badge.id;
+      if (seen.has(key)) return null;
+      seen.add(key);
+      return badge;
+    }).filter(Boolean);
   }
   return sortByPrestige(collapseToHighestTier(earnedBadges)).slice(0, 5);
 };
@@ -331,7 +344,21 @@ const BadgeChip = ({ badge, earnedAt, small=false, showName=true }) => {
 const BadgeCustomizerModal = ({ earnedCollapsed, featuredBadges, onClose, onSave }) => {
   const initSelected = React.useMemo(() => {
     if (featuredBadges.length > 0) {
-      return featuredBadges.map(fid => earnedCollapsed.find(b => (b.badge_id||b.id) === fid)).filter(Boolean);
+      const seen = new Set();
+      return featuredBadges.map(fid => {
+        // Direct match first
+        let badge = earnedCollapsed.find(b => (b.badge_id||b.id) === fid);
+        // If not found, fid may have been replaced by a higher tier — find which group it belongs to
+        if (!badge) {
+          const group = BADGE_TIER_GROUPS.find(g => g.includes(fid));
+          if (group) badge = earnedCollapsed.find(b => group.includes(b.badge_id||b.id));
+        }
+        if (!badge) return null;
+        const key = badge.badge_id||badge.id;
+        if (seen.has(key)) return null; // dedupe if two saved IDs resolve to same badge
+        seen.add(key);
+        return badge;
+      }).filter(Boolean);
     }
     return earnedCollapsed.slice(0, 5);
   }, []);
