@@ -1287,6 +1287,8 @@ const HuntersFindsApp = () => {
         message: 'Your changes have been saved!'
       });
       
+      // Immediately remove from allRatings state
+      setAllRatings(prev => prev.filter(r => r.id !== deletingRating.id));
       // Refetch all data to sync
       if (refetchData) refetchData();
       
@@ -6870,14 +6872,50 @@ const HuntersFindsApp = () => {
                       onAction={() => setIsCreateGroupModalOpen(true)}
                     />
                   ) : (
-                    userGroups.map((group, idx) => (
-                      <GroupCard
-                        key={group.id}
-                        group={group}
-                        onClick={() => setSelectedGroup(group)}
-                        isUserMember={true}
-                      />
-                    ))
+                    userGroups.map((group) => {
+                      const gType = group.group_type || group.type || 'public';
+                      const isBroadcast = gType === 'broadcast';
+                      const isPrivate = gType === 'private';
+                      const memberCount = group.member_count || 1;
+                      return (
+                        <div
+                          key={group.id}
+                          onClick={() => setSelectedGroup(group)}
+                          className="bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>{group.name}</h3>
+                              <p className="text-xs text-gray-500 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
+                                {memberCount} {memberCount === 1 ? 'member' : 'members'}
+                                {isBroadcast && <span className="ml-1.5 text-[#33a29b]">· broadcast channel</span>}
+                                {isPrivate && <span className="ml-1.5 text-indigo-400">· private</span>}
+                                {!isBroadcast && !isPrivate && <span className="ml-1.5 text-gray-400">· public</span>}
+                              </p>
+                              {group.description && group.description !== group.name && (
+                                <p className="text-xs text-gray-400 mt-0.5 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{group.description}</p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+                              <span className="text-[10px] font-bold text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>member</span>
+                              {isBroadcast
+                                ? <Megaphone size={20} className="text-[#33a29b]" />
+                                : isPrivate
+                                  ? <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                                      <circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/>
+                                      <path d="M2 20c0-3.3 2.7-6 6-6h2"/><path d="M14 14h2c3.3 0 6 2.7 6 6"/>
+                                    </svg>
+                                  : <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                                      <circle cx="8" cy="7" r="3"/><circle cx="16" cy="7" r="3"/><circle cx="12" cy="14" r="3"/>
+                                      <path d="M2 21c0-2.8 2.2-5 5-5h1"/><path d="M16 16h1c2.8 0 5 2.2 5 5"/>
+                                      <path d="M9 17c0-1.7 1.3-3 3-3s3 1.3 3 3"/>
+                                    </svg>
+                              }
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               )}
@@ -7240,13 +7278,49 @@ const HuntersFindsApp = () => {
                   ) : (
                     allGroups.map(group => {
                       const isUserMember = userGroups.some(ug => ug.id === group.id);
+                      const gType = group.group_type || group.type || 'public';
+                      const isBroadcast = gType === 'broadcast';
+                      const isPrivate = gType === 'private';
+                      const memberCount = group.member_count || 1;
                       return (
-                        <GroupCard
+                        <div
                           key={group.id}
-                          group={group}
                           onClick={() => setSelectedGroup(group)}
-                          isUserMember={isUserMember}
-                        />
+                          className="bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>{group.name}</h3>
+                              <p className="text-xs text-gray-500 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
+                                {memberCount} {memberCount === 1 ? 'member' : 'members'}
+                                {isBroadcast && <span className="ml-1.5 text-[#33a29b]">· broadcast channel</span>}
+                                {isPrivate && <span className="ml-1.5 text-indigo-400">· private</span>}
+                                {!isBroadcast && !isPrivate && <span className="ml-1.5 text-gray-400">· public</span>}
+                              </p>
+                              {group.description && group.description !== group.name && (
+                                <p className="text-xs text-gray-400 mt-0.5 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{group.description}</p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+                              {isUserMember && (
+                                <span className="text-[10px] font-bold text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>member</span>
+                              )}
+                              {isBroadcast
+                                ? <Megaphone size={20} className="text-[#33a29b]" />
+                                : isPrivate
+                                  ? <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                                      <circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/>
+                                      <path d="M2 20c0-3.3 2.7-6 6-6h2"/><path d="M14 14h2c3.3 0 6 2.7 6 6"/>
+                                    </svg>
+                                  : <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                                      <circle cx="8" cy="7" r="3"/><circle cx="16" cy="7" r="3"/><circle cx="12" cy="14" r="3"/>
+                                      <path d="M2 21c0-2.8 2.2-5 5-5h1"/><path d="M16 16h1c2.8 0 5 2.2 5 5"/>
+                                      <path d="M9 17c0-1.7 1.3-3 3-3s3 1.3 3 3"/>
+                                    </svg>
+                              }
+                            </div>
+                          </div>
+                        </div>
                       );
                     })
                   )}
@@ -7828,9 +7902,13 @@ const HuntersFindsApp = () => {
                                   <h3 className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>{group.name}</h3>
                                   <p className="text-xs text-gray-500 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
                                     {group.member_count || 1} {(group.member_count || 1) === 1 ? 'member' : 'members'}
-                                    {isBroadcast && <span className="ml-1 text-[#33a29b]">• broadcast channel</span>}
-                                    {isPrivate && <span className="ml-1 text-indigo-400">• private</span>}
+                                    {isBroadcast && <span className="ml-1.5 text-[#33a29b]">· broadcast channel</span>}
+                                    {isPrivate && <span className="ml-1.5 text-indigo-400">· private</span>}
+                                    {!isBroadcast && !isPrivate && <span className="ml-1.5 text-gray-400">· public</span>}
                                   </p>
+                                  {group.description && group.description !== group.name && (
+                                    <p className="text-xs text-gray-400 mt-0.5 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{group.description}</p>
+                                  )}
                                 </div>
                                 <div className="flex-shrink-0 ml-3">
                                   {isBroadcast
