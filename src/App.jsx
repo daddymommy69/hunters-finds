@@ -250,22 +250,9 @@ const sortByPrestige = (arr) =>
 // Returns ordered badges to show in profile header — uses featured list if set, else prestige order top-5
 const getDisplayBadges = (earnedBadges, featuredIds) => {
   if (featuredIds && featuredIds.length > 0) {
-    const collapsed = collapseToHighestTier(earnedBadges);
-    const seen = new Set();
-    return featuredIds.map(fid => {
-      // Direct match first
-      let badge = collapsed.find(b => (b.badge_id || b.id) === fid);
-      // If not found, fid may have been replaced by a higher tier
-      if (!badge) {
-        const group = BADGE_TIER_GROUPS.find(g => g.includes(fid));
-        if (group) badge = collapsed.find(b => group.includes(b.badge_id || b.id));
-      }
-      if (!badge) return null;
-      const key = badge.badge_id || badge.id;
-      if (seen.has(key)) return null;
-      seen.add(key);
-      return badge;
-    }).filter(Boolean);
+    return featuredIds
+      .map(fid => earnedBadges.find(b => (b.badge_id || b.id) === fid))
+      .filter(Boolean);
   }
   return sortByPrestige(collapseToHighestTier(earnedBadges)).slice(0, 5);
 };
@@ -339,233 +326,6 @@ const BadgeChip = ({ badge, earnedAt, small=false, showName=true }) => {
     </span>
   );
 };
-
-// ── Badge Customizer Modal ────────────────────────────────────────────────────
-const BadgeCustomizerModal = ({ earnedCollapsed, featuredBadges, onClose, onSave }) => {
-  const initSelected = React.useMemo(() => {
-    if (featuredBadges.length > 0) {
-      const seen = new Set();
-      return featuredBadges.map(fid => {
-        // Direct match first
-        let badge = earnedCollapsed.find(b => (b.badge_id||b.id) === fid);
-        // If not found, fid may have been replaced by a higher tier — find which group it belongs to
-        if (!badge) {
-          const group = BADGE_TIER_GROUPS.find(g => g.includes(fid));
-          if (group) badge = earnedCollapsed.find(b => group.includes(b.badge_id||b.id));
-        }
-        if (!badge) return null;
-        const key = badge.badge_id||badge.id;
-        if (seen.has(key)) return null; // dedupe if two saved IDs resolve to same badge
-        seen.add(key);
-        return badge;
-      }).filter(Boolean);
-    }
-    return earnedCollapsed.slice(0, 5);
-  }, []);
-  const initAvail = React.useMemo(() =>
-    earnedCollapsed.filter(b => !new Set(initSelected.map(x => x.badge_id||x.id)).has(b.badge_id||b.id)),
-  []);
-
-  const [sel, setSel] = React.useState(initSelected);
-  const [avail, setAvail] = React.useState(initAvail);
-  const [saving, setSaving] = React.useState(false);
-
-  // Pointer-based drag state
-  const [dragging, setDragging] = React.useState(null); // { list, idx, badge }
-  const [dragOver, setDragOver] = React.useState(null);  // `${list}-${idx}`
-  const ghostRef = React.useRef(null);
-  const pointerOrigin = React.useRef(null);
-  const isDragging = React.useRef(false);
-
-  const moveBadge = (fromList, fromIdx, toList, toIdx) => {
-    if (fromList === 'sel' && toList === 'sel') {
-      setSel(s => { const n=[...s]; const [m]=n.splice(fromIdx,1); n.splice(toIdx,0,m); return n; });
-    } else if (fromList === 'avail' && toList === 'sel') {
-      setSel(s => { if (s.length >= 5) return s; const n=[...s]; n.splice(toIdx,0,avail[fromIdx]); return n; });
-      setAvail(a => a.filter((_,i)=>i!==fromIdx));
-    } else if (fromList === 'sel' && toList === 'avail') {
-      const badge = sel[fromIdx];
-      setSel(s => s.filter((_,i)=>i!==fromIdx));
-      setAvail(a => { const n=[...a]; n.splice(toIdx,0,badge); return n; });
-    }
-  };
-
-  const onPointerDown = React.useCallback((e, list, idx, badge) => {
-    if (e.button !== undefined && e.button !== 0) return;
-    e.preventDefault();
-    pointerOrigin.current = { x: e.clientX, y: e.clientY };
-    isDragging.current = false;
-
-    const startDrag = (clientX, clientY) => {
-      isDragging.current = true;
-      setDragging({ list, idx, badge });
-      // Create ghost element
-      const ghost = document.createElement('div');
-      ghost.style.cssText = `position:fixed;pointer-events:none;z-index:9999;opacity:0.85;
-        background:white;border:2px solid #33a29b;border-radius:10px;padding:8px 12px;
-        font-family:"Courier New",monospace;font-size:12px;font-weight:bold;
-        white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.15);
-        transform:translate(-50%,-50%);transition:none;`;
-      ghost.textContent = BADGE_DEFS[badge.badge_id||badge.id]?.name || (badge.badge_id||badge.id);
-      ghost.style.left = clientX + 'px';
-      ghost.style.top = clientY + 'px';
-      document.body.appendChild(ghost);
-      ghostRef.current = ghost;
-    };
-
-    const onMove = (e) => {
-      const cx = e.clientX ?? e.touches?.[0]?.clientX;
-      const cy = e.clientY ?? e.touches?.[0]?.clientY;
-      if (!isDragging.current) {
-        const dx = Math.abs(cx - pointerOrigin.current.x);
-        const dy = Math.abs(cy - pointerOrigin.current.y);
-        if (dx > 5 || dy > 5) startDrag(cx, cy);
-        return;
-      }
-      if (ghostRef.current) {
-        ghostRef.current.style.left = cx + 'px';
-        ghostRef.current.style.top = cy + 'px';
-      }
-      // Hit test drop zones
-      const els = document.elementsFromPoint(cx, cy);
-      let found = null;
-      for (const el of els) {
-        const key = el.dataset?.dropkey;
-        if (key) { found = key; break; }
-      }
-      setDragOver(found);
-    };
-
-    const onUp = (e) => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-      window.removeEventListener('touchmove', onMove);
-      window.removeEventListener('touchend', onUp);
-      if (ghostRef.current) { ghostRef.current.remove(); ghostRef.current = null; }
-      if (!isDragging.current) { setDragging(null); setDragOver(null); return; }
-
-      const cx = e.clientX ?? e.changedTouches?.[0]?.clientX;
-      const cy = e.clientY ?? e.changedTouches?.[0]?.clientY;
-      const els = document.elementsFromPoint(cx, cy);
-      let dropKey = null;
-      for (const el of els) { if (el.dataset?.dropkey) { dropKey = el.dataset.dropkey; break; } }
-
-      if (dropKey) {
-        const [toList, toIdxStr] = dropKey.split('-');
-        const toIdx = parseInt(toIdxStr);
-        if (!(list === toList && idx === toIdx)) {
-          moveBadge(list, idx, toList, isNaN(toIdx) ? (toList === 'sel' ? sel.length : avail.length) : toIdx);
-        }
-      }
-      setDragging(null);
-      setDragOver(null);
-      isDragging.current = false;
-    };
-
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    window.addEventListener('touchmove', onMove, { passive: false });
-    window.addEventListener('touchend', onUp);
-  }, [sel, avail]);
-
-  const BadgeRow = ({ badge, idx, list }) => {
-    const def = BADGE_DEFS[badge.badge_id||badge.id];
-    const color = getBadgeColor(def);
-    const dkey = `${list}-${idx}`;
-    const isBeingDragged = dragging?.list === list && dragging?.idx === idx;
-    const isOver = dragOver === dkey;
-    return (
-      <div
-        data-dropkey={dkey}
-        onMouseDown={e => onPointerDown(e, list, idx, badge)}
-        onTouchStart={e => onPointerDown(e, list, idx, badge)}
-        style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 10px', borderRadius:10,
-          background: isOver ? '#dbeafe' : list==='sel' ? '#f0fdf9' : '#f9fafb',
-          border: `2px solid ${isOver ? '#93c5fd' : list==='sel' ? '#33a29b33' : '#e5e7eb'}`,
-          cursor: dragging ? 'grabbing' : 'grab',
-          userSelect:'none',
-          opacity: isBeingDragged ? 0.35 : 1,
-          transition:'background 0.1s, border-color 0.1s, opacity 0.1s',
-          transform: isOver ? 'scale(1.01)' : 'scale(1)' }}>
-        <div style={{ width:28,height:28,borderRadius:'50%',background:color,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
-          <BadgeIcon badgeId={badge.badge_id||badge.id} size={16} />
-        </div>
-        <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ fontSize:12,fontWeight:'bold',fontFamily:'"Courier New",monospace',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }}>{def?.name||(badge.badge_id||badge.id)}</div>
-          <div style={{ fontSize:10,color:'#9ca3af',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }}>{def?.desc}</div>
-        </div>
-        <span style={{ color:'#d1d5db',fontSize:16,lineHeight:1 }}>⠿</span>
-      </div>
-    );
-  };
-
-  return (
-    <>
-      <div onClick={onClose} className="fixed inset-0 bg-black/50 z-[70] animate-fade-in" />
-      <div className="fixed inset-0 flex items-center justify-center z-[71] p-4 pointer-events-none">
-        <div className="bg-white rounded-2xl pointer-events-auto animate-slide-up-fade-simple flex flex-col"
-          style={{ width:'min(92vw,420px)', maxHeight:'85vh', fontFamily:'"Courier New",monospace' }}>
-          <div style={{ padding:'16px 18px 12px', borderBottom:'1px solid #f3f4f6', display:'flex', justifyContent:'space-between', alignItems:'center', flexShrink:0 }}>
-            <div>
-              <div style={{ fontSize:15, fontWeight:'bold' }}>customize badges</div>
-              <div style={{ fontSize:11, color:'#9ca3af', marginTop:2 }}>drag to reorder · up to 5 shown next to your name</div>
-            </div>
-            <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', color:'#6b7280' }}><X size={18}/></button>
-          </div>
-          <div className="overflow-y-auto flex-1" style={{ padding:'14px 18px' }}>
-            <div style={{ marginBottom:16 }}>
-              <div style={{ fontSize:11, fontWeight:'bold', color:'#33a29b', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.05em' }}>displayed ({sel.length}/5)</div>
-              {sel.length === 0 ? (
-                <div
-                  data-dropkey="sel-0"
-                  style={{ border:'2px dashed #e5e7eb', borderRadius:10, padding:'16px', textAlign:'center',
-                    color: dragOver === 'sel-0' ? '#33a29b' : '#9ca3af', fontSize:12,
-                    background: dragOver === 'sel-0' ? '#f0fdf9' : 'transparent',
-                    transition:'all 0.1s' }}>
-                  drag badges here to display
-                </div>
-              ) : (
-                <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-                  {sel.map((b,i) => <BadgeRow key={b.badge_id||b.id} badge={b} idx={i} list="sel"/>)}
-                  {sel.length < 5 && (
-                    <div
-                      data-dropkey={`sel-${sel.length}`}
-                      style={{ border:'2px dashed #d1fae5', borderRadius:10, padding:'8px', textAlign:'center',
-                        color: dragOver === `sel-${sel.length}` ? '#33a29b' : '#a7f3d0', fontSize:11,
-                        background: dragOver === `sel-${sel.length}` ? '#ecfdf5' : 'transparent',
-                        transition:'all 0.1s' }}>
-                      + drop here
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-            {avail.length > 0 && (
-              <div>
-                <div style={{ fontSize:11, fontWeight:'bold', color:'#6b7280', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.05em' }}>earned · not displayed</div>
-                <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-                  {avail.map((b,i) => <BadgeRow key={b.badge_id||b.id} badge={b} idx={i} list="avail"/>)}
-                </div>
-              </div>
-            )}
-          </div>
-          <div style={{ padding:'12px 18px', borderTop:'1px solid #f3f4f6', display:'flex', gap:8, flexShrink:0 }}>
-            <button onClick={async () => { await onSave([]); }}
-              style={{ padding:'9px 14px', borderRadius:10, border:'1px solid #e5e7eb', background:'white', fontSize:12, cursor:'pointer', color:'#6b7280', fontFamily:'inherit' }}>
-              reset to default
-            </button>
-            <button onClick={async () => { setSaving(true); await onSave(sel.map(b => b.badge_id||b.id)); setSaving(false); }}
-              disabled={saving}
-              style={{ flex:1, padding:'10px', borderRadius:10, border:'none', background:saving?'#9ca3af':'#33a29b', color:'white', fontSize:13, fontWeight:'bold', cursor:saving?'not-allowed':'pointer', fontFamily:'inherit' }}>
-              {saving ? 'saving…' : 'save'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </>
-  );
-};
-// ─────────────────────────────────────────────────────────────────────────────
 
 const HuntersFindsApp = () => {
   // ===== AUTHENTICATION =====
@@ -932,6 +692,12 @@ const HuntersFindsApp = () => {
   const [dishCategory, setDishCategory] = useState('');
   const [categoryInput, setCategoryInput] = useState('');
   const [showCategorySuggestions, setShowCategorySuggestions] = useState(false);
+  const [showFoodSuggestions, setShowFoodSuggestions] = useState(false);
+  const foodDropdownRef = React.useRef(null);
+  const [restaurantLocked, setRestaurantLocked] = useState(false);
+  const [gbSearchInput, setGbSearchInput] = useState('');
+  const [gbDropdownResults, setGbDropdownResults] = useState([]);
+  const [showGbDropdown, setShowGbDropdown] = useState(false);
   const categoryDropdownRef = React.useRef(null);
   const [categoryShowAll, setCategoryShowAll] = useState(false);
   const [categoryConfirmNew, setCategoryConfirmNew] = useState(null); // string to confirm adding
@@ -1893,6 +1659,7 @@ const HuntersFindsApp = () => {
     console.log('✅ Selected Google place:', normalizedPlace.name, 'lat:', normalizedPlace.geometry.location.lat, 'lng:', normalizedPlace.geometry.location.lng);
     setSelectedGooglePlace(normalizedPlace);
     setRestaurant(normalizedPlace.name);
+    setRestaurantLocked(true);
     setShowRestaurantSearch(false);
     setRestaurantSearchResults([]);
   };
@@ -4596,8 +4363,41 @@ const HuntersFindsApp = () => {
   }, [allCategoriesWithCount, categoryInput]);
 
   const CATEGORY_INITIAL_SHOW = 6;
-  const visibleCategories = categoryShowAll ? categorySuggestions : categorySuggestions.slice(0, CATEGORY_INITIAL_SHOW);
-  const hasMoreCategories = categorySuggestions.length > CATEGORY_INITIAL_SHOW;
+  const visibleCategories = categoryShowAll ? categorySuggestionsFiltered : categorySuggestionsFiltered.slice(0, CATEGORY_INITIAL_SHOW);
+
+  // Food suggestions — filtered by selected restaurant if locked
+  const foodSuggestions = React.useMemo(() => {
+    const query = dishName.toLowerCase().trim();
+    if (!query) return [];
+    const filtered = allDishes.filter(d => {
+      const nameMatch = (d.name || '').toLowerCase().includes(query);
+      if (restaurantLocked && restaurant) {
+        return nameMatch && (d.restaurantName || '').toLowerCase() === restaurant.toLowerCase();
+      }
+      return nameMatch;
+    });
+    // Dedupe by name+restaurant
+    const seen = new Set();
+    return filtered.filter(d => {
+      const key = `${(d.name||'').toLowerCase()}|${(d.restaurantName||'').toLowerCase()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 5);
+  }, [dishName, allDishes, restaurant, restaurantLocked]);
+
+  // Category suggestions filtered by restaurant when locked
+  const categorySuggestionsFiltered = React.useMemo(() => {
+    if (!restaurantLocked || !restaurant) return categorySuggestions;
+    const dishesAtRestaurant = allDishes.filter(d =>
+      (d.restaurantName || '').toLowerCase() === restaurant.toLowerCase()
+    );
+    const catsAtRestaurant = new Set(dishesAtRestaurant.map(d =>
+      (d.cuisine || d.category || '').toLowerCase().trim()
+    ).filter(Boolean));
+    return categorySuggestions.filter(({ cat }) => catsAtRestaurant.has(cat));
+  }, [categorySuggestions, restaurant, restaurantLocked, allDishes]);
+  const hasMoreCategories = categorySuggestionsFiltered.length > CATEGORY_INITIAL_SHOW;
 
   const handleCloseResults = () => {
     setIsResultsClosing(true);
@@ -4611,6 +4411,8 @@ const HuntersFindsApp = () => {
       setCategoryShowAll(false);
       setCategoryConfirmNew(null);
       setCategoryLocked(false);
+      setRestaurantLocked(false);
+      setShowFoodSuggestions(false);
       setPrice('');
       setTasteScore(50);
       setPortionScore(50);
@@ -8641,6 +8443,7 @@ const HuntersFindsApp = () => {
                       value={restaurant} 
                       onChange={(e) => {
                         setRestaurant(e.target.value);
+                        setRestaurantLocked(false);
                         // Clear Google Place link if user manually types
                         setSelectedGooglePlace(null);
                         if (e.target.value.length >= 3) {
@@ -8731,16 +8534,55 @@ const HuntersFindsApp = () => {
                     )}
                   </div>
 
-                  <div>
+                  <div className="relative">
                     <label className="block text-[10px] font-semibold text-gray-700 mb-0.5" style={{ fontFamily: '"Courier New", monospace' }}>food</label>
-                    <input 
-                      type="text" 
-                      value={dishName} 
-                      onChange={(e) => setDishName(e.target.value)} 
-                      placeholder="e.g., carne asada tacos" 
+                    <input
+                      type="text"
+                      value={dishName}
+                      onChange={(e) => { setDishName(e.target.value); setShowFoodSuggestions(true); }}
+                      onFocus={() => { if (dishName.length > 0) setShowFoodSuggestions(true); }}
+                      onBlur={() => setTimeout(() => setShowFoodSuggestions(false), 150)}
+                      placeholder="e.g., carne asada tacos"
                       className="w-full px-2 py-1 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
                       style={{ fontFamily: '"Courier New", monospace' }}
                     />
+                    {showFoodSuggestions && foodSuggestions.length > 0 && (
+                      <div ref={foodDropdownRef} className="absolute z-50 w-full mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-lg" style={{ top: '100%' }}>
+                        {foodSuggestions.map((d, i) => (
+                          <div
+                            key={i}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              setDishName(d.name);
+                              if (!restaurantLocked && d.restaurantName) {
+                                setRestaurant(d.restaurantName);
+                                setRestaurantLocked(true);
+                              }
+                              if (d.cuisine || d.category) {
+                                const cat = (d.cuisine || d.category || '').toLowerCase().trim();
+                                setCategoryInput(cat);
+                                setDishCategory(cat);
+                                setCategoryLocked(true);
+                              }
+                              const dishRestaurant = d.restaurantName || restaurant;
+                              const matchingRatings = allRatings
+                                .filter(r => (r.dish?.name || r.dish_name || '').toLowerCase() === d.name.toLowerCase()
+                                  && (r.dish?.restaurant_name || r.restaurantName || '').toLowerCase() === dishRestaurant.toLowerCase()
+                                  && r.price)
+                                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                              if (matchingRatings.length > 0) setPrice(String(matchingRatings[0].price));
+                              setShowFoodSuggestions(false);
+                            }}
+                            className="px-2 py-1.5 hover:bg-[#33a29b]/10 cursor-pointer border-b border-gray-100 last:border-0"
+                          >
+                            <div className="text-xs font-medium text-gray-800 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{d.name}</div>
+                            {d.restaurantName && !restaurantLocked && (
+                              <div className="text-[10px] text-gray-400 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{d.restaurantName}</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -10993,18 +10835,124 @@ const HuntersFindsApp = () => {
       
       {/* Edit Profile Modal */}
       {/* Badge Customizer Modal */}
-      {showBadgeCustomizer && (
-        <BadgeCustomizerModal
-          key="badge-customizer"
-          earnedCollapsed={sortByPrestige(collapseToHighestTier(userBadges))}
-          featuredBadges={featuredBadges}
-          onClose={() => setShowBadgeCustomizer(false)}
-          onSave={async (orderedIds) => {
-            await saveFeaturedBadges(orderedIds);
-            setShowBadgeCustomizer(false);
-          }}
-        />
-      )}
+      {showBadgeCustomizer && (() => {
+        const earnedCollapsed = sortByPrestige(collapseToHighestTier(userBadges));
+        const initSelected = featuredBadges.length > 0
+          ? featuredBadges.map(fid => earnedCollapsed.find(b => (b.badge_id||b.id) === fid)).filter(Boolean)
+          : earnedCollapsed.slice(0, 5);
+        const initAvail = earnedCollapsed.filter(b => !new Set(initSelected.map(x => x.badge_id||x.id)).has(b.badge_id||b.id));
+        const BadgeCustomizerInner = () => {
+          const [sel, setSel] = React.useState(initSelected);
+          const [avail, setAvail] = React.useState(initAvail);
+          const [dragSrc, setDragSrc] = React.useState(null);
+          const [dragSrcList, setDragSrcList] = React.useState(null);
+          const [dragOver, setDragOver] = React.useState(null);
+          const [saving, setSaving] = React.useState(false);
+          const moveBadge = (fromList, fromIdx, toList, toIdx) => {
+            if (fromList === 'sel' && toList === 'sel') {
+              setSel(s => { const n=[...s]; const [m]=n.splice(fromIdx,1); n.splice(toIdx,0,m); return n; });
+            } else if (fromList === 'avail' && toList === 'sel') {
+              if (sel.length >= 5) return;
+              const badge = avail[fromIdx];
+              setSel(s => { const n=[...s]; n.splice(toIdx,0,badge); return n; });
+              setAvail(a => a.filter((_,i)=>i!==fromIdx));
+            } else if (fromList === 'sel' && toList === 'avail') {
+              const badge = sel[fromIdx];
+              setSel(s => s.filter((_,i)=>i!==fromIdx));
+              setAvail(a => { const n=[...a]; n.splice(toIdx,0,badge); return n; });
+            }
+          };
+          const onDrop = (e, toList, toIdx) => {
+            e.preventDefault();
+            if (dragSrc !== null) moveBadge(dragSrcList, dragSrc, toList, toIdx);
+            setDragSrc(null); setDragSrcList(null); setDragOver(null);
+          };
+          const BadgeRow = ({ badge, idx, list }) => {
+            const def = BADGE_DEFS[badge.badge_id||badge.id];
+            const color = getBadgeColor(def);
+            const dkey = `${list}-${idx}`;
+            return (
+              <div draggable
+                onDragStart={()=>{ setDragSrc(idx); setDragSrcList(list); }}
+                onDragEnter={e=>{ e.preventDefault(); setDragOver(dkey); }}
+                onDragOver={e=>e.preventDefault()}
+                onDrop={e=>onDrop(e,list,idx)}
+                onDragEnd={()=>{ setDragSrc(null); setDragSrcList(null); setDragOver(null); }}
+                style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 10px', borderRadius:10,
+                  background: dragOver===dkey?'#dbeafe':list==='sel'?'#f0fdf9':'#f9fafb',
+                  border:`2px solid ${dragOver===dkey?'#93c5fd':list==='sel'?'#33a29b33':'#e5e7eb'}`,
+                  cursor:'grab', userSelect:'none', opacity:dragSrc===idx&&dragSrcList===list?0.4:1, transition:'all 0.1s' }}>
+                <div style={{ width:28,height:28,borderRadius:'50%',background:color,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
+                  <BadgeIcon badgeId={badge.badge_id||badge.id} size={16} />
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:12,fontWeight:'bold',fontFamily:'"Courier New",monospace',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }}>{def?.name||(badge.badge_id||badge.id)}</div>
+                  <div style={{ fontSize:10,color:'#9ca3af',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }}>{def?.desc}</div>
+                </div>
+                <span style={{ color:'#d1d5db',fontSize:16 }}>⠿</span>
+              </div>
+            );
+          };
+          return (
+            <>
+              <div onClick={()=>setShowBadgeCustomizer(false)} className="fixed inset-0 bg-black/50 z-[70] animate-fade-in" />
+              <div className="fixed inset-0 flex items-center justify-center z-[71] p-4 pointer-events-none">
+                <div className="bg-white rounded-2xl pointer-events-auto animate-slide-up-fade-simple flex flex-col"
+                  style={{ width:'min(92vw,420px)',maxHeight:'85vh',fontFamily:'"Courier New",monospace' }}>
+                  <div style={{ padding:'16px 18px 12px',borderBottom:'1px solid #f3f4f6',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0 }}>
+                    <div>
+                      <div style={{ fontSize:15,fontWeight:'bold' }}>customize badges</div>
+                      <div style={{ fontSize:11,color:'#9ca3af',marginTop:2 }}>drag to reorder · up to 5 shown next to your name</div>
+                    </div>
+                    <button onClick={()=>setShowBadgeCustomizer(false)} style={{ background:'none',border:'none',cursor:'pointer',color:'#6b7280' }}><X size={18}/></button>
+                  </div>
+                  <div className="overflow-y-auto flex-1" style={{ padding:'14px 18px' }}>
+                    <div style={{ marginBottom:16 }}>
+                      <div style={{ fontSize:11,fontWeight:'bold',color:'#33a29b',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.05em' }}>displayed ({sel.length}/5)</div>
+                      {sel.length===0?(
+                        <div onDragOver={e=>e.preventDefault()} onDrop={e=>onDrop(e,'sel',0)}
+                          style={{ border:'2px dashed #e5e7eb',borderRadius:10,padding:'16px',textAlign:'center',color:'#9ca3af',fontSize:12 }}>
+                          drag badges here to display
+                        </div>
+                      ):(
+                        <div style={{ display:'flex',flexDirection:'column',gap:6 }}>
+                          {sel.map((b,i)=><BadgeRow key={b.badge_id||b.id} badge={b} idx={i} list="sel"/>)}
+                          {sel.length<5&&(
+                            <div onDragOver={e=>e.preventDefault()} onDrop={e=>onDrop(e,'sel',sel.length)}
+                              style={{ border:'2px dashed #d1fae5',borderRadius:10,padding:'8px',textAlign:'center',color:'#33a29b',fontSize:11 }}>
+                              + drop here
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    {avail.length>0&&(
+                      <div>
+                        <div style={{ fontSize:11,fontWeight:'bold',color:'#6b7280',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.05em' }}>earned · not displayed</div>
+                        <div style={{ display:'flex',flexDirection:'column',gap:6 }}>
+                          {avail.map((b,i)=><BadgeRow key={b.badge_id||b.id} badge={b} idx={i} list="avail"/>)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ padding:'12px 18px',borderTop:'1px solid #f3f4f6',display:'flex',gap:8,flexShrink:0 }}>
+                    <button onClick={async()=>{ await saveFeaturedBadges([]); setShowBadgeCustomizer(false); }}
+                      style={{ padding:'9px 14px',borderRadius:10,border:'1px solid #e5e7eb',background:'white',fontSize:12,cursor:'pointer',color:'#6b7280',fontFamily:'inherit' }}>
+                      reset to default
+                    </button>
+                    <button onClick={async()=>{ setSaving(true); await saveFeaturedBadges(sel.map(b=>b.badge_id||b.id)); setSaving(false); setShowBadgeCustomizer(false); }}
+                      disabled={saving}
+                      style={{ flex:1,padding:'10px',borderRadius:10,border:'none',background:saving?'#9ca3af':'#33a29b',color:'white',fontSize:13,fontWeight:'bold',cursor:saving?'not-allowed':'pointer',fontFamily:'inherit' }}>
+                      {saving?'saving…':'save'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
+          );
+        };
+        return <BadgeCustomizerInner key="badge-customizer" />;
+      })()}
 
       {isEditProfileModalOpen && (
         <>
@@ -11150,19 +11098,47 @@ const HuntersFindsApp = () => {
                   {gbUser ? (
                     <div className="flex items-center justify-between mt-1 p-2 bg-gray-50 rounded-lg border">
                       <span className="text-sm font-bold">@{gbUser.username}</span>
-                      <button onClick={() => { setGbUser(null); setGbUserBadges([]); setGbMsg(''); setGbBadge(''); }} className="text-xs text-red-400 hover:text-red-600">change</button>
+                      <button onClick={() => { setGbUser(null); setGbUserBadges([]); setGbMsg(''); setGbBadge(''); setGbSearch(''); setGbResults([]); }} className="text-xs text-red-400 hover:text-red-600">change</button>
                     </div>
                   ) : (
-                    <div className="mt-1 flex gap-2">
-                      <input value={gbSearch} onChange={e=>setGbSearch(e.target.value)} onKeyDown={async e=>{ if(e.key==='Enter'){ const {data}=await supabase.from('users').select('id,username,email').ilike('username',`%${gbSearch}%`).limit(10); setGbResults(data||[]); }}} placeholder="search username..." className="flex-1 border rounded-lg px-3 py-2 text-sm"/>
-                      <button onClick={async()=>{ const {data}=await supabase.from('users').select('id,username,email').ilike('username',`%${gbSearch}%`).limit(10); setGbResults(data||[]); }} className="px-3 py-2 bg-[#33a29b] text-white rounded-lg text-sm font-bold hover:bg-[#2a8a84]">go</button>
-                    </div>
-                  )}
-                  {gbResults.length > 0 && (
-                    <div className="mt-1 border rounded-lg overflow-hidden shadow-sm">
-                      {gbResults.map(u => (
-                        <button key={u.id} onClick={async()=>{ setGbUser(u); setGbResults([]); const {data}=await supabase.from('user_badges').select('badge_id').eq('user_id',u.id); setGbUserBadges((data||[]).map(b=>b.badge_id)); }} className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm border-b last:border-0">@{u.username}</button>
-                      ))}
+                    <div className="mt-1 relative">
+                      <input
+                        value={gbSearch}
+                        onChange={async (e) => {
+                          const val = e.target.value;
+                          setGbSearch(val);
+                          if (val.length >= 1) {
+                            const { data } = await supabase.from('users').select('id,username').ilike('username', `%${val}%`).limit(5);
+                            setGbResults(data || []);
+                          } else {
+                            setGbResults([]);
+                          }
+                        }}
+                        onBlur={() => setTimeout(() => setGbResults([]), 150)}
+                        placeholder="search username..."
+                        className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-[#33a29b] focus:outline-none"
+                        style={{ fontFamily: '"Courier New", monospace' }}
+                      />
+                      {gbResults.length > 0 && (
+                        <div className="absolute z-50 w-full mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-lg" style={{ top: '100%' }}>
+                          {gbResults.map(u => (
+                            <div
+                              key={u.id}
+                              onMouseDown={async (e) => {
+                                e.preventDefault();
+                                setGbUser(u);
+                                setGbResults([]);
+                                const { data } = await supabase.from('user_badges').select('badge_id').eq('user_id', u.id);
+                                setGbUserBadges((data || []).map(b => b.badge_id));
+                              }}
+                              className="px-3 py-2 hover:bg-[#33a29b]/10 cursor-pointer border-b border-gray-100 last:border-0 text-sm font-medium"
+                              style={{ fontFamily: '"Courier New", monospace' }}
+                            >
+                              @{u.username}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
