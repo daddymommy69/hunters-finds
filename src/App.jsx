@@ -220,32 +220,72 @@ const BadgeSVGIcon = ({ iconKey, size=20, color='white' }) => {
   return icons[iconKey] || icons['pioneer'];
 };
 
-const BadgeChip = ({ badge, earnedAt, small=false, showName=true }) => {
-  const def = typeof badge === 'string' ? BADGE_DEFS[badge] : badge;
+// Prestige order (highest first) for sorting badges
+const BADGE_PRESTIGE = [
+  'castle_diamond','castle_gold','castle_silver','castle_bronze','castle_wood',
+  'castle_lord','founder','rat_helper','taste_maker','ambassador',
+  'followers_10000','followers_1000','followers_100','followers_10','followers_1',
+  'trendsetter','pioneer','most_liked','most_commented',
+  'mr_worldwide','foreign_eater','local_diamond','city_hopper','state_wanderer','local_silver','local_bronze',
+  'streak_7','four_weeks','loyal',
+  'master_rat','critic','photographer','unsure_eater',
+];
+
+const getBadgeColor = (def) => {
+  if (!def) return '#9ca3af';
+  if (def.category === 'castle') {
+    return { wood:'#8B5E3C', bronze:'#CD7F32', silver:'#A8A8A8', gold:'#DAA520', diamond:'#38bdf8' }[def.tier] || '#888';
+  }
+  return def.color || '#33a29b';
+};
+
+const sortByPrestige = (arr) =>
+  [...arr].sort((a, b) => {
+    const id = x => x.badge_id || x.id || '';
+    const ai = BADGE_PRESTIGE.indexOf(id(a));
+    const bi = BADGE_PRESTIGE.indexOf(id(b));
+    return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+  });
+
+// Inline badge icon: colored icon on transparent bg, no pill/circle
+const BadgeIcon = ({ badgeId, size=18 }) => {
+  const def = BADGE_DEFS[badgeId];
   if (!def) return null;
-  const isSpecial = def.category === 'special';
+  const color = getBadgeColor(def);
   const isCastle = def.category === 'castle';
-  const castleColors = { wood:'#8B5E3C', bronze:'#CD7F32', silver:'#C0C0C0', gold:'#FFD700', diamond:'#7dd3fc' };
-  const bg = isCastle ? (castleColors[def.tier] || '#888') : def.color || '#33a29b';
-  const size = small ? 13 : 18;
-  const padding = small ? 'px-1.5 py-0.5' : 'px-2.5 py-1.5';
-  const fontSize = small ? 'text-[9px]' : 'text-[11px]';
+  const isSpecial = def.category === 'special';
   return (
-    <div
-      title={`${def.name}: ${def.desc}${earnedAt ? ` · earned ${new Date(earnedAt).toLocaleDateString()}` : ''}`}
-      className={`inline-flex items-center gap-1 rounded-full ${padding} font-bold ${fontSize} cursor-default`}
-      style={{ background:`linear-gradient(135deg, ${bg}ee, ${bg}99)`, color:'white', fontFamily:'"Courier New",monospace',
-        border: isSpecial ? `2px solid ${bg}` : `1px solid ${bg}88`,
-        boxShadow: isSpecial ? `0 0 10px ${bg}70, 0 2px 6px ${bg}40` : `0 2px 6px ${bg}30` }}
+    <span
+      title={`${def.name}: ${def.desc}`}
+      className="inline-flex items-center justify-center flex-shrink-0 cursor-default"
+      style={{ width:size, height:size, filter: isSpecial ? `drop-shadow(0 0 3px ${color}80)` : undefined }}
     >
       {isCastle ? (
         <svg width={size} height={size} viewBox="0 0 100 100">
-          <path d="M20,80 L20,35 L15,35 L15,25 L10,25 L10,15 L20,15 L20,25 L30,25 L30,15 L40,15 L40,25 L60,25 L60,15 L70,15 L70,25 L80,25 L80,35 L70,35 L70,80 Z" fill="white"/>
-          <rect x="38" y="55" width="24" height="25" fill="white" opacity="0.4" rx="2"/>
+          <path d="M20,80 L20,35 L15,35 L15,25 L10,25 L10,15 L20,15 L20,25 L30,25 L30,15 L40,15 L40,25 L60,25 L60,15 L70,15 L70,25 L80,25 L80,35 L70,35 L70,80 Z" fill={color}/>
+          <rect x="38" y="55" width="24" height="25" fill={color} opacity="0.5" rx="2"/>
         </svg>
-      ) : <BadgeSVGIcon iconKey={def.icon} size={size} color="white" />}
-      {showName && <span>{def.name}</span>}
-    </div>
+      ) : (
+        <BadgeSVGIcon iconKey={def.icon} size={size} color={color} />
+      )}
+    </span>
+  );
+};
+
+// Legacy chip (used in grant modal badge picker text only)
+const BadgeChip = ({ badge, earnedAt, small=false, showName=true }) => {
+  const def = typeof badge === 'string' ? BADGE_DEFS[badge] : badge;
+  if (!def) return null;
+  const color = getBadgeColor(def);
+  const size = small ? 13 : 16;
+  return (
+    <span
+      title={def.name + ': ' + def.desc + (earnedAt ? ' · earned ' + new Date(earnedAt).toLocaleDateString() : '')}
+      className="inline-flex items-center gap-1 cursor-default"
+    >
+      <BadgeIcon badgeId={def.id} size={size} />
+      {showName && <span className="text-[10px] font-bold" style={{ color, fontFamily:'"Courier New",monospace' }}>{def.name}</span>}
+    </span>
   );
 };
 
@@ -7058,9 +7098,8 @@ const HuntersFindsApp = () => {
                 {!user && <Lock size={10} className="absolute top-1 right-1 text-gray-500" />}
               </button>
               {user && (
-                <button onClick={() => setYouView('badges')} className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition relative ${youView === 'badges' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} style={{ fontFamily: '"Courier New", monospace' }}>
+                <button onClick={() => setYouView('badges')} className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition ${youView === 'badges' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} style={{ fontFamily: '"Courier New", monospace' }}>
                   badges
-                  {userBadges.length > 0 && <span className="ml-1 bg-[#33a29b] text-white text-[9px] px-1.5 py-0.5 rounded-full font-bold">{userBadges.length}</span>}
                 </button>
               )}
               <button onClick={() => setYouView('settings')} className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition ${youView === 'settings' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} style={{ fontFamily: '"Courier New", monospace' }}>
@@ -7198,7 +7237,12 @@ const HuntersFindsApp = () => {
                 <div className="space-y-4">
                   <div className="bg-white rounded-lg p-4 shadow-sm">
                     <div className="flex justify-between mb-3">
-                      <h2 className="text-xl font-bold">@{user?.user_metadata?.username || user?.email?.split('@')[0] || 'user'}</h2>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h2 className="text-xl font-bold">@{user?.user_metadata?.username || user?.email?.split('@')[0] || 'user'}</h2>
+                        <div className="flex items-center gap-1">
+                          {sortByPrestige(userBadges).slice(0,5).map(b => <BadgeIcon key={b.badge_id} badgeId={b.badge_id} size={18} />)}
+                        </div>
+                      </div>
                       <button 
                         onClick={() => {
                           setEditUsername(user?.user_metadata?.username || '');
@@ -7229,12 +7273,7 @@ const HuntersFindsApp = () => {
                         <div className="text-xs text-gray-600">groups</div>
                       </div>
                     </div>
-                    {userBadges.length > 0 && (
-                      <div className="pt-3 flex flex-wrap gap-1.5">
-                        {userBadges.slice(0,8).map(b => <BadgeChip key={b.badge_id} badge={b.badge_id} earnedAt={b.granted_at} small />)}
-                        {userBadges.length > 8 && <span className="text-[10px] text-gray-400 self-center" style={{ fontFamily:'"Courier New",monospace' }}>+{userBadges.length-8} more</span>}
-                      </div>
-                    )}
+
                   </div>
 
                   <div className="bg-white rounded-lg p-4 shadow-sm">
@@ -7784,53 +7823,46 @@ const HuntersFindsApp = () => {
                 </div>
               )}
 
-              )}
-
               {youView === 'badges' && user && (() => {
-                const grouped = BADGE_CATEGORIES.reduce((acc, cat) => { acc[cat] = []; return acc; }, {});
-                userBadges.forEach(b => { const def = BADGE_DEFS[b.badge_id]; if (def) grouped[def.category]?.push({ ...def, earnedAt: b.granted_at }); });
+                const earnedIds = new Set(userBadges.map(b => b.badge_id));
+                const getEarnedAt = (id) => userBadges.find(b => b.badge_id === id)?.granted_at;
+                const allBadgeList = Object.values(BADGE_DEFS);
                 return (
-                  <div className="space-y-6">
-                    <div className="flex items-center justify-between">
-                      <h2 className="text-lg font-bold" style={{ fontFamily:'"Courier New",monospace' }}>my badges</h2>
-                      <span className="text-sm text-gray-400" style={{ fontFamily:'"Courier New",monospace' }}>{userBadges.length} earned</span>
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-lg font-bold" style={{ fontFamily:'"Courier New",monospace' }}>badges</h2>
+                      <span className="text-sm text-gray-400" style={{ fontFamily:'"Courier New",monospace' }}>{userBadges.length} / {allBadgeList.length} earned</span>
                     </div>
-                    {userBadges.length === 0 && (
-                      <div className="text-center py-12 text-gray-400">
-                        <div style={{ fontSize:48 }}>🏰</div>
-                        <p className="mt-3 text-sm" style={{ fontFamily:'"Courier New",monospace' }}>no badges yet — start rating dishes!</p>
-                      </div>
-                    )}
-                    {BADGE_CATEGORIES.map(cat => grouped[cat].length === 0 ? null : (
-                      <div key={cat}>
-                        <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3" style={{ fontFamily:'"Courier New",monospace' }}>{BADGE_CATEGORY_LABELS[cat]}</h3>
-                        <div className="grid grid-cols-1 gap-3">
-                          {grouped[cat].map(def => {
-                            const isCastle = def.category === 'castle';
-                            const isSpecial = def.category === 'special';
-                            const castleColors = { wood:'#8B5E3C', bronze:'#CD7F32', silver:'#C0C0C0', gold:'#FFD700', diamond:'#7dd3fc' };
-                            const bg = isCastle ? (castleColors[def.tier]||'#888') : def.color || '#33a29b';
-                            return (
-                              <div key={def.id} className="flex items-center gap-3 p-3 rounded-xl border" style={{ background:`${bg}12`, borderColor:`${bg}40`, boxShadow: isSpecial ? `0 0 12px ${bg}40` : 'none' }}>
-                                <div className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0" style={{ background:`linear-gradient(135deg, ${bg}dd, ${bg}99)`, border: isSpecial ? `2px solid ${bg}` : 'none', boxShadow: isSpecial ? `0 0 10px ${bg}60` : `0 2px 6px ${bg}40` }}>
-                                  {isCastle ? (
-                                    <svg width={24} height={24} viewBox="0 0 100 100"><path d="M20,80 L20,35 L15,35 L15,25 L10,25 L10,15 L20,15 L20,25 L30,25 L30,15 L40,15 L40,25 L60,25 L60,15 L70,15 L70,25 L80,25 L80,35 L70,35 L70,80 Z" fill="white"/><rect x="38" y="55" width="24" height="25" fill="white" opacity="0.4" rx="2"/></svg>
-                                  ) : <BadgeSVGIcon iconKey={def.icon} size={24} color="white" />}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="font-bold text-sm" style={{ fontFamily:'"Courier New",monospace', color: bg }}>{def.name}</span>
-                                    {isSpecial && <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold text-white" style={{ background: bg, fontFamily:'"Courier New",monospace' }}>special</span>}
-                                  </div>
-                                  <p className="text-xs text-gray-500 mt-0.5" style={{ fontFamily:'"Courier New",monospace' }}>{def.desc}</p>
-                                  <p className="text-[10px] text-gray-400 mt-0.5" style={{ fontFamily:'"Courier New",monospace' }}>earned {new Date(def.earnedAt).toLocaleDateString()}</p>
-                                </div>
+                    <div className="grid grid-cols-1 gap-2">
+                      {allBadgeList.map(def => {
+                        const earned = earnedIds.has(def.id);
+                        const earnedAt = getEarnedAt(def.id);
+                        const color = getBadgeColor(def);
+                        const isSpecial = def.category === 'special';
+                        return (
+                          <div key={def.id} className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 bg-white" style={{ opacity: earned ? 1 : 0.38 }}>
+                            <div className="w-10 h-10 flex items-center justify-center flex-shrink-0">
+                              <BadgeIcon badgeId={def.id} size={28} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-bold text-sm" style={{ fontFamily:'"Courier New",monospace', color: earned ? color : '#9ca3af' }}>{def.name}</span>
+                                {isSpecial && earned && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background:`${color}20`, color, fontFamily:'"Courier New",monospace' }}>special</span>}
                               </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
+                              <p className="text-xs mt-0.5" style={{ fontFamily:'"Courier New",monospace', color: earned ? '#6b7280' : '#9ca3af' }}>
+                                {earned ? def.desc : `how to earn: ${def.desc}`}
+                              </p>
+                              {earned && earnedAt && (
+                                <p className="text-[10px] text-gray-400 mt-0.5" style={{ fontFamily:'"Courier New",monospace' }}>earned {new Date(earnedAt).toLocaleDateString()}</p>
+                              )}
+                            </div>
+                            {earned && (
+                              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 );
               })()}
@@ -8715,7 +8747,7 @@ const HuntersFindsApp = () => {
                           <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-sm font-bold shadow-sm">{(r.username || '?')[0].toUpperCase()}</div>
                           <span className="text-[10px] text-gray-400 max-w-[52px] truncate" style={{ fontFamily: '"Courier New", monospace' }}>@{r.username}</span>
                           {r.srr != null && <span className={`text-xs font-bold ${getSRRColor(r.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{r.srr.toFixed(1)}</span>}
-                          {(viewingUserBadges[r.user_id]||[]).slice(0,1).map(b => <BadgeChip key={b.badge_id} badge={b.badge_id} small showName={false}/>)}
+
                         </button>
                       ))}
                     </div>
@@ -8874,7 +8906,12 @@ const HuntersFindsApp = () => {
                 
                 {/* Header */}
                 <div className="sticky top-0 bg-white border-b px-4 py-3 flex justify-between items-center rounded-t-2xl flex-shrink-0">
-                  <h2 className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>@{u.username || u.email?.split('@')[0]}</h2>
+                  <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+                    <h2 className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>@{u.username || u.email?.split('@')[0]}</h2>
+                    <div className="flex items-center gap-1">
+                      {sortByPrestige(theirBadges).slice(0,5).map(b => <BadgeIcon key={b.badge_id} badgeId={b.badge_id} size={18} />)}
+                    </div>
+                  </div>
                   <button onClick={handleCloseUser}><X size={20} /></button>
                 </div>
 
@@ -9963,11 +10000,7 @@ const HuntersFindsApp = () => {
                   </div>
                 </div>
 
-                {theirBadges.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {theirBadges.map(b => <BadgeChip key={b.badge_id} badge={b.badge_id} earnedAt={b.granted_at} small />)}
-                  </div>
-                )}
+
 
                 {/* Overlap */}
                 {(u.dishOverlap > 0 || u.restaurantOverlap > 0) && (
@@ -10360,7 +10393,7 @@ const HuntersFindsApp = () => {
         </>
       )}
 
-      {/* Logout Confirmation Modal */}}
+      {/* Logout Confirmation Modal */}
       {showLogoutConfirm && (
         <>
           <div onClick={() => setShowLogoutConfirm(false)} className="fixed inset-0 bg-black/50 z-50 animate-fade-in" />
