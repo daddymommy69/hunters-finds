@@ -4363,7 +4363,6 @@ const HuntersFindsApp = () => {
   }, [allCategoriesWithCount, categoryInput]);
 
   const CATEGORY_INITIAL_SHOW = 6;
-  const visibleCategories = categoryShowAll ? categorySuggestionsFiltered : categorySuggestionsFiltered.slice(0, CATEGORY_INITIAL_SHOW);
 
   // Food suggestions — filtered by selected restaurant if locked
   const foodSuggestions = React.useMemo(() => {
@@ -4376,7 +4375,6 @@ const HuntersFindsApp = () => {
       }
       return nameMatch;
     });
-    // Dedupe by name+restaurant
     const seen = new Set();
     return filtered.filter(d => {
       const key = `${(d.name||'').toLowerCase()}|${(d.restaurantName||'').toLowerCase()}`;
@@ -4386,7 +4384,7 @@ const HuntersFindsApp = () => {
     }).slice(0, 5);
   }, [dishName, allDishes, restaurant, restaurantLocked]);
 
-  // Category suggestions filtered by restaurant when locked
+  // Category suggestions filtered by restaurant when locked — must come after categorySuggestions
   const categorySuggestionsFiltered = React.useMemo(() => {
     if (!restaurantLocked || !restaurant) return categorySuggestions;
     const dishesAtRestaurant = allDishes.filter(d =>
@@ -4397,6 +4395,8 @@ const HuntersFindsApp = () => {
     ).filter(Boolean));
     return categorySuggestions.filter(({ cat }) => catsAtRestaurant.has(cat));
   }, [categorySuggestions, restaurant, restaurantLocked, allDishes]);
+
+  const visibleCategories = categoryShowAll ? categorySuggestionsFiltered : categorySuggestionsFiltered.slice(0, CATEGORY_INITIAL_SHOW);
   const hasMoreCategories = categorySuggestionsFiltered.length > CATEGORY_INITIAL_SHOW;
 
   const handleCloseResults = () => {
