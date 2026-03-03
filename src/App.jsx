@@ -8592,7 +8592,7 @@ const HuntersFindsApp = () => {
                       onBlur={() => {
                         setTimeout(() => setShowRestaurantSearch(false), 300);
                       }}
-                      placeholder="e.g., taco palace" 
+                      placeholder="e.g., tacos el gordo" 
                       className="w-full px-2 py-1.5 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
                       style={{ fontFamily: '"Courier New", monospace' }}
                     />
@@ -8676,9 +8676,9 @@ const HuntersFindsApp = () => {
                           onClick={() => setShowDishTooltip(v => !v)}
                         >?</div>
                         {showDishTooltip && (
-                          <div className="absolute bottom-full left-0 mb-2 w-52 bg-gray-900 text-white text-[10px] rounded-lg px-3 py-2 z-50 shadow-xl pointer-events-none" style={{ fontFamily: '"Courier New", monospace' }}>
+                          <div className="absolute top-full left-0 mt-2 w-52 bg-gray-900 text-white text-[10px] rounded-lg px-3 py-2 z-50 shadow-xl pointer-events-none" style={{ fontFamily: '"Courier New", monospace' }}>
+                            <div className="absolute bottom-full left-3 w-0 h-0 border-l-4 border-r-4 border-b-4 border-transparent border-b-gray-900"></div>
                             <p>add the exact dish you ordered. instead of just "pizza", add "margherita pizza".</p>
-                            <div className="absolute top-full left-3 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
                           </div>
                         )}
                       </div>
@@ -8689,7 +8689,7 @@ const HuntersFindsApp = () => {
                       onChange={(e) => { setDishName(e.target.value); setShowFoodSuggestions(true); }}
                       onFocus={() => { if (dishName.length > 0) setShowFoodSuggestions(true); }}
                       onBlur={() => setTimeout(() => setShowFoodSuggestions(false), 150)}
-                      placeholder="e.g., carne asada tacos"
+                      placeholder="e.g., al pastor tacos"
                       className="w-full px-2 py-1 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
                       style={{ fontFamily: '"Courier New", monospace' }}
                     />
@@ -11494,7 +11494,7 @@ const HuntersFindsApp = () => {
                       onBlur={() => {
                         setTimeout(() => setShowEditRestaurantSearch(false), 200);
                       }}
-                      placeholder="e.g., taco palace" 
+                      placeholder="e.g., tacos el gordo" 
                       className="w-full px-2 py-1.5 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
                       style={{ fontFamily: '"Courier New", monospace' }}
                     />
@@ -11530,7 +11530,7 @@ const HuntersFindsApp = () => {
                       type="text" 
                       value={editDishName} 
                       onChange={(e) => setEditDishName(e.target.value)} 
-                      placeholder="e.g., carne asada tacos" 
+                      placeholder="e.g., al pastor tacos" 
                       className="w-full px-2 py-1.5 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
                       style={{ fontFamily: '"Courier New", monospace' }}
                     />
