@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient'
 import React, { useState, useEffect } from 'react';
-import { MapPin, TrendingUp, Plus, Search, X, Image, MessageSquare, Users, Compass, User, UserPlus, Bookmark, Star, List, Settings, Lock, Activity, Bell, AtSign, MessageCircle, Tag, Heart, ChevronRight } from 'lucide-react';
+import { MapPin, TrendingUp, Plus, Search, X, Image, MessageSquare, Users, Compass, User, UserPlus, Bookmark, Star, List, Settings, Lock, Activity, Bell, AtSign, MessageCircle, Tag, Heart, ChevronRight, Megaphone, Send, Smile, ChevronDown, ChevronUp, Trophy, Radio } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import LoadingSpinner from './components/LoadingSpinner';
 import EmptyState from './components/EmptyState';
@@ -247,7 +247,28 @@ const sortByPrestige = (arr) =>
     return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
   });
 
-// Inline badge icon: colored icon on transparent bg, no pill/circle
+// Badge groups where only the highest tier should show
+const BADGE_TIER_GROUPS = [
+  ['castle_diamond','castle_gold','castle_silver','castle_bronze','castle_wood'],
+  ['local_diamond','local_silver','local_bronze'],
+  ['followers_10000','followers_1000','followers_100','followers_10','followers_1'],
+];
+
+const collapseToHighestTier = (badges) => {
+  const ids = new Set(badges.map(b => b.badge_id || b.id));
+  const suppressed = new Set();
+  BADGE_TIER_GROUPS.forEach(group => {
+    // Find highest earned in this group (first in prestige order = highest)
+    const earnedInGroup = group.filter(id => ids.has(id));
+    if (earnedInGroup.length > 1) {
+      // Suppress all except the highest (first one)
+      earnedInGroup.slice(1).forEach(id => suppressed.add(id));
+    }
+  });
+  return badges.filter(b => !suppressed.has(b.badge_id || b.id));
+};
+
+// Inline badge icon: colored icon on transparent bg, with instant styled tooltip
 const BadgeIcon = ({ badgeId, size=18 }) => {
   const def = BADGE_DEFS[badgeId];
   if (!def) return null;
@@ -256,8 +277,7 @@ const BadgeIcon = ({ badgeId, size=18 }) => {
   const isSpecial = def.category === 'special';
   return (
     <span
-      title={`${def.name}: ${def.desc}`}
-      className="inline-flex items-center justify-center flex-shrink-0 cursor-default"
+      className="inline-flex items-center justify-center flex-shrink-0 cursor-default relative group"
       style={{ width:size, height:size, filter: isSpecial ? `drop-shadow(0 0 3px ${color}80)` : undefined }}
     >
       {isCastle ? (
@@ -268,6 +288,14 @@ const BadgeIcon = ({ badgeId, size=18 }) => {
       ) : (
         <BadgeSVGIcon iconKey={def.icon} size={size} color={color} />
       )}
+      <span
+        className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 rounded-lg text-white text-[11px] font-bold whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 z-[200]"
+        style={{ background:'#1a1a2e', fontFamily:'"Courier New",monospace', boxShadow:'0 4px 12px rgba(0,0,0,0.3)', transition:'opacity 0ms' }}
+      >
+        <span style={{ color }}>{def.name}</span>
+        <span className="text-gray-300 font-normal"> · {def.desc}</span>
+        <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent" style={{ borderTopColor:'#1a1a2e' }} />
+      </span>
     </span>
   );
 };
@@ -631,6 +659,17 @@ const HuntersFindsApp = () => {
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [isGroupModalClosing, setIsGroupModalClosing] = useState(false);
   const [groupModalView, setGroupModalView] = useState('members');
+  // Group chat state
+  const [groupMessages, setGroupMessages] = useState([]);
+  const [groupMessagesLoading, setGroupMessagesLoading] = useState(false);
+  const [groupChatInput, setGroupChatInput] = useState('');
+  const [groupChatSending, setGroupChatSending] = useState(false);
+  const [messageReactions, setMessageReactions] = useState({}); // { messageId: [{emoji, username, user_id}] }
+  const [emojiPickerMsgId, setEmojiPickerMsgId] = useState(null);
+  const [leaderboardOpen, setLeaderboardOpen] = useState(false);
+  const [leaderboardMode, setLeaderboardMode] = useState('highest'); // 'highest' | 'most'
+  const [groupCreateStep, setGroupCreateStep] = useState(1); // 1=type, 2=details
+  const [groupCreateType, setGroupCreateType] = useState(null);
   const [savedItems, setSavedItems] = useState([]);
   const [userLists, setUserLists] = useState([]);
   const [selectedUser, setSelectedUserRaw] = useState(null);
@@ -3249,6 +3288,16 @@ const HuntersFindsApp = () => {
       fetchUserBadges(selectedUser.id);
     }
   }, [selectedUser?.id, allRatings.length]);
+
+  // Load group messages when a group is opened
+  React.useEffect(() => {
+    if (selectedGroup?.id) {
+      setGroupMessages([]);
+      setMessageReactions({});
+      setLeaderboardOpen(false);
+      fetchGroupMessages(selectedGroup.id);
+    }
+  }, [selectedGroup?.id]);
   
   // activityFilter kept for RPC compat (unused in UI now)
 
@@ -4861,6 +4910,101 @@ const HuntersFindsApp = () => {
         show: true,
         title: 'Error',
         message: 'Could not delete group. Please try again.'
+      });
+    }
+  };
+
+  // ===== GROUP CHAT FUNCTIONS =====
+  const fetchGroupMessages = async (groupId) => {
+    if (!groupId) return;
+    setGroupMessagesLoading(true);
+    try {
+      const { data } = await supabase
+        .from('group_messages')
+        .select('*')
+        .eq('group_id', groupId)
+        .eq('is_deleted', false)
+        .order('created_at', { ascending: true })
+        .limit(100);
+      setGroupMessages(data || []);
+      // Fetch reactions for all messages
+      if (data && data.length > 0) {
+        const msgIds = data.map(m => m.id);
+        const { data: reactions } = await supabase
+          .from('message_reactions')
+          .select('*')
+          .in('message_id', msgIds);
+        if (reactions) {
+          const byMsg = {};
+          reactions.forEach(r => {
+            if (!byMsg[r.message_id]) byMsg[r.message_id] = [];
+            byMsg[r.message_id].push(r);
+          });
+          setMessageReactions(byMsg);
+        }
+      }
+    } catch (e) { console.error('fetchGroupMessages error:', e); }
+    setGroupMessagesLoading(false);
+  };
+
+  const sendGroupMessage = async (content, type = 'text', ratingData = null) => {
+    if (!selectedGroup || !user) return;
+    const username = user.user_metadata?.username || user.email?.split('@')[0] || 'user';
+    try {
+      const { data, error } = await supabase.from('group_messages').insert({
+        group_id: selectedGroup.id,
+        user_id: user.id,
+        username,
+        content: content || null,
+        message_type: type,
+        rating_data: ratingData || null,
+      }).select().single();
+      if (error) throw error;
+      setGroupMessages(prev => [...prev, data]);
+    } catch (e) { console.error('sendGroupMessage error:', e); }
+  };
+
+  const toggleReaction = async (messageId, emoji) => {
+    if (!user) return;
+    const username = user.user_metadata?.username || user.email?.split('@')[0] || 'user';
+    const existing = (messageReactions[messageId] || []).find(r => r.user_id === user.id);
+    if (existing) {
+      // Remove reaction
+      await supabase.from('message_reactions').delete().eq('id', existing.id);
+      setMessageReactions(prev => ({
+        ...prev,
+        [messageId]: (prev[messageId] || []).filter(r => r.user_id !== user.id)
+      }));
+    } else {
+      // Add reaction
+      const { data } = await supabase.from('message_reactions').insert({
+        message_id: messageId, user_id: user.id, username, emoji
+      }).select().single();
+      if (data) {
+        setMessageReactions(prev => ({
+          ...prev,
+          [messageId]: [...(prev[messageId] || []), data]
+        }));
+      }
+    }
+    setEmojiPickerMsgId(null);
+  };
+
+  // Auto-post rating to broadcast channel when user submits a rating
+  const autoPostRatingToGroups = async (ratingData) => {
+    if (!user) return;
+    // Find broadcast groups where this user is creator
+    const creatorGroups = userGroups.filter(g =>
+      (g.group_type === 'broadcast' || g.type === 'broadcast') && g.creator_id === user.id
+    );
+    for (const group of creatorGroups) {
+      await supabase.from('group_messages').insert({
+        group_id: group.id,
+        user_id: user.id,
+        username: user.user_metadata?.username || user.email?.split('@')[0] || 'user',
+        content: null,
+        message_type: 'rating',
+        rating_data: ratingData,
       });
     }
   };
@@ -7268,7 +7412,7 @@ const HuntersFindsApp = () => {
                       <div className="flex items-center gap-2 flex-wrap">
                         <h2 className="text-xl font-bold">@{user?.user_metadata?.username || user?.email?.split('@')[0] || 'user'}</h2>
                         <div className="flex items-center gap-1">
-                          {sortByPrestige(userBadges).slice(0,5).map(b => <BadgeIcon key={b.badge_id} badgeId={b.badge_id} size={18} />)}
+                          {sortByPrestige(collapseToHighestTier(userBadges)).slice(0,5).map(b => <BadgeIcon key={b.badge_id} badgeId={b.badge_id} size={18} />)}
                         </div>
                       </div>
                       <button 
@@ -7457,26 +7601,48 @@ const HuntersFindsApp = () => {
                       />
                     ) : (
                       <div className="space-y-2">
-                        {userGroups.map(group => (
-                          <div 
-                            key={group.id} 
-                            onClick={() => setSelectedGroup(group)}
-                            className="bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition"
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex-1">
-                                <h3 className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>{group.name}</h3>
-                                <p className="text-xs text-gray-500 mt-1" style={{ fontFamily: '"Courier New", monospace' }}>
-                                  {group.member_count || 0} members
-                                  {group.type === 'broadcast' && ' • broadcast channel'}
-                                </p>
-                              </div>
-                              <div className="text-right">
-                                <Users size={20} className="text-gray-400" />
+                        {userGroups.map(group => {
+                          const gType = group.group_type || group.type || 'public';
+                          const isBroadcast = gType === 'broadcast';
+                          const isPrivate = gType === 'private';
+                          return (
+                            <div
+                              key={group.id}
+                              onClick={() => setSelectedGroup(group)}
+                              className="bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex-1 min-w-0">
+                                  <h3 className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>{group.name}</h3>
+                                  <p className="text-xs text-gray-500 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
+                                    {group.member_count || 1} {(group.member_count || 1) === 1 ? 'member' : 'members'}
+                                    {isBroadcast && <span className="ml-1 text-[#33a29b]">• broadcast channel</span>}
+                                    {isPrivate && <span className="ml-1 text-indigo-400">• private</span>}
+                                  </p>
+                                </div>
+                                <div className="flex-shrink-0 ml-3">
+                                  {isBroadcast
+                                    ? <Megaphone size={20} className="text-[#33a29b]" />
+                                    : isPrivate
+                                      ? <div className="flex items-center justify-center w-6 h-6">
+                                          <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                                            <circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/>
+                                            <path d="M2 20c0-3.3 2.7-6 6-6h2"/><path d="M14 14h2c3.3 0 6 2.7 6 6"/>
+                                          </svg>
+                                        </div>
+                                      : <div className="flex items-center justify-center w-6 h-6">
+                                          <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                                            <circle cx="8" cy="7" r="3"/><circle cx="16" cy="7" r="3"/><circle cx="12" cy="14" r="3"/>
+                                            <path d="M2 21c0-2.8 2.2-5 5-5h1"/><path d="M16 16h1c2.8 0 5 2.2 5 5"/>
+                                            <path d="M9 17c0-1.7 1.3-3 3-3s3 1.3 3 3"/>
+                                          </svg>
+                                        </div>
+                                  }
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )
                   ) : (
@@ -8938,7 +9104,7 @@ const HuntersFindsApp = () => {
                   <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
                     <h2 className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>@{u.username || u.email?.split('@')[0]}</h2>
                     <div className="flex items-center gap-1">
-                      {sortByPrestige(theirBadges).slice(0,5).map(b => <BadgeIcon key={b.badge_id} badgeId={b.badge_id} size={18} />)}
+                      {sortByPrestige(collapseToHighestTier(theirBadges)).slice(0,5).map(b => <BadgeIcon key={b.badge_id} badgeId={b.badge_id} size={18} />)}
                     </div>
                   </div>
                   <button onClick={handleCloseUser}><X size={20} /></button>
@@ -9443,12 +9609,82 @@ const HuntersFindsApp = () => {
 
       {/* New Group Modal */}
       {/* You Tab - Create Group Modal (use same as Rankings tab) */}
-      <CreateGroupModal
-        isOpen={isNewGroupModalOpen}
-        onClose={() => setIsNewGroupModalOpen(false)}
-        onSubmit={handleCreateGroup}
-        user={user}
-      />
+      {/* New Group Modal - type selection then details */}
+      {isNewGroupModalOpen && (
+        <>
+          <div onClick={() => { setIsNewGroupModalOpen(false); setGroupCreateStep(1); setGroupCreateType(null); }} className="fixed inset-0 bg-black/50 z-50" />
+          <div className="fixed inset-0 flex items-center justify-center z-50 p-4 pointer-events-none">
+            <div className="bg-white rounded-2xl shadow-2xl w-full pointer-events-auto" style={{ maxWidth: 420, fontFamily: '"Courier New", monospace' }}>
+              <div className="flex items-center justify-between px-5 py-4 border-b">
+                <h2 className="font-bold text-base">{groupCreateStep === 1 ? 'create a group' : `new ${groupCreateType === 'broadcast' ? 'broadcast channel' : groupCreateType + ' group'}`}</h2>
+                <button onClick={() => { setIsNewGroupModalOpen(false); setGroupCreateStep(1); setGroupCreateType(null); }}><X size={18} /></button>
+              </div>
+              {groupCreateStep === 1 ? (
+                <div className="p-5 space-y-3">
+                  <p className="text-xs text-gray-500 mb-4">choose your group type</p>
+                  {[
+                    { type: 'public', icon: <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="7" r="3"/><circle cx="16" cy="7" r="3"/><circle cx="12" cy="14" r="3"/><path d="M2 21c0-2.8 2.2-5 5-5h1"/><path d="M16 16h1c2.8 0 5 2.2 5 5"/><path d="M9 17c0-1.7 1.3-3 3-3s3 1.3 3 3"/></svg>, label: 'public group', desc: 'anyone can join and post' },
+                    { type: 'private', icon: <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/><path d="M2 20c0-3.3 2.7-6 6-6h2"/><path d="M14 14h2c3.3 0 6 2.7 6 6"/></svg>, label: 'private group', desc: 'invite-only, members request to join' },
+                    { type: 'broadcast', icon: <Megaphone size={24} className="text-[#33a29b]" />, label: 'broadcast channel', desc: 'only you post, others react' },
+                  ].map(opt => (
+                    <button key={opt.type} onClick={() => { setGroupCreateType(opt.type); setGroupCreateStep(2); }}
+                      className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-gray-100 hover:border-[#33a29b] hover:bg-[#33a29b]/5 transition text-left">
+                      <div className="flex-shrink-0">{opt.icon}</div>
+                      <div>
+                        <div className="font-bold text-sm">{opt.label}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">{opt.desc}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-5 space-y-4">
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">name</label>
+                    <input
+                      id="new-group-name-input"
+                      autoFocus
+                      className="mt-1.5 w-full border rounded-lg px-3 py-2.5 text-sm outline-none focus:border-[#33a29b]"
+                      placeholder={groupCreateType === 'broadcast' ? 'channel name...' : 'group name...'}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">description <span className="font-normal text-gray-400">(optional)</span></label>
+                    <input
+                      id="new-group-desc-input"
+                      className="mt-1.5 w-full border rounded-lg px-3 py-2.5 text-sm outline-none focus:border-[#33a29b]"
+                      placeholder="what's this group about?"
+                    />
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <button onClick={() => setGroupCreateStep(1)} className="flex-1 py-2.5 border rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-50">back</button>
+                    <button
+                      onClick={() => {
+                        const name = document.getElementById('new-group-name-input')?.value?.trim();
+                        const desc = document.getElementById('new-group-desc-input')?.value?.trim();
+                        if (!name) return;
+                        handleCreateGroup({
+                          name,
+                          description: desc || null,
+                          group_type: groupCreateType,
+                          type: groupCreateType,
+                          creator_id: user?.id,
+                          is_private: groupCreateType === 'private',
+                          member_count: 1,
+                        });
+                        setIsNewGroupModalOpen(false);
+                        setGroupCreateStep(1);
+                        setGroupCreateType(null);
+                      }}
+                      className="flex-1 py-2.5 bg-[#33a29b] text-white rounded-xl text-sm font-bold hover:bg-[#2a8a84] transition"
+                    >create</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Group Detail Modal with Modal Stack Support */}
       {/* Modal Stack Renderer - Single Active Modal with Back Navigation */}
@@ -9868,27 +10104,279 @@ const HuntersFindsApp = () => {
         user={user}
       />
       
-      {/* Group Detail Modal */}
-      <GroupDetailModal
-        group={selectedGroup}
-        isOpen={!!selectedGroup}
-        onClose={() => setSelectedGroup(null)}
-        user={user}
-        isUserMember={userGroups.some(g => g.id === selectedGroup?.id)}
-        onJoin={handleJoinGroup}
-        onLeave={handleLeaveGroup}
-        onDelete={handleDeleteGroup}
-        allDishes={allDishes}
-        allRatings={allRatings}
-        handleMentionInput={handleMentionInput}
-        insertMention={insertMention}
-        showMentionDropdown={showMentionDropdown}
-        activeMentionField={activeMentionField}
-        mentionResults={mentionResults}
-        mentionQuery={mentionQuery}
-        createMentionNotification={createMentionNotification}
-        extractMentions={extractMentions}
-      />
+      {/* Group Chat Modal */}
+      {selectedGroup && (() => {
+        const g = selectedGroup;
+        const gType = g.group_type || g.type || 'public';
+        const isBroadcast = gType === 'broadcast';
+        const isPrivate = gType === 'private';
+        const isMember = userGroups.some(ug => ug.id === g.id);
+        const isCreator = user && g.creator_id === user.id;
+        const canPost = isMember && (!isBroadcast || isCreator);
+        const username = user?.user_metadata?.username || user?.email?.split('@')[0] || 'user';
+
+        // Leaderboard: top dishes rated by group members
+        const groupMemberRatings = allRatings.filter(r =>
+          !r.is_deleted && r.group_id === g.id
+        );
+        // Fallback: use messages with rating_data
+        const ratingMsgs = groupMessages.filter(m => m.message_type === 'rating' && m.rating_data);
+        const dishScores = {};
+        const dishCounts = {};
+        ratingMsgs.forEach(m => {
+          const rd = m.rating_data;
+          const key = rd.dish_id || rd.dish_name;
+          if (!dishScores[key]) { dishScores[key] = { total: 0, count: 0, ...rd }; dishCounts[key] = 0; }
+          dishScores[key].total += rd.overall_score || 0;
+          dishScores[key].count += 1;
+          dishCounts[key] += 1;
+        });
+        const leaderboardItems = Object.values(dishScores).map(d => ({
+          ...d, avg: d.count > 0 ? d.total / d.count : 0
+        }));
+        const sortedLeaderboard = leaderboardMode === 'highest'
+          ? leaderboardItems.sort((a, b) => b.avg - a.avg).slice(0, 3)
+          : leaderboardItems.sort((a, b) => b.count - a.count).slice(0, 3);
+
+        // Common emojis for picker
+        const COMMON_EMOJIS = ['❤️','🔥','😂','😮','👍','👎','🤤','💯','😍','🙌','👀','💀','🤣','😭','🏆','⭐','🍔','🍜','🌮','🍕'];
+
+        return (
+          <>
+            <div onClick={() => setSelectedGroup(null)} className="fixed inset-0 bg-black/60 z-50" style={{ backdropFilter: 'blur(4px)' }} />
+            <div className="fixed inset-0 flex items-center justify-center z-50 p-4 pointer-events-none">
+              <div className="bg-white rounded-2xl shadow-2xl pointer-events-auto flex flex-col"
+                style={{ width: 'min(96vw, 600px)', height: '78vh', maxHeight: '78vh' }}>
+
+                {/* Header */}
+                <div className="flex items-center gap-3 px-4 py-3 border-b flex-shrink-0 rounded-t-2xl">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    {isBroadcast
+                      ? <Megaphone size={18} className="text-[#33a29b] flex-shrink-0" />
+                      : isPrivate
+                        ? <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0"><circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/><path d="M2 20c0-3.3 2.7-6 6-6h2"/><path d="M14 14h2c3.3 0 6 2.7 6 6"/></svg>
+                        : <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0"><circle cx="8" cy="7" r="3"/><circle cx="16" cy="7" r="3"/><circle cx="12" cy="14" r="3"/><path d="M2 21c0-2.8 2.2-5 5-5h1"/><path d="M16 16h1c2.8 0 5 2.2 5 5"/><path d="M9 17c0-1.7 1.3-3 3-3s3 1.3 3 3"/></svg>
+                    }
+                    <div className="min-w-0">
+                      <h2 className="font-bold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}>{g.name}</h2>
+                      <p className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>
+                        {g.member_count || 1} {(g.member_count || 1) === 1 ? 'member' : 'members'}
+                        {isBroadcast && ' · broadcast'}
+                        {isPrivate && ' · private'}
+                      </p>
+                    </div>
+                  </div>
+                  {!isMember && (
+                    <button
+                      onClick={() => handleJoinGroup(g)}
+                      className="px-3 py-1.5 bg-[#33a29b] text-white rounded-lg text-xs font-bold hover:bg-[#2a8a84] transition flex-shrink-0"
+                      style={{ fontFamily: '"Courier New", monospace' }}
+                    >
+                      {isPrivate ? 'request to join' : 'join'}
+                    </button>
+                  )}
+                  {isMember && isCreator && (
+                    <button
+                      onClick={handleDeleteGroup}
+                      className="text-xs text-red-400 hover:text-red-600 flex-shrink-0 px-2"
+                      style={{ fontFamily: '"Courier New", monospace' }}
+                    >
+                      delete
+                    </button>
+                  )}
+                  {isMember && !isCreator && (
+                    <button
+                      onClick={handleLeaveGroup}
+                      className="text-xs text-gray-400 hover:text-gray-600 flex-shrink-0 px-2"
+                      style={{ fontFamily: '"Courier New", monospace' }}
+                    >
+                      leave
+                    </button>
+                  )}
+                  <button onClick={() => setSelectedGroup(null)} className="text-gray-400 hover:text-gray-600 flex-shrink-0"><X size={18} /></button>
+                </div>
+
+                {/* Leaderboard bar */}
+                <div className="border-b flex-shrink-0">
+                  <button
+                    onClick={() => setLeaderboardOpen(o => !o)}
+                    className="w-full flex items-center justify-between px-4 py-2 hover:bg-gray-50 transition"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Trophy size={14} className="text-yellow-500" />
+                      <span className="text-xs font-bold text-gray-600" style={{ fontFamily: '"Courier New", monospace' }}>top dishes</span>
+                    </div>
+                    {leaderboardOpen ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+                  </button>
+                  {leaderboardOpen && (
+                    <div className="px-4 pb-3">
+                      <div className="flex gap-2 mb-2">
+                        <button onClick={() => setLeaderboardMode('highest')} className={`text-[10px] px-2 py-0.5 rounded-full font-bold transition ${leaderboardMode === 'highest' ? 'bg-[#33a29b] text-white' : 'bg-gray-100 text-gray-500'}`} style={{ fontFamily: '"Courier New", monospace' }}>highest rated</button>
+                        <button onClick={() => setLeaderboardMode('most')} className={`text-[10px] px-2 py-0.5 rounded-full font-bold transition ${leaderboardMode === 'most' ? 'bg-[#33a29b] text-white' : 'bg-gray-100 text-gray-500'}`} style={{ fontFamily: '"Courier New", monospace' }}>most rated</button>
+                      </div>
+                      {sortedLeaderboard.length === 0
+                        ? <p className="text-xs text-gray-400 text-center py-2" style={{ fontFamily: '"Courier New", monospace' }}>no ratings yet</p>
+                        : sortedLeaderboard.map((d, i) => (
+                          <div key={i} className="flex items-center gap-2 py-1">
+                            <span className="text-[10px] font-bold text-gray-400 w-4" style={{ fontFamily: '"Courier New", monospace' }}>#{i + 1}</span>
+                            <div className="flex-1 min-w-0">
+                              <span className="text-xs font-bold truncate block" style={{ fontFamily: '"Courier New", monospace' }}>{d.dish_name}</span>
+                              <span className="text-[10px] text-gray-400 truncate block" style={{ fontFamily: '"Courier New", monospace' }}>{d.restaurant_name}</span>
+                            </div>
+                            <span className="text-xs font-bold text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>
+                              {leaderboardMode === 'highest' ? d.avg.toFixed(1) : `${d.count}x`}
+                            </span>
+                          </div>
+                        ))
+                      }
+                    </div>
+                  )}
+                </div>
+
+                {/* Messages area */}
+                <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 relative"
+                  ref={el => { if (el) el.scrollTop = el.scrollHeight; }}>
+                  {groupMessagesLoading && (
+                    <div className="flex justify-center py-8">
+                      <div className="w-5 h-5 border-2 border-[#33a29b] border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  )}
+                  {!groupMessagesLoading && groupMessages.length === 0 && (
+                    <div className="flex flex-col items-center justify-center h-full text-gray-400 py-12">
+                      <MessageCircle size={32} className="mb-2 opacity-30" />
+                      <p className="text-sm" style={{ fontFamily: '"Courier New", monospace' }}>no messages yet</p>
+                      {canPost && <p className="text-xs mt-1" style={{ fontFamily: '"Courier New", monospace' }}>say hello!</p>}
+                    </div>
+                  )}
+                  {groupMessages.map(msg => {
+                    const isOwn = user && msg.user_id === user.id;
+                    const reactions = messageReactions[msg.id] || [];
+                    const reactionGroups = {};
+                    reactions.forEach(r => {
+                      if (!reactionGroups[r.emoji]) reactionGroups[r.emoji] = [];
+                      reactionGroups[r.emoji].push(r);
+                    });
+                    const isRating = msg.message_type === 'rating' && msg.rating_data;
+                    const rd = msg.rating_data || {};
+
+                    return (
+                      <div key={msg.id} className={`flex gap-2 ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}>
+                        {/* Avatar */}
+                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-xs font-bold flex-shrink-0 self-end">
+                          {(msg.username || '?')[0].toUpperCase()}
+                        </div>
+                        <div className={`flex flex-col max-w-[72%] ${isOwn ? 'items-end' : 'items-start'}`}>
+                          {/* Username + time */}
+                          <div className={`flex items-center gap-2 mb-0.5 ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}>
+                            <span className="text-[10px] font-bold text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>@{msg.username}</span>
+                            <span className="text-[9px] text-gray-300" style={{ fontFamily: '"Courier New", monospace' }}>
+                              {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                          {/* Bubble */}
+                          {isRating ? (
+                            <button
+                              onClick={() => { const d = allDishes.find(d => d.id === rd.dish_id || d.name?.toLowerCase() === rd.dish_name?.toLowerCase()); if (d) { setSelectedGroup(null); setSelectedDish(d); } }}
+                              className={`rounded-2xl px-3 py-2 text-left border transition hover:shadow-md ${isOwn ? 'bg-[#33a29b] text-white border-[#2a8a84]' : 'bg-white border-gray-200'}`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0"
+                                  style={{ background: isOwn ? 'rgba(255,255,255,0.2)' : '#33a29b', color: 'white' }}>
+                                  {(rd.overall_score || 0).toFixed(0)}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className={`text-xs font-bold truncate ${isOwn ? 'text-white' : 'text-gray-800'}`} style={{ fontFamily: '"Courier New", monospace' }}>{rd.dish_name}</div>
+                                  <div className={`text-[10px] truncate ${isOwn ? 'text-white/70' : 'text-gray-400'}`} style={{ fontFamily: '"Courier New", monospace' }}>{rd.restaurant_name}</div>
+                                </div>
+                              </div>
+                            </button>
+                          ) : (
+                            <div className={`rounded-2xl px-3 py-2 text-sm ${isOwn ? 'bg-[#33a29b] text-white rounded-br-sm' : 'bg-gray-100 text-gray-800 rounded-bl-sm'}`}
+                              style={{ fontFamily: '"Courier New", monospace', wordBreak: 'break-word' }}>
+                              {msg.content}
+                            </div>
+                          )}
+                          {/* Reactions */}
+                          <div className={`flex items-center gap-1 mt-1 flex-wrap ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                            {Object.entries(reactionGroups).map(([emoji, rs]) => (
+                              <button
+                                key={emoji}
+                                onClick={() => toggleReaction(msg.id, emoji)}
+                                title={rs.map(r => r.username).join(', ')}
+                                className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[11px] border transition ${rs.some(r => r.user_id === user?.id) ? 'bg-[#33a29b]/10 border-[#33a29b]/30' : 'bg-white border-gray-200 hover:bg-gray-50'}`}
+                              >
+                                <span>{emoji}</span>
+                                <span className="text-[10px] text-gray-500">{rs.length}</span>
+                              </button>
+                            ))}
+                            {isMember && (
+                              <button
+                                onClick={() => setEmojiPickerMsgId(emojiPickerMsgId === msg.id ? null : msg.id)}
+                                className="w-5 h-5 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-400 transition text-[10px]"
+                              >+</button>
+                            )}
+                          </div>
+                          {/* Emoji picker */}
+                          {emojiPickerMsgId === msg.id && (
+                            <div className={`mt-1 bg-white border border-gray-200 rounded-xl shadow-lg p-2 z-10 ${isOwn ? 'self-end' : 'self-start'}`}
+                              style={{ maxWidth: 220 }}>
+                              <div className="flex flex-wrap gap-1">
+                                {COMMON_EMOJIS.map(e => (
+                                  <button key={e} onClick={() => toggleReaction(msg.id, e)}
+                                    className="w-7 h-7 flex items-center justify-center hover:bg-gray-100 rounded-lg text-base transition">
+                                    {e}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Input bar */}
+                {canPost ? (
+                  <div className="border-t px-3 py-3 flex gap-2 items-center flex-shrink-0 rounded-b-2xl">
+                    <input
+                      value={groupChatInput}
+                      onChange={e => setGroupChatInput(e.target.value)}
+                      onKeyDown={async e => {
+                        if (e.key === 'Enter' && !e.shiftKey && groupChatInput.trim()) {
+                          e.preventDefault();
+                          const txt = groupChatInput.trim();
+                          setGroupChatInput('');
+                          await sendGroupMessage(txt, 'text');
+                        }
+                      }}
+                      placeholder={isBroadcast ? 'post to your channel...' : 'message...'}
+                      className="flex-1 bg-gray-100 rounded-full px-4 py-2 text-sm outline-none"
+                      style={{ fontFamily: '"Courier New", monospace' }}
+                    />
+                    <button
+                      onClick={async () => {
+                        if (!groupChatInput.trim()) return;
+                        const txt = groupChatInput.trim();
+                        setGroupChatInput('');
+                        await sendGroupMessage(txt, 'text');
+                      }}
+                      disabled={!groupChatInput.trim()}
+                      className="w-9 h-9 rounded-full bg-[#33a29b] flex items-center justify-center text-white hover:bg-[#2a8a84] transition disabled:opacity-40"
+                    >
+                      <Send size={15} />
+                    </button>
+                  </div>
+                ) : isBroadcast && isMember ? (
+                  <div className="border-t px-4 py-3 text-center flex-shrink-0">
+                    <p className="text-xs text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>react to posts above · this is a broadcast channel</p>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </>
+        );
+      })()}
       
       {/* Add Tags Modal */}
       {tagModalItem && (
@@ -10012,7 +10500,7 @@ const HuntersFindsApp = () => {
                     @{u.username || u.email?.split('@')[0]}
                   </h2>
                   <div className="flex items-center gap-1">
-                    {sortByPrestige(theirBadges).slice(0,5).map(b => <BadgeIcon key={b.badge_id} badgeId={b.badge_id} size={18} />)}
+                    {sortByPrestige(collapseToHighestTier(theirBadges)).slice(0,5).map(b => <BadgeIcon key={b.badge_id} badgeId={b.badge_id} size={18} />)}
                   </div>
                 </div>
                 <button onClick={() => setSelectedExploreUser(null)}><X size={20} /></button>
