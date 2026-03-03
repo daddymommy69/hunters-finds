@@ -571,6 +571,7 @@ const HuntersFindsApp = () => {
   
   // Logout confirmation modal
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showDeleteGroupConfirm, setShowDeleteGroupConfirm] = useState(false);
   const [showFollowersModal, setShowFollowersModal] = useState(false); // 'followers' | 'following' | false
   const [showWelcomeModal, setShowWelcomeModal] = useState(() => {
     return localStorage.getItem('hf_welcome_dismissed') !== 'true';
@@ -4878,38 +4879,36 @@ const HuntersFindsApp = () => {
     }
   };
 
-  const handleDeleteGroup = async () => {
-    if (!selectedGroup || !user) return;
-    
-    if (!confirm(`Are you sure you want to DELETE "${selectedGroup.name}"? This cannot be undone!`)) return;
+  const handleDeleteGroup = async (groupToDelete) => {
+    const target = groupToDelete || selectedGroup;
+    if (!target || !user) return;
 
     try {
       const { error } = await supabase
         .from('groups')
         .delete()
-        .eq('id', selectedGroup.id)
-        .eq('creator_id', user.id); // Only creator can delete
+        .eq('id', target.id);
 
       if (error) throw error;
 
-      // Refresh groups lists
-      const updatedUserGroups = userGroups.filter(g => g.id !== selectedGroup.id);
-      const updatedAllGroups = allGroups.filter(g => g.id !== selectedGroup.id);
-      setUserGroups(updatedUserGroups);
-      setAllGroups(updatedAllGroups);
+      // Remove from all local state
+      setUserGroups(prev => prev.filter(g => g.id !== target.id));
+      setAllGroups(prev => prev.filter(g => g.id !== target.id));
       setSelectedGroup(null);
+      setShowDeleteGroupConfirm(false);
 
       setErrorModal({
         show: true,
         title: 'Group Deleted',
-        message: `"${selectedGroup.name}" has been deleted.`
+        message: `"${target.name}" has been deleted.`
       });
     } catch (error) {
       console.error('Error deleting group:', error);
+      setShowDeleteGroupConfirm(false);
       setErrorModal({
         show: true,
         title: 'Error',
-        message: 'Could not delete group. Please try again.'
+        message: 'Could not delete group. Check that you are the group creator.'
       });
     }
   };
@@ -10177,7 +10176,7 @@ const HuntersFindsApp = () => {
                   )}
                   {isMember && isCreator && (
                     <button
-                      onClick={handleDeleteGroup}
+                      onClick={() => setShowDeleteGroupConfirm(true)}
                       className="text-xs text-red-400 hover:text-red-600 flex-shrink-0 px-2"
                       style={{ fontFamily: '"Courier New", monospace' }}
                     >
@@ -10909,6 +10908,25 @@ const HuntersFindsApp = () => {
                     {gbLoading ? 'granting...' : `grant "${BADGE_DEFS[gbBadge]?.name}" to @${gbUser?.username}`}
                   </button>
                 )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Delete Group Confirmation Modal */}
+      {showDeleteGroupConfirm && selectedGroup && (
+        <>
+          <div onClick={() => setShowDeleteGroupConfirm(false)} className="fixed inset-0 bg-black/60 z-[70]" />
+          <div className="fixed inset-0 flex items-center justify-center z-[70] p-4 pointer-events-none">
+            <div className="bg-white rounded-2xl shadow-2xl w-full pointer-events-auto p-6" style={{ maxWidth: '340px', fontFamily: '"Courier New", monospace' }}>
+              <h3 className="font-bold text-base mb-1">delete group?</h3>
+              <p className="text-sm text-gray-500 mb-5">
+                <span className="font-bold text-gray-700">"{selectedGroup.name}"</span> will be permanently deleted for all members. this cannot be undone.
+              </p>
+              <div className="flex gap-3">
+                <button onClick={() => setShowDeleteGroupConfirm(false)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-50 transition">cancel</button>
+                <button onClick={() => handleDeleteGroup(selectedGroup)} className="flex-1 py-2.5 bg-red-500 text-white rounded-xl text-sm font-bold hover:bg-red-600 transition">delete</button>
               </div>
             </div>
           </div>
