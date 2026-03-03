@@ -9978,9 +9978,14 @@ const HuntersFindsApp = () => {
             <div className="fixed z-[61] bg-white rounded-2xl shadow-xl flex flex-col"
               style={{ top: '10%', left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 500px)', maxHeight: '80vh' }}>
               <div className="sticky top-0 bg-white border-b px-4 py-3 flex items-center justify-between rounded-t-2xl flex-shrink-0">
-                <h2 className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>
-                  @{u.username || u.email?.split('@')[0]}
-                </h2>
+                <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+                  <h2 className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>
+                    @{u.username || u.email?.split('@')[0]}
+                  </h2>
+                  <div className="flex items-center gap-1">
+                    {sortByPrestige(theirBadges).slice(0,5).map(b => <BadgeIcon key={b.badge_id} badgeId={b.badge_id} size={18} />)}
+                  </div>
+                </div>
                 <button onClick={() => setSelectedExploreUser(null)}><X size={20} /></button>
               </div>
               <div className="overflow-y-auto p-4 space-y-4">
