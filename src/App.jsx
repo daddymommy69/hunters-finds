@@ -3245,10 +3245,10 @@ const HuntersFindsApp = () => {
 
   // Also fetch badges for People-tab profile modal
   React.useEffect(() => {
-    if (selectedUserRaw?.id) {
-      fetchUserBadges(selectedUserRaw.id);
+    if (selectedUser?.id) {
+      fetchUserBadges(selectedUser.id);
     }
-  }, [selectedUserRaw?.id, allRatings.length]);
+  }, [selectedUser?.id, allRatings.length]);
   
   // activityFilter kept for RPC compat (unused in UI now)
 
