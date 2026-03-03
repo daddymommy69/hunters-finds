@@ -1287,8 +1287,6 @@ const HuntersFindsApp = () => {
         message: 'Your changes have been saved!'
       });
       
-      // Immediately remove from allRatings state
-      setAllRatings(prev => prev.filter(r => r.id !== deletingRating.id));
       // Refetch all data to sync
       if (refetchData) refetchData();
       
@@ -8592,7 +8590,7 @@ const HuntersFindsApp = () => {
                       onBlur={() => {
                         setTimeout(() => setShowRestaurantSearch(false), 300);
                       }}
-                      placeholder="e.g., taco palace" 
+                      placeholder="e.g., tacos el gordo" 
                       className="w-full px-2 py-1.5 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
                       style={{ fontFamily: '"Courier New", monospace' }}
                     />
@@ -8689,7 +8687,7 @@ const HuntersFindsApp = () => {
                       onChange={(e) => { setDishName(e.target.value); setShowFoodSuggestions(true); }}
                       onFocus={() => { if (dishName.length > 0) setShowFoodSuggestions(true); }}
                       onBlur={() => setTimeout(() => setShowFoodSuggestions(false), 150)}
-                      placeholder="e.g., carne asada tacos"
+                      placeholder="e.g., al pastor tacos"
                       className="w-full px-2 py-1 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
                       style={{ fontFamily: '"Courier New", monospace' }}
                     />
@@ -11494,7 +11492,7 @@ const HuntersFindsApp = () => {
                       onBlur={() => {
                         setTimeout(() => setShowEditRestaurantSearch(false), 200);
                       }}
-                      placeholder="e.g., taco palace" 
+                      placeholder="e.g., tacos el gordo" 
                       className="w-full px-2 py-1.5 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
                       style={{ fontFamily: '"Courier New", monospace' }}
                     />
@@ -11530,7 +11528,7 @@ const HuntersFindsApp = () => {
                       type="text" 
                       value={editDishName} 
                       onChange={(e) => setEditDishName(e.target.value)} 
-                      placeholder="e.g., carne asada tacos" 
+                      placeholder="e.g., al pastor tacos" 
                       className="w-full px-2 py-1.5 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
                       style={{ fontFamily: '"Courier New", monospace' }}
                     />
