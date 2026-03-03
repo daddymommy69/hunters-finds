@@ -8650,7 +8650,7 @@ const HuntersFindsApp = () => {
                       onBlur={() => {
                         setTimeout(() => setShowRestaurantSearch(false), 300);
                       }}
-                      placeholder="e.g., taco palace" 
+                      placeholder="e.g., pho huong que" 
                       className="w-full px-2 py-1.5 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
                       style={{ fontFamily: '"Courier New", monospace' }}
                     />
@@ -11530,7 +11530,7 @@ const HuntersFindsApp = () => {
                       onBlur={() => {
                         setTimeout(() => setShowEditRestaurantSearch(false), 200);
                       }}
-                      placeholder="e.g., taco palace" 
+                      placeholder="e.g., pho huong que" 
                       className="w-full px-2 py-1.5 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
                       style={{ fontFamily: '"Courier New", monospace' }}
                     />
