@@ -2536,9 +2536,30 @@ const HuntersFindsApp = () => {
     if (!uid) return [];
     try {
       const { data } = await supabase.from('user_badges').select('*').eq('user_id', uid).order('granted_at', { ascending: false });
-      if (!targetUserId) setUserBadges(data || []);
-      else setViewingUserBadges(prev => ({ ...prev, [uid]: data || [] }));
-      return data || [];
+      let badges = data || [];
+
+      // If viewing another user with no DB badges yet, infer basic ones from their ratings
+      if (targetUserId && badges.length === 0) {
+        const theirRatingCount = allRatings.filter(r => r.user_id === uid && !r.is_deleted).length;
+        const inferred = [];
+        const castleTiers = [
+          { id: 'castle_wood', threshold: 1 },
+          { id: 'castle_bronze', threshold: 5 },
+          { id: 'castle_silver', threshold: 25 },
+          { id: 'castle_gold', threshold: 100 },
+          { id: 'castle_diamond', threshold: 500 },
+        ];
+        castleTiers.forEach(t => {
+          if (theirRatingCount >= t.threshold) {
+            inferred.push({ badge_id: t.id, user_id: uid, granted_at: new Date().toISOString(), inferred: true });
+          }
+        });
+        badges = inferred;
+      }
+
+      if (!targetUserId) setUserBadges(badges);
+      else setViewingUserBadges(prev => ({ ...prev, [uid]: badges }));
+      return badges;
     } catch (e) { return []; }
   };
 
@@ -3217,10 +3238,17 @@ const HuntersFindsApp = () => {
 
   // Fetch badges for viewed user profile
   React.useEffect(() => {
-    if (selectedExploreUser?.id && !viewingUserBadges[selectedExploreUser.id]) {
+    if (selectedExploreUser?.id) {
       fetchUserBadges(selectedExploreUser.id);
     }
-  }, [selectedExploreUser?.id]);
+  }, [selectedExploreUser?.id, allRatings.length]);
+
+  // Also fetch badges for People-tab profile modal
+  React.useEffect(() => {
+    if (selectedUserRaw?.id) {
+      fetchUserBadges(selectedUserRaw.id);
+    }
+  }, [selectedUserRaw?.id, allRatings.length]);
   
   // activityFilter kept for RPC compat (unused in UI now)
 
@@ -8898,6 +8926,7 @@ const HuntersFindsApp = () => {
         const myDishIds = new Set(userRatings.map(r => r.dish_id));
         const dishOverlap = theirRatings.filter(r => myDishIds.has(r.dish_id)).length;
         const isFollowingThem = userFollows.some(f => f.id === u.id) || (allUsers.find(au => au.id === u.id)?.isFollowing);
+        const theirBadges = viewingUserBadges[u.id] || [];
         return (
           <>
             <div onClick={handleCloseUser} className={`fixed inset-0 bg-black/40 z-50 ${isUserModalClosing ? 'animate-fade-out' : 'animate-fade-in'}`} style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }} />
