@@ -837,6 +837,9 @@ const HuntersFindsApp = () => {
   const [selectedRestaurant, setSelectedRestaurant] = useState(null);
   const [isRestaurantModalClosing, setIsRestaurantModalClosing] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState(null);
+  const [showGroupMemberList, setShowGroupMemberList] = useState(false);
+  const [groupMemberListData, setGroupMemberListData] = useState([]);
+  const [groupMemberListLoading, setGroupMemberListLoading] = useState(false);
   const [isGroupModalClosing, setIsGroupModalClosing] = useState(false);
   const [groupModalView, setGroupModalView] = useState('members');
   // Group chat state
@@ -5345,6 +5348,23 @@ ${adminBugNote}`,
   };
 
   // ===== GROUP CHAT FUNCTIONS =====
+  // Fetch approved member IDs when group opens (for leaderboard)
+  React.useEffect(() => {
+    if (!selectedGroup) return;
+    const g = selectedGroup;
+    if (g.group_type === 'broadcast' || g.type === 'broadcast') return;
+    if (g._approvedMemberIds) return;
+    supabase
+      .from('group_members')
+      .select('user_id, status')
+      .eq('group_id', g.id)
+      .then(({ data }) => {
+        const ids = new Set((data || []).map(m => m.user_id));
+        if (g.creator_id) ids.add(g.creator_id);
+        setSelectedGroup(prev => prev && prev.id === g.id ? { ...prev, _approvedMemberIds: ids } : prev);
+      });
+  }, [selectedGroup?.id]);
+
   const fetchGroupMessages = async (groupId) => {
     if (!groupId) return;
     setGroupMessagesLoading(true);
@@ -5353,7 +5373,6 @@ ${adminBugNote}`,
         .from('group_messages')
         .select('*')
         .eq('group_id', groupId)
-        .eq('is_deleted', false)
         .order('created_at', { ascending: true })
         .limit(100);
       setGroupMessages(data || []);
@@ -5381,15 +5400,17 @@ ${adminBugNote}`,
     if (!selectedGroup || !user) return;
     const username = user.user_metadata?.username || user.email?.split('@')[0] || 'user';
     try {
-      const { data, error } = await supabase.from('group_messages').insert({
+      const insertPayload = {
         group_id: selectedGroup.id,
         user_id: user.id,
         username,
         content: content || null,
-        message_type: type,
+        message_type: type || 'text',
         rating_data: ratingData || null,
-      }).select().single();
-      if (error) throw error;
+        is_deleted: false,
+      };
+      const { data, error } = await supabase.from('group_messages').insert(insertPayload).select().single();
+      if (error) { console.error('sendGroupMessage insert error:', error); throw error; }
       setGroupMessages(prev => [...prev, data]);
     } catch (e) { console.error('sendGroupMessage error:', e); }
   };
@@ -10764,6 +10785,48 @@ ${adminBugNote}`,
         </>
       )}
       
+      {/* Group Member List Modal */}
+      {showGroupMemberList && (
+        <>
+          <div onClick={() => setShowGroupMemberList(false)} className="fixed inset-0 bg-black/50 z-[70]" />
+          <div className="fixed inset-0 flex items-center justify-center z-[71] p-4 pointer-events-none">
+            <div className="bg-white rounded-2xl shadow-2xl pointer-events-auto flex flex-col" style={{ width: 'min(92vw,420px)', maxHeight: '70vh' }}>
+              <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0">
+                <h3 className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>members</h3>
+                <button onClick={() => setShowGroupMemberList(false)}><X size={18} /></button>
+              </div>
+              <div className="overflow-y-auto flex-1 divide-y divide-gray-50">
+                {groupMemberListLoading
+                  ? <div className="flex justify-center py-8"><div className="w-5 h-5 border-2 border-[#33a29b] border-t-transparent rounded-full animate-spin" /></div>
+                  : groupMemberListData.length === 0
+                    ? <p className="text-xs text-gray-400 text-center py-8" style={{ fontFamily: '"Courier New", monospace' }}>no members found</p>
+                    : groupMemberListData.map((m, i) => {
+                        const u = m.users || {};
+                        const uname = u.username || u.email?.split('@')[0] || 'user';
+                        const role = m.role || 'member';
+                        return (
+                          <div key={i} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition cursor-pointer"
+                            onClick={() => { setShowGroupMemberList(false); setSelectedExploreUser({ ...u, isFollowing: userFollows.some(f => f.following_id === u.id) }); }}>
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+                              {uname[0]?.toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-bold" style={{ fontFamily: '"Courier New", monospace' }}>@{uname}</p>
+                              {m.joined_at && <p className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>joined {new Date(m.joined_at).toLocaleDateString()}</p>}
+                            </div>
+                            {role !== 'member' && (
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${role === 'creator' ? 'bg-red-100 text-red-600' : 'bg-indigo-100 text-indigo-600'}`} style={{ fontFamily: '"Courier New", monospace' }}>{role}</span>
+                            )}
+                          </div>
+                        );
+                      })
+                }
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Create Group Modal */}
       <CreateGroupModal
         isOpen={isCreateGroupModalOpen}
@@ -10783,28 +10846,32 @@ ${adminBugNote}`,
         const canPost = isMember && (!isBroadcast || isCreator);
         const username = user?.user_metadata?.username || user?.email?.split('@')[0] || 'user';
 
-        // Leaderboard: top dishes rated by group members
-        const groupMemberRatings = allRatings.filter(r =>
-          !r.is_deleted && r.group_id === g.id
-        );
-        // Fallback: use messages with rating_data
-        const ratingMsgs = groupMessages.filter(m => m.message_type === 'rating' && m.rating_data);
-        const dishScores = {};
-        const dishCounts = {};
-        ratingMsgs.forEach(m => {
-          const rd = m.rating_data;
-          const key = rd.dish_id || rd.dish_name;
-          if (!dishScores[key]) { dishScores[key] = { total: 0, count: 0, ...rd }; dishCounts[key] = 0; }
-          dishScores[key].total += rd.overall_score || 0;
-          dishScores[key].count += 1;
-          dishCounts[key] += 1;
+        // Leaderboard: approved group members only, from allRatings
+        const approvedIds = g._approvedMemberIds || null;
+        const memberRatings = allRatings.filter(r => {
+          if (r.is_deleted) return false;
+          if (isBroadcast) return r.user_id === g.creator_id;
+          if (!approvedIds) return false;
+          return approvedIds.has(r.user_id);
         });
-        const leaderboardItems = Object.values(dishScores).map(d => ({
-          ...d, avg: d.count > 0 ? d.total / d.count : 0
-        }));
+        const dishScores = {};
+        memberRatings.forEach(r => {
+          const dishName = r.dish?.name || r.dish_name || r.name;
+          const restaurantName = r.dish?.restaurant_name || r.restaurant_name || r.dish?.restaurantName;
+          if (!dishName) return;
+          const score = r.overall_score != null ? r.overall_score
+            : (r.taste_score != null && r.portion_score != null && r.price_score != null)
+              ? (r.taste_score + r.portion_score + r.price_score) / 3 : null;
+          if (score == null) return;
+          const key = r.dish_id || dishName;
+          if (!dishScores[key]) dishScores[key] = { dishName, restaurantName, dishId: r.dish_id, total: 0, count: 0 };
+          dishScores[key].total += score;
+          dishScores[key].count += 1;
+        });
+        const leaderboardItems = Object.values(dishScores).map(d => ({ ...d, avg: d.total / d.count }));
         const sortedLeaderboard = leaderboardMode === 'highest'
-          ? leaderboardItems.sort((a, b) => b.avg - a.avg).slice(0, 3)
-          : leaderboardItems.sort((a, b) => b.count - a.count).slice(0, 3);
+          ? [...leaderboardItems].sort((a, b) => b.avg - a.avg).slice(0, 5)
+          : [...leaderboardItems].sort((a, b) => b.count - a.count).slice(0, 5);
 
         // Common emojis for picker
         const COMMON_EMOJIS = ['❤️','🔥','😂','😮','👍','👎','🤤','💯','😍','🙌','👀','💀','🤣','😭','🏆','⭐','🍔','🍜','🌮','🍕'];
@@ -10818,7 +10885,20 @@ ${adminBugNote}`,
 
                 {/* Header */}
                 <div className="flex items-center gap-3 px-4 py-3 border-b flex-shrink-0 rounded-t-2xl">
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <div
+                    className={`flex items-center gap-2 flex-1 min-w-0 ${!isBroadcast ? 'cursor-pointer hover:opacity-70 transition' : ''}`}
+                    onClick={!isBroadcast ? async (e) => {
+                      e.stopPropagation();
+                      setGroupMemberListLoading(true);
+                      setShowGroupMemberList(true);
+                      const { data } = await supabase
+                        .from('group_members')
+                        .select('user_id, role, status, joined_at, users:user_id(id, username, email)')
+                        .eq('group_id', g.id);
+                      setGroupMemberListData(data || []);
+                      setGroupMemberListLoading(false);
+                    } : undefined}
+                  >
                     {isBroadcast
                       ? <Megaphone size={18} className="text-[#33a29b] flex-shrink-0" />
                       : isPrivate
@@ -10884,18 +10964,24 @@ ${adminBugNote}`,
                       </div>
                       {sortedLeaderboard.length === 0
                         ? <p className="text-xs text-gray-400 text-center py-2" style={{ fontFamily: '"Courier New", monospace' }}>no ratings yet</p>
-                        : sortedLeaderboard.map((d, i) => (
-                          <div key={i} className="flex items-center gap-2 py-1">
-                            <span className="text-[10px] font-bold text-gray-400 w-4" style={{ fontFamily: '"Courier New", monospace' }}>#{i + 1}</span>
-                            <div className="flex-1 min-w-0">
-                              <span className="text-xs font-bold truncate block" style={{ fontFamily: '"Courier New", monospace' }}>{d.dish_name}</span>
-                              <span className="text-[10px] text-gray-400 truncate block" style={{ fontFamily: '"Courier New", monospace' }}>{d.restaurant_name}</span>
+                        : sortedLeaderboard.map((d, i) => {
+                          const fullDish = allDishes.find(fd => fd.id === d.dishId || fd.name?.toLowerCase() === d.dishName?.toLowerCase());
+                          return (
+                            <div key={i}
+                              className="flex items-center gap-2 py-1.5 px-1 rounded-lg hover:bg-gray-50 cursor-pointer transition"
+                              onClick={() => { if (fullDish) setSelectedDish(fullDish); }}
+                            >
+                              <span className="text-[10px] font-bold text-gray-400 w-4 flex-shrink-0" style={{ fontFamily: '"Courier New", monospace' }}>#{i + 1}</span>
+                              <div className="flex-1 min-w-0">
+                                <span className="text-xs font-bold truncate block" style={{ fontFamily: '"Courier New", monospace' }}>{d.dishName}</span>
+                                <span className="text-[10px] text-gray-400 truncate block" style={{ fontFamily: '"Courier New", monospace' }}>{d.restaurantName || ''}</span>
+                              </div>
+                              <span className="text-xs font-bold text-[#33a29b] flex-shrink-0" style={{ fontFamily: '"Courier New", monospace' }}>
+                                {leaderboardMode === 'highest' ? d.avg.toFixed(1) : `${d.count}x`}
+                              </span>
                             </div>
-                            <span className="text-xs font-bold text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>
-                              {leaderboardMode === 'highest' ? d.avg.toFixed(1) : `${d.count}x`}
-                            </span>
-                          </div>
-                        ))
+                          );
+                        })
                       }
                     </div>
                   )}
