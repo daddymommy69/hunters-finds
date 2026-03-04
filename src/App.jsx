@@ -2726,6 +2726,8 @@ const HuntersFindsApp = () => {
   // Fetch suggested friends
   // ===================== BADGE SYSTEM =====================
   const fetchUserBadges = async (targetUserId = null) => {
+    // If viewing own profile, treat as self — avoids separate cache entry that can race
+    const isSelf = !targetUserId || targetUserId === user?.id;
     const uid = targetUserId || user?.id;
     if (!uid) return [];
     try {
@@ -2733,8 +2735,7 @@ const HuntersFindsApp = () => {
       let badges = data || [];
 
       // If viewing another user with no DB badges yet, infer basic ones from their ratings
-      // Only use inferred if DB returned nothing — never overwrite real badges with inferred
-      if (targetUserId && badges.length === 0) {
+      if (!isSelf && badges.length === 0) {
         const theirRatingCount = allRatings.filter(r => r.user_id === uid && !r.is_deleted).length;
         const inferred = [];
         const castleTiers = [
@@ -2752,25 +2753,20 @@ const HuntersFindsApp = () => {
         badges = inferred;
       }
 
-      if (!targetUserId) {
-        // Only update own badges if we got results, or if state is currently empty
-        // Prevents a stale re-fetch from wiping a freshly awarded badge
-        setUserBadges(prev => (badges.length > 0 || prev.length === 0) ? badges : prev);
-        // Also fetch own featured_badges order from users table
+      if (isSelf) {
+        // Always update own badges from DB — this is the source of truth
+        if (badges.length > 0) setUserBadges(badges);
         const { data: userData } = await supabase.from('users').select('featured_badges').eq('id', uid).single();
         setFeaturedBadges(userData?.featured_badges || []);
+        // Also keep viewingUserBadges in sync so own profile modal shows correctly
+        if (badges.length > 0) setViewingUserBadges(prev => ({ ...prev, [uid]: badges }));
       } else {
-        // For viewed users: only update if DB returned real badges, or no cached value yet,
-        // or cached value is only inferred (overwrite inferred with real)
+        // Other user: only update if we got real badges, or nothing cached yet
         setViewingUserBadges(prev => {
           const existing = prev[uid] || [];
-          const existingIsInferred = existing.every(b => b.inferred);
-          if (badges.length > 0 || existing.length === 0 || existingIsInferred) {
-            return { ...prev, [uid]: badges };
-          }
-          return prev; // keep existing real badges, don't overwrite with empty
+          if (badges.length > 0 || existing.length === 0) return { ...prev, [uid]: badges };
+          return prev;
         });
-        // Fetch their featured_badges too
         const { data: userData } = await supabase.from('users').select('featured_badges').eq('id', uid).single();
         setViewingUserFeatured(prev => ({ ...prev, [uid]: userData?.featured_badges || [] }));
       }
@@ -2838,7 +2834,9 @@ const HuntersFindsApp = () => {
 
     const stats = { ratingsCount, followersCount, pioneerCount, trendsetterCount, totalLikes:0, totalCommentsReceived:0, longestStreak, activeWeeks, monthsOnApp, rateditsCount, commentsGiven:0, restaurantsWithPhotos:0, maxSameCity, uniqueCities:Object.keys(cities).length, uniqueStates:states.size, uniqueCountries:countries.size, uniqueContinents:continents.size };
 
-    const existing = await fetchUserBadges();
+    // Fetch current badges directly without triggering state update cascade
+    const { data: existingData } = await supabase.from('user_badges').select('*').eq('user_id', user.id);
+    const existing = existingData || [];
     const existingIds = new Set(existing.map(b => b.badge_id));
     const toAward = Object.values(BADGE_DEFS).filter(d => !d.adminOnly && d.autoCompute?.(stats) && !existingIds.has(d.id));
 
@@ -3445,13 +3443,11 @@ const HuntersFindsApp = () => {
     }
   }, [user]);
 
-  // Compute badges when rating/follower data changes
-  // Don't re-run just because follower count changed while viewing a profile modal
+  // Compute badges when rating/follower data changes (debounced to avoid race)
   React.useEffect(() => {
-    if (user && activeUserRatings.length > 0) {
-      const timer = setTimeout(() => computeAndAwardBadges(), 500);
-      return () => clearTimeout(timer);
-    }
+    if (!user || activeUserRatings.length === 0) return;
+    const t = setTimeout(() => computeAndAwardBadges(), 800);
+    return () => clearTimeout(t);
   }, [user?.id, activeUserRatings.length, userFollowers.length]);
 
   // Fetch suggested friends only when on people tab
