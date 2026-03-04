@@ -221,13 +221,20 @@ const BadgeSVGIcon = ({ iconKey, size=20, color='white' }) => {
 };
 
 // Prestige order (highest first) for sorting badges
+// Special/admin badges always take priority, then castle tiers, then everything else
 const BADGE_PRESTIGE = [
+  // Special (admin-granted) — always shown first, castle_lord is #1
+  'castle_lord','founder','taste_maker','ambassador','rat_helper',
+  // Castle tiers (highest first)
   'castle_diamond','castle_gold','castle_silver','castle_bronze','castle_wood',
-  'castle_lord','founder','rat_helper','taste_maker','ambassador',
+  // Social
   'followers_10000','followers_1000','followers_100','followers_10','followers_1',
   'trendsetter','pioneer','most_liked','most_commented',
+  // Explorer
   'mr_worldwide','foreign_eater','local_diamond','city_hopper','state_wanderer','local_silver','local_bronze',
+  // Consistency
   'streak_7','four_weeks','loyal',
+  // Other
   'master_rat','critic','photographer','unsure_eater',
 ];
 
