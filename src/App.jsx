@@ -1038,9 +1038,9 @@ const HuntersFindsApp = () => {
       (async () => {
         const { data } = await supabase
           .from('bug_reports')
-          .select('*, users:user_id(username, email)')
+          .select('*')
           .order('created_at', { ascending: false });
-        setBugReports((data || []).map(r => ({ ...r, username: r.users?.username || r.users?.email?.split('@')[0] })));
+        setBugReports(data || []);
       })();
     }
   }, [user, userRole]);
@@ -1909,6 +1909,9 @@ const HuntersFindsApp = () => {
   const [publicBugReports, setPublicBugReports] = useState([]);
   const [bugUpvotes, setBugUpvotes] = useState({});
   const [showAdminBugPanel, setShowAdminBugPanel] = useState(false);
+  const [showDmShareModal, setShowDmShareModal] = useState(false);
+  const [dmShareDish, setDmShareDish] = useState(null);
+  const [dmShareSearch, setDmShareSearch] = useState('');
   const [adminBugFilter, setAdminBugFilter] = useState('all');
   const [selectedBugReport, setSelectedBugReport] = useState(null);
   const [adminBugNote, setAdminBugNote] = useState('');
@@ -5132,6 +5135,14 @@ const HuntersFindsApp = () => {
       if (error) throw error;
       setBugReportText(''); setBugReportScreenshot(null); setBugReportAnon(false); setShowBugModal(false);
       setErrorModal({ show: true, title: 'Submitted! 🐛', message: 'Your report has been received. Thanks for helping improve the app!' });
+      // Refresh admin bug list immediately
+      if (userRole === 'admin') {
+        const { data: fresh } = await supabase
+          .from('bug_reports')
+          .select('*')
+          .order('created_at', { ascending: false });
+        setBugReports((fresh || []).map(r => ({ ...r, username: r.username || user.user_metadata?.username || user.email?.split('@')[0] })));
+      }
     } catch (err) {
       setErrorModal({ show: true, title: 'Error', message: 'Could not submit. Try again.' });
     } finally { setBugReportSubmitting(false); }
@@ -5242,6 +5253,30 @@ ${adminBugNote}`,
         message: `New message from @${senderName}`, read: false,
       });
     } catch (err) { console.error('DM send error:', err); }
+  };
+
+  const handleSendDishDm = async (receiverId, receiverName, dish) => {
+    // Opens DM and pre-populates a dish share card
+    await handleStartDm(receiverId, receiverName);
+    // Send the dish as a special message
+    const senderName = user.user_metadata?.username || user.email?.split('@')[0];
+    const dishCard = JSON.stringify({
+      dish_id: dish.id,
+      dish_name: dish.name,
+      restaurant_name: dish.restaurantName || dish.restaurant_name || '',
+      score: dish.communityScore || dish.srr || null,
+    });
+    await supabase.from('dm_messages').insert({
+      sender_id: user.id, receiver_id: receiverId,
+      text: null, dm_type: 'dish_share',
+      dish_data: dishCard,
+      read_at: null,
+      sender_username: senderName, receiver_username: receiverName,
+    });
+    await supabase.from('notifications').insert({
+      user_id: receiverId, type: 'dm',
+      message: `@${senderName} shared a dish with you`, read: false,
+    });
   };
 
   const handleStartDm = async (userId, username) => {
@@ -7993,36 +8028,48 @@ ${adminBugNote}`,
                                 ? parseFloat(((rating.taste_score + rating.portion_score + rating.price_score) / 3).toFixed(2)) : null;
                             const dishName = rating.dish?.name || dishObj?.name || 'Unknown';
                             const restaurantName = rating.dish?.restaurant_name || dishObj?.restaurantName || '';
-                            const price = rating.price || dishObj?.price;
-                            const hoursAgo = (Date.now() - new Date(rating.created_at)) / 3600000;
-                            const timeLabel = hoursAgo < 1 ? 'just now' : hoursAgo < 24 ? `${Math.floor(hoursAgo)}h ago` : `${Math.floor(hoursAgo/24)}d ago`;
+                            const t = rating.taste_score != null ? parseFloat(rating.taste_score).toFixed(1) : null;
+                            const pr = rating.price_score != null ? parseFloat(rating.price_score).toFixed(1) : (rating.price_value_score != null ? parseFloat(rating.price_value_score).toFixed(1) : null);
+                            const po = rating.portion_score != null ? parseFloat(rating.portion_score).toFixed(1) : null;
+                            // Glow color based on score
+                            const glowStyle = srr != null ? (() => {
+                              if (srr >= 96) return { color: '#9333ea', shadow: '0 0 8px 1px rgba(147,51,234,0.35)' };
+                              if (srr >= 89) return { color: '#eab308', shadow: '0 0 8px 1px rgba(234,179,8,0.35)' };
+                              if (srr >= 81) return { color: '#9ca3af', shadow: '0 0 8px 1px rgba(156,163,175,0.35)' };
+                              if (srr >= 72) return { color: '#22c55e', shadow: '0 0 8px 1px rgba(34,197,94,0.35)' };
+                              return { color: '#3b82f6', shadow: '0 0 8px 1px rgba(59,130,246,0.35)' };
+                            })() : null;
                             return (
-                              <div key={rating.id} className="bg-gray-50 rounded-lg p-3 mb-2 last:mb-0">
-                                <div onClick={() => { if (dishObj) setSelectedDish(dishObj); }} className="cursor-pointer hover:opacity-80 transition">
-                                  <div className="flex items-center gap-3">
-                                    <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
-                                      <Image size={18} className="text-gray-400" />
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="font-semibold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}>{dishName}</div>
-                                      <div className="text-xs text-gray-500 truncate" style={{ fontFamily: '"Courier New", monospace' }}>
-                                        {restaurantName}{price != null ? ` • $${parseFloat(price).toFixed(2)}` : ''}
-                                      </div>
-                                      <div className="text-xs text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>rated {timeLabel}</div>
-                                    </div>
-                                    {srr != null && <div className={`text-xl font-bold flex-shrink-0 ${getSRRColor(srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{srr.toFixed(2)}</div>}
-                                  </div>
+                              <div key={rating.id}
+                                onClick={() => { if (dishObj) setSelectedDish(dishObj); }}
+                                className="flex items-center gap-3 py-2.5 px-2 rounded-lg cursor-pointer hover:bg-gray-100 transition border-b border-gray-100 last:border-0"
+                              >
+                                {/* Left: name + restaurant */}
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-semibold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}>{dishName}</div>
+                                  <div className="text-[11px] text-gray-400 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{restaurantName}</div>
                                 </div>
-                                {canEditRating({ user_id: user.id, created_at: rating.created_at }) && (
-                                  <div className="flex gap-2 mt-2 pt-2 border-t border-gray-200">
-                                    <button onClick={(e) => { e.stopPropagation(); handleEditRating({ id: rating.id, dish_name: dishName, dish: { name: dishName }, restaurant_name: restaurantName, taste_score: rating.taste_score, portion_score: rating.portion_score, price_value_score: rating.price_value_score, price, comment: rating.comment || '', created_at: rating.created_at, edit_count: rating.edit_count || 0 }); }}
-                                      className="px-3 py-1 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100 border border-blue-200 font-medium" style={{ fontFamily: '"Courier New", monospace' }}>Edit</button>
-                                    {canDeleteRating({ user_id: user.id, created_at: rating.created_at }) && (
-                                      <button onClick={(e) => { e.stopPropagation(); handleDeleteRating({ id: rating.id, dish_name: dishName, dish: { name: dishName }, restaurant_name: restaurantName, user_id: user.id, taste_score: rating.taste_score, portion_score: rating.portion_score, price_value_score: rating.price_value_score, price, comment: rating.comment || '', created_at: rating.created_at }); }}
-                                        className="px-3 py-1 text-xs bg-red-50 text-red-700 rounded hover:bg-red-100 border border-red-200 font-medium" style={{ fontFamily: '"Courier New", monospace' }}>Delete</button>
-                                    )}
-                                  </div>
-                                )}
+                                {/* Right: sub-scores row + overall score */}
+                                <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                                  {/* Sub-scores horizontal */}
+                                  {(t || pr || po) && (
+                                    <div className="flex items-center gap-2">
+                                      {t && <span className="text-[10px] font-bold" style={{ color: '#f97316', fontFamily: '"Courier New", monospace' }}>T {t}</span>}
+                                      {pr && <span className="text-[10px] font-bold" style={{ color: '#22c55e', fontFamily: '"Courier New", monospace' }}>P {pr}</span>}
+                                      {po && <span className="text-[10px] font-bold" style={{ color: '#3b82f6', fontFamily: '"Courier New", monospace' }}>Po {po}</span>}
+                                    </div>
+                                  )}
+                                  {/* Overall score with glow */}
+                                  {srr != null && glowStyle && (
+                                    <div style={{
+                                      fontFamily: '"Courier New", monospace',
+                                      fontWeight: 'bold',
+                                      fontSize: '1.1rem',
+                                      color: glowStyle.color,
+                                      textShadow: glowStyle.shadow,
+                                    }}>{srr.toFixed(2)}</div>
+                                  )}
+                                </div>
                               </div>
                             );
                           })
@@ -8032,148 +8079,225 @@ ${adminBugNote}`,
               )}
 
               {/* DMs Tab */}
-              {youView === 'dms' && (
-                <div className="space-y-3">
-                  {!selectedDmThread ? (
-                    <>
-                      <div className="bg-white rounded-lg p-4 shadow-sm">
-                        <h3 className="text-sm font-semibold mb-3" style={{ fontFamily: '"Courier New", monospace' }}>messages</h3>
-                        {/* New DM search */}
-                        <div className="relative mb-3">
-                          <input
-                            value={dmUserSearch}
-                            onChange={e => setDmUserSearch(e.target.value)}
-                            placeholder="start new conversation..."
-                            className="w-full pl-3 pr-3 py-2 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
-                            style={{ fontFamily: '"Courier New", monospace' }}
-                          />
-                          {dmUserSearch.length >= 2 && (
-                            <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto mt-1">
-                              {allUsers
-                                .filter(u => u.id !== user?.id && (
-                                  (u.username || '').toLowerCase().includes(dmUserSearch.toLowerCase()) ||
-                                  (u.email || '').toLowerCase().includes(dmUserSearch.toLowerCase())
-                                ))
-                                .slice(0, 8)
-                                .map(u => {
-                                  const uname = u.username || u.email?.split('@')[0] || 'user';
-                                  return (
-                                    <div key={u.id}
-                                      className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer"
-                                      onClick={() => { setDmUserSearch(''); handleStartDm(u.id, uname); }}
-                                    >
-                                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                                        {uname[0]?.toUpperCase()}
-                                      </div>
-                                      <span className="text-xs font-medium" style={{ fontFamily: '"Courier New", monospace' }}>@{uname}</span>
-                                    </div>
-                                  );
-                                })
+              {youView === 'dms' && (() => {
+                const DmAvatar = ({ name, size = 9, photo = null }) => (
+                  <div style={{ width: size*4, height: size*4, borderRadius: '50%', flexShrink: 0, overflow: 'hidden', background: 'linear-gradient(135deg,#33a29b,#2a8a84)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {photo
+                      ? <img src={photo} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
+                      : null}
+                    <span style={{ color: '#fff', fontWeight: 'bold', fontSize: size < 9 ? 11 : 14, fontFamily: '"Courier New", monospace', display: photo ? 'none' : 'flex' }}>{(name||'?')[0]?.toUpperCase()}</span>
+                  </div>
+                );
+                const timeAgo = (ts) => { const h=(Date.now()-new Date(ts))/3600000; return h<1?'just now':h<24?`${Math.floor(h)}h`:`${Math.floor(h/24)}d`; };
+                const otherUserObj = selectedDmThread ? allUsers.find(u => u.id === selectedDmThread.otherId) : null;
+                const suggestedUsers = !dmUserSearch ? userFollows.map(f => allUsers.find(u => u.id === f.following_id)).filter(Boolean).slice(0,6) : [];
+
+                if (selectedDmThread) return (
+                  <div className="bg-white rounded-xl shadow-sm flex flex-col" style={{ height: '68vh' }}>
+                    {/* Header */}
+                    <div className="flex items-center gap-3 px-4 py-3 border-b flex-shrink-0">
+                      <button onClick={() => setSelectedDmThread(null)} className="text-gray-400 hover:text-gray-700 transition mr-1">
+                        <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                      </button>
+                      <div className="cursor-pointer" onClick={() => { if (otherUserObj) setSelectedExploreUser({ ...otherUserObj, isFollowing: userFollows.some(f => f.following_id === otherUserObj.id) }); }}>
+                        <DmAvatar name={selectedDmThread.otherName} size={9} photo={otherUserObj?.avatar_url} />
+                      </div>
+                      <div className="flex-1 cursor-pointer" onClick={() => { if (otherUserObj) setSelectedExploreUser({ ...otherUserObj, isFollowing: userFollows.some(f => f.following_id === otherUserObj.id) }); }}>
+                        <span className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>@{selectedDmThread.otherName}</span>
+                      </div>
+                    </div>
+                    {/* Messages */}
+                    <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1"
+                      ref={el => { if (el) el.scrollTop = el.scrollHeight; }}>
+                      {dmLoading
+                        ? <div className="flex justify-center py-8"><div className="w-5 h-5 border-2 border-[#33a29b] border-t-transparent rounded-full animate-spin"/></div>
+                        : dmMessages.length === 0
+                          ? <p className="text-xs text-gray-400 text-center py-8" style={{ fontFamily: '"Courier New", monospace' }}>say hello 👋</p>
+                          : dmMessages.map((msg, i) => {
+                              const isMe = msg.sender_id === user?.id;
+                              const showAvatar = !isMe && (i === 0 || dmMessages[i-1]?.sender_id !== msg.sender_id);
+                              const isDishShare = msg.dm_type === 'dish_share';
+                              let dishData = null;
+                              if (isDishShare && msg.dish_data) {
+                                try { dishData = JSON.parse(msg.dish_data); } catch(e) {}
                               }
-                            </div>
-                          )}
-                        </div>
-                        {/* Thread list */}
-                        {dmThreads.length === 0
-                          ? <p className="text-xs text-gray-400 text-center py-4" style={{ fontFamily: '"Courier New", monospace' }}>no messages yet — search above to start one</p>
-                          : dmThreads.map(thread => {
-                              const lastMsg = thread.messages[0];
-                              const isUnread = thread.unread > 0;
                               return (
-                                <div key={thread.otherId}
-                                  className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer hover:bg-gray-50 transition border ${isUnread ? 'border-[#33a29b] bg-teal-50/30' : 'border-transparent'}`}
-                                  onClick={() => { setSelectedDmThread(thread); fetchDmMessages(thread.otherId); }}
-                                >
-                                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
-                                    {(thread.otherName || '?')[0]?.toUpperCase()}
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center justify-between">
-                                      <span className={`text-sm ${isUnread ? 'font-bold' : 'font-medium'}`} style={{ fontFamily: '"Courier New", monospace' }}>@{thread.otherName}</span>
-                                      {lastMsg && <span className="text-[10px] text-gray-400">{(() => { const h = (Date.now()-new Date(lastMsg.created_at))/3600000; return h < 1 ? 'just now' : h < 24 ? `${Math.floor(h)}h ago` : `${Math.floor(h/24)}d ago`; })()}</span>}
+                                <div key={msg.id || i} className={`flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'} ${i > 0 && dmMessages[i-1]?.sender_id === msg.sender_id ? 'mt-0.5' : 'mt-2'}`}>
+                                  {!isMe && (
+                                    <div style={{ width: 28, flexShrink: 0 }}>
+                                      {showAvatar && (
+                                        <div className="cursor-pointer" onClick={() => { if (otherUserObj) setSelectedExploreUser({ ...otherUserObj, isFollowing: userFollows.some(f => f.following_id === otherUserObj.id) }); }}>
+                                          <DmAvatar name={selectedDmThread.otherName} size={7} photo={otherUserObj?.avatar_url} />
+                                        </div>
+                                      )}
                                     </div>
-                                    {lastMsg && <p className="text-xs text-gray-500 truncate">{lastMsg.sender_id === user?.id ? 'You: ' : ''}{lastMsg.text || (lastMsg.image_url ? '📷 image' : '')}</p>}
+                                  )}
+                                  <div className={`max-w-[72%] ${isMe ? 'items-end' : 'items-start'} flex flex-col gap-0.5`}>
+                                    {isDishShare && dishData ? (
+                                      <div
+                                        onClick={() => { const d = allDishes.find(d => d.id === dishData.dish_id || d.name === dishData.dish_name); if (d) setSelectedDish(d); }}
+                                        className={`cursor-pointer rounded-2xl overflow-hidden border ${isMe ? 'border-[#33a29b]/30 rounded-br-sm' : 'border-gray-200 rounded-bl-sm'}`}
+                                        style={{ minWidth: 180 }}
+                                      >
+                                        <div className={`px-3 py-2.5 ${isMe ? 'bg-[#33a29b]/10' : 'bg-gray-50'}`}>
+                                          <div className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>shared a dish</div>
+                                          <div className="font-bold text-xs text-gray-800 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{dishData.dish_name}</div>
+                                          <div className="text-[10px] text-gray-400 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{dishData.restaurant_name}</div>
+                                          {dishData.score != null && (
+                                            <div className="text-xs font-bold mt-1" style={{ color: '#33a29b', fontFamily: '"Courier New", monospace' }}>{parseFloat(dishData.score).toFixed(2)}</div>
+                                          )}
+                                        </div>
+                                        <div className={`text-[9px] px-3 py-1 ${isMe ? 'bg-[#33a29b]/5 text-[#33a29b]' : 'bg-gray-100 text-gray-400'}`} style={{ fontFamily: '"Courier New", monospace' }}>tap to view →</div>
+                                      </div>
+                                    ) : (
+                                      <div className={`px-3 py-2 rounded-2xl text-xs ${isMe ? 'bg-[#33a29b] text-white rounded-br-sm' : 'bg-gray-100 text-gray-800 rounded-bl-sm'} ${msg.dm_type === 'bug' ? 'border-l-2 border-orange-300' : msg.dm_type === 'admin' ? 'border-l-2 border-red-300' : ''}`}
+                                        style={{ fontFamily: '"Courier New", monospace', wordBreak: 'break-word' }}>
+                                        {msg.text && <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>}
+                                        {msg.image_url && <img src={msg.image_url} alt="img" className="mt-1 rounded-xl max-w-full max-h-48 object-contain" />}
+                                      </div>
+                                    )}
+                                    <p className={`text-[9px] ${isMe ? 'text-right text-gray-300' : 'text-gray-300'}`} style={{ fontFamily: '"Courier New", monospace' }}>{timeAgo(msg.created_at)}</p>
                                   </div>
-                                  {isUnread && <span className="w-2 h-2 bg-[#33a29b] rounded-full flex-shrink-0" />}
                                 </div>
                               );
                             })
-                        }
-                      </div>
-                    </>
-                  ) : (
-                    <div className="bg-white rounded-lg shadow-sm flex flex-col" style={{ height: '65vh' }}>
-                      {/* Thread header */}
-                      <div className="flex items-center gap-3 px-4 py-3 border-b flex-shrink-0">
-                        <button onClick={() => setSelectedDmThread(null)} className="text-gray-400 hover:text-gray-600 transition">
-                          <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-                        </button>
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-sm font-bold">
-                          {(selectedDmThread.otherName || '?')[0]?.toUpperCase()}
+                      }
+                    </div>
+                    {/* Input */}
+                    <div className="flex-shrink-0 px-3 py-2.5 border-t bg-white rounded-b-xl">
+                      {dmScreenshot && (
+                        <div className="flex items-center gap-2 mb-2 px-1 text-xs text-gray-500">
+                          <span className="truncate">📎 {dmScreenshot.name}</span>
+                          <button onClick={() => setDmScreenshot(null)} className="text-red-400 font-bold ml-auto">×</button>
                         </div>
-                        <span className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>@{selectedDmThread.otherName}</span>
+                      )}
+                      <div className="flex items-end gap-2">
+                        <label className="cursor-pointer text-gray-400 hover:text-[#33a29b] transition flex-shrink-0 pb-2">
+                          <input type="file" accept="image/*" className="hidden" onChange={e => setDmScreenshot(e.target.files[0])} />
+                          <Image size={18} />
+                        </label>
+                        <textarea
+                          value={dmInput}
+                          onChange={e => setDmInput(e.target.value.slice(0,2000))}
+                          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendDm(selectedDmThread.otherId, selectedDmThread.otherName); } }}
+                          placeholder="message..."
+                          rows={1}
+                          className="flex-1 px-3 py-2 text-xs border border-gray-200 rounded-full focus:border-[#33a29b] focus:outline-none resize-none bg-gray-50"
+                          style={{ fontFamily: '"Courier New", monospace', maxHeight: 80 }}
+                        />
+                        <button
+                          onClick={() => handleSendDm(selectedDmThread.otherId, selectedDmThread.otherName)}
+                          disabled={!dmInput.trim() && !dmScreenshot}
+                          className="p-2 bg-[#33a29b] text-white rounded-full disabled:opacity-40 hover:bg-[#2a8a84] transition flex-shrink-0"
+                        >
+                          <Send size={14} />
+                        </button>
                       </div>
-                      {/* Messages */}
-                      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2"
-                        ref={el => { if (el) el.scrollTop = el.scrollHeight; }}>
-                        {dmLoading
-                          ? <div className="flex justify-center py-8"><div className="w-5 h-5 border-2 border-[#33a29b] border-t-transparent rounded-full animate-spin" /></div>
-                          : dmMessages.length === 0
-                            ? <p className="text-xs text-gray-400 text-center py-8" style={{ fontFamily: '"Courier New", monospace' }}>no messages yet — say hello!</p>
-                            : dmMessages.map((msg, i) => {
-                                const isMe = msg.sender_id === user?.id;
-                                const borderColor = msg.dm_type === 'bug' ? 'border-orange-300' : msg.dm_type === 'admin' ? 'border-red-300' : '';
+                    </div>
+                  </div>
+                );
+
+                return (
+                  <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+                    {/* Top bar with search */}
+                    <div className="px-4 pt-4 pb-3 border-b">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>messages</h3>
+                        {dmUnreadCount > 0 && <span className="text-[10px] bg-[#33a29b] text-white px-2 py-0.5 rounded-full font-bold">{dmUnreadCount} unread</span>}
+                      </div>
+                      <div className="relative">
+                        <input
+                          value={dmUserSearch}
+                          onChange={e => setDmUserSearch(e.target.value)}
+                          placeholder="search people..."
+                          className="w-full pl-8 pr-3 py-2 text-xs bg-gray-100 border-0 rounded-full focus:outline-none focus:ring-2 focus:ring-[#33a29b]/30"
+                          style={{ fontFamily: '"Courier New", monospace' }}
+                        />
+                        <svg className="absolute left-2.5 top-2.5 text-gray-400" width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                        {dmUserSearch.length >= 1 && (
+                          <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-lg z-20 max-h-52 overflow-y-auto mt-1">
+                            {allUsers
+                              .filter(u => u.id !== user?.id && (
+                                (u.username || '').toLowerCase().includes(dmUserSearch.toLowerCase()) ||
+                                (u.email || '').toLowerCase().includes(dmUserSearch.toLowerCase())
+                              ))
+                              .slice(0, 8)
+                              .map(u => {
+                                const uname = u.username || u.email?.split('@')[0] || 'user';
                                 return (
-                                  <div key={msg.id || i} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                                    <div className={`max-w-[75%] px-3 py-2 rounded-2xl text-xs ${isMe ? 'bg-[#33a29b] text-white rounded-br-sm' : `bg-gray-100 text-gray-800 rounded-bl-sm ${borderColor ? `border-l-2 ${borderColor}` : ''}`}`}
-                                      style={{ fontFamily: '"Courier New", monospace' }}>
-                                      {msg.text && <p className="whitespace-pre-wrap">{msg.text}</p>}
-                                      {msg.image_url && <img src={msg.image_url} alt="img" className="mt-1 rounded max-w-full max-h-48 object-contain" />}
-                                      <p className={`text-[9px] mt-1 ${isMe ? 'text-teal-100' : 'text-gray-400'}`}>
-                                        {(() => { const h=(Date.now()-new Date(msg.created_at))/3600000; return h<1?'just now':h<24?`${Math.floor(h)}h ago`:`${Math.floor(h/24)}d ago`; })()}
-                                      </p>
-                                    </div>
+                                  <div key={u.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 cursor-pointer"
+                                    onClick={() => { setDmUserSearch(''); handleStartDm(u.id, uname); }}>
+                                    <DmAvatar name={uname} size={8} photo={u.avatar_url} />
+                                    <span className="text-xs font-medium" style={{ fontFamily: '"Courier New", monospace' }}>@{uname}</span>
                                   </div>
                                 );
                               })
-                        }
-                      </div>
-                      {/* Input */}
-                      <div className="flex-shrink-0 px-3 py-3 border-t">
-                        {dmScreenshot && (
-                          <div className="flex items-center gap-2 mb-2 text-xs text-gray-500">
-                            <span>📎 {dmScreenshot.name}</span>
-                            <button onClick={() => setDmScreenshot(null)} className="text-red-400">×</button>
+                            }
                           </div>
                         )}
-                        <div className="flex items-end gap-2">
-                          <label className="cursor-pointer text-gray-400 hover:text-[#33a29b] transition flex-shrink-0 pb-1">
-                            <input type="file" accept="image/*" className="hidden" onChange={e => setDmScreenshot(e.target.files[0])} />
-                            <Image size={18} />
-                          </label>
-                          <textarea
-                            value={dmInput}
-                            onChange={e => setDmInput(e.target.value.slice(0,2000))}
-                            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendDm(selectedDmThread.otherId, selectedDmThread.otherName); } }}
-                            placeholder="message..."
-                            rows={1}
-                            className="flex-1 px-3 py-2 text-xs border-2 border-gray-200 rounded-xl focus:border-[#33a29b] focus:outline-none resize-none"
-                            style={{ fontFamily: '"Courier New", monospace' }}
-                          />
-                          <button
-                            onClick={() => handleSendDm(selectedDmThread.otherId, selectedDmThread.otherName)}
-                            disabled={!dmInput.trim() && !dmScreenshot}
-                            className="p-2 bg-[#33a29b] text-white rounded-full disabled:opacity-40 hover:bg-[#2a8a84] transition flex-shrink-0"
-                          >
-                            <Send size={14} />
-                          </button>
-                        </div>
-                        <p className="text-[9px] text-gray-300 text-right mt-1" style={{ fontFamily: '"Courier New", monospace' }}>{dmInput.length}/2000</p>
                       </div>
+                      {/* Suggested — people you follow, shown before typing */}
+                      {!dmUserSearch && suggestedUsers.length > 0 && dmThreads.length === 0 && (
+                        <div className="mt-3">
+                          <p className="text-[10px] text-gray-400 mb-2 font-bold uppercase tracking-wide" style={{ fontFamily: '"Courier New", monospace' }}>suggested</p>
+                          <div className="flex gap-3 overflow-x-auto pb-1">
+                            {suggestedUsers.map(u => {
+                              const uname = u.username || u.email?.split('@')[0] || 'user';
+                              return (
+                                <div key={u.id} className="flex flex-col items-center gap-1 cursor-pointer flex-shrink-0"
+                                  onClick={() => handleStartDm(u.id, uname)}>
+                                  <DmAvatar name={uname} size={10} photo={u.avatar_url} />
+                                  <span className="text-[10px] text-gray-500 max-w-[48px] truncate text-center" style={{ fontFamily: '"Courier New", monospace' }}>@{uname}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              )}
+                    {/* Thread list */}
+                    {dmThreads.length === 0
+                      ? (
+                        <div className="px-4 py-8 text-center">
+                          <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                            <MessageCircle size={22} className="text-gray-300" />
+                          </div>
+                          <p className="text-xs text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>no messages yet</p>
+                          <p className="text-[10px] text-gray-300 mt-1" style={{ fontFamily: '"Courier New", monospace' }}>search above to start a conversation</p>
+                        </div>
+                      )
+                      : dmThreads.map((thread, i) => {
+                          const lastMsg = thread.messages[0];
+                          const isUnread = thread.unread > 0;
+                          const tUser = allUsers.find(u => u.id === thread.otherId);
+                          return (
+                            <div key={thread.otherId}
+                              className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition ${i < dmThreads.length - 1 ? 'border-b border-gray-50' : ''}`}
+                              onClick={() => { setSelectedDmThread(thread); fetchDmMessages(thread.otherId); }}
+                            >
+                              <div className="relative flex-shrink-0">
+                                <DmAvatar name={thread.otherName} size={10} photo={tUser?.avatar_url} />
+                                {isUnread && <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-[#33a29b] rounded-full border-2 border-white" />}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-baseline justify-between">
+                                  <span className={`text-sm ${isUnread ? 'font-bold text-gray-900' : 'font-medium text-gray-700'}`} style={{ fontFamily: '"Courier New", monospace' }}>@{thread.otherName}</span>
+                                  {lastMsg?.created_at && <span className="text-[10px] text-gray-300 flex-shrink-0 ml-2">{timeAgo(lastMsg.created_at)}</span>}
+                                </div>
+                                {lastMsg && (
+                                  <p className={`text-xs truncate mt-0.5 ${isUnread ? 'text-gray-600 font-medium' : 'text-gray-400'}`}>
+                                    {lastMsg.sender_id === user?.id ? 'You: ' : ''}
+                                    {lastMsg.dm_type === 'dish_share' ? '🍽 shared a dish' : (lastMsg.text || (lastMsg.image_url ? '📷 photo' : ''))}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
+                    }
+                  </div>
+                );
+              })()}
 
               {youView === 'groups' && (
                 <div className="space-y-3">
@@ -9732,11 +9856,26 @@ ${adminBugNote}`,
 
               {/* FLOATING BOTTOM BUTTON */}
               <div className="flex-shrink-0 px-4 py-3 border-t bg-white rounded-b-2xl">
-                <button
-                  onClick={() => { setRestaurant(selectedDish.restaurantName); setDishName(selectedDish.name); setIsSubmissionModalOpen(true); handleCloseDish(); }}
-                  className={`w-full py-3 rounded-xl font-bold text-sm transition ${(userHasRatedDish && !!activeUserRatings.find(r => r.dish_id === selectedDish.id)) ? 'bg-gray-100 text-gray-500 hover:bg-gray-200 border border-gray-200' : 'bg-[#33a29b] text-white hover:bg-[#2a8a84] shadow-md'}`}
-                  style={{ fontFamily: '"Courier New", monospace' }}
-                >{(userHasRatedDish && !!activeUserRatings.find(r => r.dish_id === selectedDish.id)) ? 'edit your rating' : 'rate this dish'}</button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setRestaurant(selectedDish.restaurantName); setDishName(selectedDish.name); setIsSubmissionModalOpen(true); handleCloseDish(); }}
+                    className={`flex-1 py-3 rounded-xl font-bold text-sm transition ${(userHasRatedDish && !!activeUserRatings.find(r => r.dish_id === selectedDish.id)) ? 'bg-gray-100 text-gray-500 hover:bg-gray-200 border border-gray-200' : 'bg-[#33a29b] text-white hover:bg-[#2a8a84] shadow-md'}`}
+                    style={{ fontFamily: '"Courier New", monospace' }}
+                  >{(userHasRatedDish && !!activeUserRatings.find(r => r.dish_id === selectedDish.id)) ? 'edit your rating' : 'rate this dish'}</button>
+                  {user && (
+                    <button
+                      onClick={() => {
+                        setDmShareDish(selectedDish);
+                        setShowDmShareModal(true);
+                      }}
+                      className="px-4 py-3 rounded-xl bg-gray-100 text-gray-600 hover:bg-gray-200 transition border border-gray-200 flex items-center justify-center gap-1.5"
+                      style={{ fontFamily: '"Courier New", monospace' }}
+                      title="share dish"
+                    >
+                      <Send size={15} />
+                    </button>
+                  )}
+                </div>
               </div>
 
             </div>
@@ -10817,6 +10956,15 @@ ${adminBugNote}`,
                             {role !== 'member' && (
                               <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${role === 'creator' ? 'bg-red-100 text-red-600' : 'bg-indigo-100 text-indigo-600'}`} style={{ fontFamily: '"Courier New", monospace' }}>{role}</span>
                             )}
+                            {user && u.id !== user.id && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setShowGroupMemberList(false); setSelectedGroup(null); handleStartDm(u.id, uname); setYouView('dms'); }}
+                                className="p-1.5 rounded-full hover:bg-gray-100 text-gray-400 hover:text-[#33a29b] transition flex-shrink-0"
+                                title="send message"
+                              >
+                                <MessageCircle size={15} />
+                              </button>
+                            )}
                           </div>
                         );
                       })
@@ -11736,6 +11884,69 @@ ${adminBugNote}`,
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Dish Share via DM Modal */}
+      {showDmShareModal && dmShareDish && user && (
+        <>
+          <div onClick={() => { setShowDmShareModal(false); setDmShareSearch(''); }} className="fixed inset-0 bg-black/50 z-[75]" />
+          <div className="fixed inset-0 flex items-end justify-center z-[76] pointer-events-none">
+            <div className="bg-white rounded-t-2xl pointer-events-auto w-full" style={{ maxWidth: 480, maxHeight: '70vh', fontFamily: '"Courier New", monospace' }}>
+              <div className="flex items-center justify-between px-4 py-3 border-b">
+                <h3 className="font-bold text-sm">share dish</h3>
+                <button onClick={() => { setShowDmShareModal(false); setDmShareSearch(''); }}><X size={18} className="text-gray-400" /></button>
+              </div>
+              {/* Dish preview */}
+              <div className="px-4 py-3 bg-gray-50 border-b flex items-center gap-3">
+                <div className="w-10 h-10 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0"><Image size={16} className="text-gray-400" /></div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-sm truncate">{dmShareDish.name}</div>
+                  <div className="text-xs text-gray-400 truncate">{dmShareDish.restaurantName || dmShareDish.restaurant_name}</div>
+                </div>
+              </div>
+              {/* Search */}
+              <div className="px-4 py-3">
+                <div className="relative mb-3">
+                  <input value={dmShareSearch} onChange={e => setDmShareSearch(e.target.value)}
+                    placeholder="search people..."
+                    className="w-full pl-8 pr-3 py-2 text-xs bg-gray-100 rounded-full border-0 focus:outline-none focus:ring-2 focus:ring-[#33a29b]/30"
+                    autoFocus
+                  />
+                  <svg className="absolute left-2.5 top-2.5 text-gray-400" width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                </div>
+                {/* People list */}
+                <div className="overflow-y-auto" style={{ maxHeight: 220 }}>
+                  {(dmShareSearch.length >= 1
+                    ? allUsers.filter(u => u.id !== user.id && ((u.username||'').toLowerCase().includes(dmShareSearch.toLowerCase()) || (u.email||'').toLowerCase().includes(dmShareSearch.toLowerCase())))
+                    : allUsers.filter(u => u.id !== user.id && userFollows.some(f => f.following_id === u.id))
+                  ).slice(0, 10).map(u => {
+                    const uname = u.username || u.email?.split('@')[0] || 'user';
+                    return (
+                      <div key={u.id}
+                        className="flex items-center gap-3 py-2.5 cursor-pointer hover:bg-gray-50 rounded-lg px-1"
+                        onClick={async () => {
+                          setShowDmShareModal(false);
+                          setDmShareSearch('');
+                          await handleSendDishDm(u.id, uname, dmShareDish);
+                          setYouView('dms');
+                        }}
+                      >
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+                          {uname[0]?.toUpperCase()}
+                        </div>
+                        <span className="text-sm font-medium">@{uname}</span>
+                        <span className="ml-auto text-[10px] text-[#33a29b] font-bold">send →</span>
+                      </div>
+                    );
+                  })}
+                  {!dmShareSearch && allUsers.filter(u => u.id !== user.id && userFollows.some(f => f.following_id === u.id)).length === 0 && (
+                    <p className="text-xs text-gray-400 text-center py-4">follow people to share dishes with them</p>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </>
