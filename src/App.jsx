@@ -8745,9 +8745,9 @@ const HuntersFindsApp = () => {
                           onClick={() => setShowCategoryTooltip(v => !v)}
                         >?</div>
                         {showCategoryTooltip && (
-                          <div className="absolute bottom-full left-0 mb-2 w-56 bg-gray-900 text-white text-[10px] rounded-lg px-3 py-2 z-50 shadow-xl pointer-events-none" style={{ fontFamily: '"Courier New", monospace' }}>
+                          <div className="absolute top-full left-0 mt-2 w-56 bg-gray-900 text-white text-[10px] rounded-lg px-3 py-2 z-50 shadow-xl pointer-events-none" style={{ fontFamily: '"Courier New", monospace' }}>
+                            <div className="absolute bottom-full left-3 w-0 h-0 border-l-4 border-r-4 border-b-4 border-transparent border-b-gray-900"></div>
                             <p>this is the type of food, not cuisine. a "pho ga" dish would be in the "pho" category, not "vietnamese".</p>
-                            <div className="absolute top-full left-3 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
                           </div>
                         )}
                       </div>
