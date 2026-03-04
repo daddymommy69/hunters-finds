@@ -712,6 +712,9 @@ const HuntersFindsApp = () => {
   // Logout confirmation modal
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showDeleteGroupConfirm, setShowDeleteGroupConfirm] = useState(false);
+  const [showMemberListModal, setShowMemberListModal] = useState(false);
+  const [groupMemberList, setGroupMemberList] = useState([]);
+  const [memberListLoading, setMemberListLoading] = useState(false);
   const [showFollowersModal, setShowFollowersModal] = useState(false); // 'followers' | 'following' | false
   const [showWelcomeModal, setShowWelcomeModal] = useState(() => {
     return localStorage.getItem('hf_welcome_dismissed') !== 'true';
@@ -5022,6 +5025,47 @@ const HuntersFindsApp = () => {
     }
   };
 
+  const fetchGroupMembers = async (groupId) => {
+    setMemberListLoading(true);
+    try {
+      const { data } = await supabase
+        .from('group_members')
+        .select('*, users:user_id(id, email, user_metadata)')
+        .eq('group_id', groupId)
+        .in('status', ['approved', null])
+        .order('joined_at', { ascending: true });
+      setGroupMemberList(data || []);
+    } catch (err) {
+      console.error('Error fetching members:', err);
+    } finally {
+      setMemberListLoading(false);
+    }
+  };
+
+  const handleKickMember = async (groupId, memberId) => {
+    try {
+      await supabase.from('group_members')
+        .delete()
+        .eq('group_id', groupId)
+        .eq('user_id', memberId);
+      setGroupMemberList(prev => prev.filter(m => m.user_id !== memberId));
+    } catch (err) {
+      console.error('Error kicking member:', err);
+    }
+  };
+
+  const handlePromoteMember = async (groupId, memberId, newRole) => {
+    try {
+      await supabase.from('group_members')
+        .update({ role: newRole })
+        .eq('group_id', groupId)
+        .eq('user_id', memberId);
+      setGroupMemberList(prev => prev.map(m => m.user_id === memberId ? { ...m, role: newRole } : m));
+    } catch (err) {
+      console.error('Error updating role:', err);
+    }
+  };
+
   const handleJoinGroup = async (group) => {
     const targetGroup = group || selectedGroup;
     if (!targetGroup || !user) return;
@@ -8736,7 +8780,7 @@ const HuntersFindsApp = () => {
                 <div className="grid grid-cols-2 gap-2">
                   <div className="relative">
                     <div className="flex items-center gap-1 mb-0.5 relative">
-                      <label className="text-[10px] font-semibold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>dish category</label>
+                      <label className="text-[10px] font-semibold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>category</label>
                       <div className="relative flex-shrink-0">
                         <div
                           className="w-4 h-4 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-[9px] font-bold cursor-help hover:bg-[#33a29b] hover:text-white transition"
@@ -8745,9 +8789,9 @@ const HuntersFindsApp = () => {
                           onClick={() => setShowCategoryTooltip(v => !v)}
                         >?</div>
                         {showCategoryTooltip && (
-                          <div className="absolute top-full left-0 mt-2 w-56 bg-gray-900 text-white text-[10px] rounded-lg px-3 py-2 z-50 shadow-xl pointer-events-none" style={{ fontFamily: '"Courier New", monospace' }}>
-                            <div className="absolute bottom-full left-3 w-0 h-0 border-l-4 border-r-4 border-b-4 border-transparent border-b-gray-900"></div>
+                          <div className="absolute bottom-full left-0 mb-2 w-56 bg-gray-900 text-white text-[10px] rounded-lg px-3 py-2 z-50 shadow-xl pointer-events-none" style={{ fontFamily: '"Courier New", monospace' }}>
                             <p>this is the type of food, not cuisine. a "pho ga" dish would be in the "pho" category, not "vietnamese".</p>
+                            <div className="absolute top-full left-3 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
                           </div>
                         )}
                       </div>
@@ -10452,7 +10496,17 @@ const HuntersFindsApp = () => {
                     <div className="min-w-0">
                       <h2 className="font-bold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}>{g.name}</h2>
                       <p className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>
-                        {g.member_count || 1} {(g.member_count || 1) === 1 ? 'member' : 'members'}
+                        {isMember ? (
+                          <button
+                            onClick={() => { setShowMemberListModal(true); fetchGroupMembers(g.id); }}
+                            className="underline hover:text-gray-600 transition"
+                            style={{ fontFamily: '"Courier New", monospace' }}
+                          >
+                            {g.member_count || 1} {(g.member_count || 1) === 1 ? 'member' : 'members'}
+                          </button>
+                        ) : (
+                          <span>{g.member_count || 1} {(g.member_count || 1) === 1 ? 'member' : 'members'}</span>
+                        )}
                         {isBroadcast && ' · broadcast'}
                         {isPrivate && ' · private'}
                       </p>
@@ -11247,7 +11301,97 @@ const HuntersFindsApp = () => {
       )}
 
       {/* Delete Group Confirmation Modal */}
-      {showDeleteGroupConfirm && selectedGroup && (
+      {/* Group Member List Modal */}
+      {showMemberListModal && selectedGroup && (
+        <>
+          <div onClick={() => setShowMemberListModal(false)} className="fixed inset-0 bg-black/50 z-[60]" />
+          <div className="fixed inset-0 flex items-center justify-center z-[61] p-4 pointer-events-none">
+            <div className="bg-white rounded-2xl shadow-2xl pointer-events-auto flex flex-col" style={{ width: 'min(92vw, 420px)', maxHeight: '75vh', fontFamily: '"Courier New", monospace' }}>
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b flex-shrink-0">
+                <div>
+                  <h2 className="font-bold text-sm">{selectedGroup.name}</h2>
+                  <p className="text-[10px] text-gray-400 mt-0.5">{groupMemberList.length} {groupMemberList.length === 1 ? 'member' : 'members'}</p>
+                </div>
+                <button onClick={() => setShowMemberListModal(false)} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+              </div>
+
+              {/* Member list */}
+              <div className="overflow-y-auto flex-1 px-4 py-3 space-y-2">
+                {memberListLoading ? (
+                  <div className="flex justify-center py-8">
+                    <div className="w-5 h-5 border-2 border-[#33a29b] border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : groupMemberList.length === 0 ? (
+                  <p className="text-xs text-gray-400 text-center py-6">no members found</p>
+                ) : groupMemberList.map(member => {
+                  const username = member.users?.user_metadata?.username || member.users?.email?.split('@')[0] || 'user';
+                  const isGroupCreator = selectedGroup.creator_id === member.user_id;
+                  const isMe = user?.id === member.user_id;
+                  const canManage = (userRole === 'admin' || selectedGroup.creator_id === user?.id) && !isMe && !isGroupCreator;
+                  const joinDate = member.joined_at ? new Date(member.joined_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : null;
+                  const roleColor = isGroupCreator ? 'text-[#ef4444] font-bold' : member.role === 'moderator' ? 'text-indigo-500 font-bold' : 'text-gray-400';
+                  const roleLabel = isGroupCreator ? 'creator' : member.role === 'moderator' ? 'mod' : 'member';
+
+                  return (
+                    <div key={member.user_id} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
+                      {/* Avatar */}
+                      <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 text-sm font-bold text-gray-500">
+                        {username[0]?.toUpperCase()}
+                      </div>
+
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-semibold truncate">@{username}</span>
+                          {isMe && <span className="text-[9px] text-gray-300">(you)</span>}
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className={`text-[10px] ${roleColor}`}>{roleLabel}</span>
+                          {joinDate && <span className="text-[10px] text-gray-300">· joined {joinDate}</span>}
+                        </div>
+                      </div>
+
+                      {/* Admin actions */}
+                      {canManage && (
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          {member.role !== 'moderator' ? (
+                            <button
+                              onClick={() => handlePromoteMember(selectedGroup.id, member.user_id, 'moderator')}
+                              className="text-[10px] px-2 py-1 bg-indigo-50 text-indigo-600 rounded-lg font-bold hover:bg-indigo-100 transition"
+                            >
+                              make mod
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handlePromoteMember(selectedGroup.id, member.user_id, 'member')}
+                              className="text-[10px] px-2 py-1 bg-gray-100 text-gray-500 rounded-lg font-bold hover:bg-gray-200 transition"
+                            >
+                              demote
+                            </button>
+                          )}
+                          <button
+                            onClick={() => {
+                              if (window.confirm(`Remove @${username} from this group?`)) {
+                                handleKickMember(selectedGroup.id, member.user_id);
+                              }
+                            }}
+                            className="text-[10px] px-2 py-1 bg-red-50 text-red-500 rounded-lg font-bold hover:bg-red-100 transition"
+                          >
+                            kick
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+            {showDeleteGroupConfirm && selectedGroup && (
         <>
           <div onClick={() => setShowDeleteGroupConfirm(false)} className="fixed inset-0 bg-black/60 z-[70]" />
           <div className="fixed inset-0 flex items-center justify-center z-[70] p-4 pointer-events-none">
