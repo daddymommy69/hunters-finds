@@ -683,47 +683,6 @@ const HuntersFindsApp = () => {
     };
 
     fetchGroups();
-
-    // Fetch bug reports (public fixed ones for tracker)
-    const fetchPublicBugs = async () => {
-      const { data } = await supabase
-        .from('bug_reports')
-        .select('*, bug_upvotes(user_id)')
-        .eq('is_public', true)
-        .order('upvote_count', { ascending: false });
-      setPublicBugReports(data || []);
-      // Build upvote map for current user
-      if (user) {
-        const map = {};
-        (data || []).forEach(r => {
-          map[r.id] = (r.bug_upvotes || []).some(u => u.user_id === user.id);
-        });
-        setBugUpvotes(map);
-      }
-    };
-    fetchPublicBugs();
-
-    // Fetch DM threads
-    const fetchDmThreads = async () => {
-      if (!user) return;
-      const { data } = await supabase
-        .from('dm_messages')
-        .select('*, sender:sender_id(id, email, user_metadata), receiver:receiver_id(id, email, user_metadata)')
-        .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
-        .order('created_at', { ascending: false });
-      if (!data) return;
-      // Group into threads by other user
-      const threads = {};
-      data.forEach(msg => {
-        const otherId = msg.sender_id === user.id ? msg.receiver_id : msg.sender_id;
-        const otherUser = msg.sender_id === user.id ? msg.receiver : msg.sender;
-        if (!threads[otherId]) threads[otherId] = { otherId, otherUser, messages: [], unread: 0 };
-        threads[otherId].messages.push(msg);
-        if (msg.receiver_id === user.id && !msg.read_at) threads[otherId].unread++;
-      });
-      setDmThreads(Object.values(threads));
-    };
-    fetchDmThreads();
   }, [user, hasAttemptedGroupFetch]);
   
   // Fetch all tags
@@ -1031,17 +990,6 @@ const HuntersFindsApp = () => {
     };
     
     fetchDeletedCount();
-
-    // Fetch all bug reports for admin
-    const fetchAdminBugReports = async () => {
-      if (userRole !== 'admin') return;
-      const { data } = await supabase
-        .from('bug_reports')
-        .select('*, users(username, email)')
-        .order('created_at', { ascending: false });
-      setBugReports((data || []).map(r => ({ ...r, username: r.users?.username || r.users?.email?.split('@')[0] })));
-    };
-    fetchAdminBugReports();
   }, [user, userRole]);
   
   // PASSWORD RESET FUNCTIONS
@@ -1896,29 +1844,6 @@ const HuntersFindsApp = () => {
   const [notifications, setNotifications] = useState([]);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [showBugModal, setShowBugModal] = useState(false);
-  const [bugModalTab, setBugModalTab] = useState('submit'); // 'submit' | 'fixed'
-  const [bugReportType, setBugReportType] = useState('bug'); // 'bug' | 'request'
-  const [bugReportText, setBugReportText] = useState('');
-  const [bugReportAnon, setBugReportAnon] = useState(false);
-  const [bugReportScreenshot, setBugReportScreenshot] = useState(null);
-  const [bugReportSubmitting, setBugReportSubmitting] = useState(false);
-  const [bugReports, setBugReports] = useState([]);
-  const [publicBugReports, setPublicBugReports] = useState([]);
-  const [bugUpvotes, setBugUpvotes] = useState({}); // { bugId: true/false }
-  const [showAdminBugPanel, setShowAdminBugPanel] = useState(false);
-  const [adminBugFilter, setAdminBugFilter] = useState('all'); // 'all'|'bug'|'request'|'pending'|'fixed'
-  const [selectedBugReport, setSelectedBugReport] = useState(null);
-  const [adminBugNote, setAdminBugNote] = useState('');
-  const [adminBugStatus, setAdminBugStatus] = useState('in_progress');
-  const [adminBugPublic, setAdminBugPublic] = useState(false);
-  const [dmThreads, setDmThreads] = useState([]); // list of {other_user, last_message, unread}
-  const [selectedDmThread, setSelectedDmThread] = useState(null);
-  const [dmMessages, setDmMessages] = useState([]);
-  const [dmInput, setDmInput] = useState('');
-  const [dmScreenshot, setDmScreenshot] = useState(null);
-  const [dmLoading, setDmLoading] = useState(false);
-  const [ratingsFilter, setRatingsFilter] = useState('score'); // 'score' | 'recent'
   
   // Filter states
   const [selectedCuisine, setSelectedCuisine] = useState('all');
@@ -5097,155 +5022,6 @@ const HuntersFindsApp = () => {
     }
   };
 
-  // ── Bug report handlers ────────────────────────────────────────────────
-  const handleSubmitBugReport = async () => {
-    if (!bugReportText.trim() || !user) return;
-    setBugReportSubmitting(true);
-    try {
-      let screenshotUrl = null;
-      if (bugReportScreenshot) {
-        const ext = bugReportScreenshot.name.split('.').pop();
-        const path = `bug-reports/${user.id}-${Date.now()}.${ext}`;
-        const { error: upErr } = await supabase.storage.from('dm-images').upload(path, bugReportScreenshot);
-        if (!upErr) {
-          const { data: urlData } = supabase.storage.from('dm-images').getPublicUrl(path);
-          screenshotUrl = urlData?.publicUrl;
-        }
-      }
-      const { data: report, error } = await supabase.from('bug_reports').insert({
-        user_id: user.id,
-        type: bugReportType,
-        text: bugReportText.trim(),
-        is_anonymous: bugReportAnon,
-        screenshot_url: screenshotUrl,
-        status: 'pending',
-        is_public: false,
-        upvote_count: 0,
-      }).select().single();
-      if (error) throw error;
-      setBugReportText('');
-      setBugReportScreenshot(null);
-      setBugReportAnon(false);
-      setShowBugModal(false);
-      setErrorModal({ show: true, title: 'Submitted!', message: 'Your report has been submitted. Thanks for helping make the app better!' });
-    } catch (err) {
-      setErrorModal({ show: true, title: 'Error', message: 'Could not submit report. Try again.' });
-    } finally {
-      setBugReportSubmitting(false);
-    }
-  };
-
-  const handleBugUpvote = async (reportId) => {
-    if (!user) return;
-    const already = bugUpvotes[reportId];
-    if (already) {
-      await supabase.from('bug_upvotes').delete().eq('bug_id', reportId).eq('user_id', user.id);
-      await supabase.from('bug_reports').update({ upvote_count: supabase.rpc('decrement', { x: 1 }) }).eq('id', reportId);
-      setBugUpvotes(prev => ({ ...prev, [reportId]: false }));
-      setPublicBugReports(prev => prev.map(r => r.id === reportId ? { ...r, upvote_count: (r.upvote_count || 1) - 1 } : r));
-    } else {
-      await supabase.from('bug_upvotes').insert({ bug_id: reportId, user_id: user.id });
-      await supabase.from('bug_reports').update({ upvote_count: (supabase.rpc ? undefined : undefined) }).eq('id', reportId);
-      // Simpler: just refetch upvote count
-      const { data: r } = await supabase.from('bug_reports').select('upvote_count').eq('id', reportId).single();
-      const newCount = (r?.upvote_count || 0) + 1;
-      await supabase.from('bug_reports').update({ upvote_count: newCount }).eq('id', reportId);
-      setBugUpvotes(prev => ({ ...prev, [reportId]: true }));
-      setPublicBugReports(prev => prev.map(r => r.id === reportId ? { ...r, upvote_count: newCount } : r));
-    }
-  };
-
-  const handleAdminUpdateBug = async (report) => {
-    try {
-      await supabase.from('bug_reports').update({
-        status: adminBugStatus,
-        admin_note: adminBugNote,
-        is_public: adminBugPublic,
-      }).eq('id', report.id);
-      // Notify user if going public
-      if (adminBugPublic && !report.is_public) {
-        await supabase.from('notifications').insert({
-          user_id: report.user_id,
-          type: 'bug_status',
-          message: `Your ${report.type === 'bug' ? 'bug report' : 'request'} status updated to: ${adminBugStatus.replace('_', ' ')}`,
-          read: false,
-        });
-        // Auto-create DM from admin
-        if (adminBugNote.trim()) {
-          await supabase.from('dm_messages').insert({
-            sender_id: user.id,
-            receiver_id: report.user_id,
-            text: `Re your ${report.type}: "${report.text.slice(0, 80)}..."
-
-${adminBugNote}`,
-            dm_type: 'bug',
-            read_at: null,
-          });
-        }
-      }
-      setBugReports(prev => prev.map(r => r.id === report.id ? { ...r, status: adminBugStatus, admin_note: adminBugNote, is_public: adminBugPublic } : r));
-      if (adminBugPublic) setPublicBugReports(prev => {
-        const exists = prev.find(r => r.id === report.id);
-        return exists ? prev.map(r => r.id === report.id ? { ...r, status: adminBugStatus, admin_note: adminBugNote } : r) : [...prev, { ...report, status: adminBugStatus, admin_note: adminBugNote, is_public: true }];
-      });
-      setSelectedBugReport(null);
-      setErrorModal({ show: true, title: 'Updated!', message: 'Bug report updated.' + (adminBugPublic ? ' User has been notified.' : '') });
-    } catch (err) {
-      setErrorModal({ show: true, title: 'Error', message: 'Could not update report.' });
-    }
-  };
-
-  // ── DM handlers ──────────────────────────────────────────────────────────
-  const fetchDmMessages = async (otherId) => {
-    setDmLoading(true);
-    const { data } = await supabase
-      .from('dm_messages')
-      .select('*')
-      .or(`and(sender_id.eq.${user.id},receiver_id.eq.${otherId}),and(sender_id.eq.${otherId},receiver_id.eq.${user.id})`)
-      .order('created_at', { ascending: true });
-    setDmMessages(data || []);
-    // Mark as read
-    await supabase.from('dm_messages').update({ read_at: new Date().toISOString() })
-      .eq('receiver_id', user.id).eq('sender_id', otherId).is('read_at', null);
-    setDmLoading(false);
-  };
-
-  const handleSendDm = async (receiverId, dmType = 'regular') => {
-    if (!dmInput.trim() && !dmScreenshot) return;
-    try {
-      let imageUrl = null;
-      if (dmScreenshot) {
-        const ext = dmScreenshot.name.split('.').pop();
-        const path = `dms/${user.id}-${Date.now()}.${ext}`;
-        const { error: upErr } = await supabase.storage.from('dm-images').upload(path, dmScreenshot);
-        if (!upErr) {
-          const { data: urlData } = supabase.storage.from('dm-images').getPublicUrl(path);
-          imageUrl = urlData?.publicUrl;
-        }
-      }
-      const { data: msg } = await supabase.from('dm_messages').insert({
-        sender_id: user.id,
-        receiver_id: receiverId,
-        text: dmInput.trim(),
-        image_url: imageUrl,
-        dm_type: dmType,
-        read_at: null,
-      }).select().single();
-      setDmMessages(prev => [...prev, msg]);
-      setDmInput('');
-      setDmScreenshot(null);
-      // Notify receiver
-      await supabase.from('notifications').insert({
-        user_id: receiverId,
-        type: 'dm',
-        message: `New message from @${user.user_metadata?.username || user.email?.split('@')[0]}`,
-        read: false,
-      });
-    } catch (err) {
-      console.error('DM send error:', err);
-    }
-  };
-
   const handleJoinGroup = async (group) => {
     const targetGroup = group || selectedGroup;
     if (!targetGroup || !user) return;
@@ -6145,20 +5921,7 @@ ${adminBugNote}`,
           <div className="w-10"></div> {/* Spacer for centering */}
           <h1 className="text-xl font-bold text-gray-800">hunters finds</h1>
           {user && (
-            <div className="flex items-center gap-1 relative">
-              <button
-                onClick={() => setShowBugModal(true)}
-                className="relative p-2 hover:bg-gray-100 rounded-full transition"
-                title="report a bug or request a feature"
-              >
-                <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 22c4 0 7-3.1 7-7V9l-4-5H9L5 9v6c0 3.9 3 7 7 7z"/>
-                  <path d="M9 4c0-1.1.9-2 2-2h2a2 2 0 0 1 2 2"/>
-                  <line x1="12" y1="11" x2="12" y2="17"/>
-                  <line x1="9" y1="14" x2="15" y2="14"/>
-                </svg>
-              </button>
-              <div className="relative">
+            <div className="relative">
               <button 
                 onClick={() => setShowNotifications(!showNotifications)}
                 className="relative p-2 hover:bg-gray-100 rounded-full transition"
@@ -6245,7 +6008,6 @@ ${adminBugNote}`,
                   </div>
                 </>
               )}
-            </div>
             </div>
           )}
           {!user && <div className="w-10"></div>}
@@ -7615,10 +7377,10 @@ ${adminBugNote}`,
                 {!user && <Lock size={10} className="absolute top-1 right-1 text-gray-500" />}
               </button>
               <button 
-                onClick={() => setYouView('dms')} 
+                onClick={() => setYouView('ratings')} 
                 disabled={!user}
                 className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition relative ${
-                  youView === 'dms' 
+                  youView === 'ratings' 
                     ? 'bg-gray-700 text-white' 
                     : !user
                       ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
@@ -7626,7 +7388,7 @@ ${adminBugNote}`,
                 }`} 
                 style={{ fontFamily: '"Courier New", monospace' }}
               >
-                <MessageCircle size={18} />
+                <Star size={18} />
                 {!user && <Lock size={10} className="absolute top-1 right-1 text-gray-500" />}
               </button>
               <button 
@@ -7901,129 +7663,135 @@ ${adminBugNote}`,
                   </div>
 
                   <div className="bg-white rounded-lg p-4 shadow-sm">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-semibold" style={{ fontFamily: '"Courier New", monospace' }}>your ratings</h3>
-                      <div className="flex gap-1">
-                        <button onClick={() => setRatingsFilter('score')} className={`text-[10px] px-2 py-0.5 rounded-full font-bold transition ${ratingsFilter === 'score' ? 'bg-[#33a29b] text-white' : 'bg-gray-100 text-gray-500'}`} style={{ fontFamily: '"Courier New", monospace' }}>top scored</button>
-                        <button onClick={() => setRatingsFilter('recent')} className={`text-[10px] px-2 py-0.5 rounded-full font-bold transition ${ratingsFilter === 'recent' ? 'bg-[#33a29b] text-white' : 'bg-gray-100 text-gray-500'}`} style={{ fontFamily: '"Courier New", monospace' }}>recent</button>
-                      </div>
-                    </div>
-                    {activeUserRatings.length === 0 ? (
-                      <p className="text-xs text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>no ratings yet — go rate something!</p>
-                    ) : [...activeUserRatings]
-                      .map(r => {
-                        const srr = r.overall_score != null ? parseFloat(parseFloat(r.overall_score).toFixed(2))
-                          : r.taste_score != null ? parseFloat(((r.taste_score + r.portion_score + r.price_score) / 3).toFixed(2)) : null;
-                        return { ...r, name: r.dish?.name || allDishes.find(d => d.id === r.dish_id)?.name || 'Unknown', restaurantName: r.dish?.restaurant_name || allDishes.find(d => d.id === r.dish_id)?.restaurantName || '', srr };
-                      })
-                      .filter(r => r.srr != null)
-                      .sort((a, b) => ratingsFilter === 'score' ? b.srr - a.srr : new Date(b.created_at) - new Date(a.created_at))
-                      .map((dish, idx) => (
+                    <h3 className="text-sm font-semibold mb-3">your top rated</h3>
+                    {(() => {
+                      const myTopRated = activeUserRatings
+                        .map(r => {
+                          const srr = r.overall_score
+                            ? parseFloat(r.overall_score.toFixed(2))
+                            : r.taste_score != null ? parseFloat(((r.taste_score + r.portion_score + r.price_score) / 3).toFixed(2)) : null;
+                          return { ...r, name: r.dish?.name || 'Unknown', restaurantName: r.dish?.restaurant_name || '', srr };
+                        })
+                        .filter(r => r.srr != null)
+                        .sort((a, b) => b.srr - a.srr)
+                        .slice(0, 3);
+                      if (myTopRated.length === 0) return <p className="text-xs text-gray-400">no ratings yet</p>;
+                      return myTopRated.map((dish, idx) => (
                         <div
-                          key={dish.id || idx}
+                          key={idx}
                           onClick={() => { const d = allDishes.find(d => d.id === dish.dish_id); if (d) setSelectedDish(d); }}
-                          className="flex justify-between items-center py-2 cursor-pointer hover:bg-gray-50 rounded transition border-b border-gray-50 last:border-0"
+                          className="flex justify-between py-2 cursor-pointer hover:bg-gray-50 rounded transition"
                         >
-                          <div className="flex-1 min-w-0 pr-2">
-                            <div className="text-sm font-medium truncate" style={{ fontFamily: '"Courier New", monospace' }}>{dish.name}</div>
-                            <div className="text-xs text-gray-500 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{dish.restaurantName}{dish.price != null ? ` · $${parseFloat(dish.price).toFixed(2)}` : ''}</div>
+                          <div>
+                            <div className="text-sm font-medium">#{idx + 1} {dish.name}</div>
+                            <div className="text-xs text-gray-500">{dish.restaurantName}</div>
                           </div>
-                          <div className={`text-lg font-bold flex-shrink-0 ${getSRRColor(dish.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{dish.srr.toFixed(2)}</div>
+                          <div className={`text-lg font-bold ${getSRRColor(dish.srr)}`}>{dish.srr.toFixed(2)}</div>
                         </div>
-                      ))
-                    }
+                      ));
+                    })()}
                   </div>
                 </div>
               )}
 
-              {youView === 'dms' && (
+              {youView === 'ratings' && (
                 <div className="space-y-3">
-                  {!selectedDmThread ? (
-                    <>
-                      <h2 className="text-lg font-bold mb-2" style={{ fontFamily: '"Courier New", monospace' }}>messages</h2>
-                      {dmThreads.length === 0 ? (
-                        <div className="bg-white rounded-lg p-6 shadow-sm text-center">
-                          <MessageCircle size={40} className="mx-auto mb-2 text-gray-300" />
-                          <p className="text-sm text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>no messages yet</p>
-                        </div>
-                      ) : dmThreads.map(thread => {
-                        const otherUsername = thread.otherUser?.user_metadata?.username || thread.otherUser?.email?.split('@')[0] || 'user';
-                        const lastMsg = thread.messages[0];
-                        const dmTypeColor = lastMsg?.dm_type === 'bug' ? '#f97316' : lastMsg?.dm_type === 'admin' ? '#ef4444' : '#6b7280';
-                        return (
-                          <div key={thread.otherId} onClick={() => { setSelectedDmThread(thread); fetchDmMessages(thread.otherId); }}
-                            className="bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
-                              <User size={18} className="text-gray-500" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>@{otherUsername}</span>
-                                {lastMsg?.dm_type === 'bug' && <span className="text-[9px] font-bold text-orange-500 border border-orange-300 rounded px-1">bug</span>}
-                                {lastMsg?.dm_type === 'admin' && <span className="text-[9px] font-bold text-red-500 border border-red-300 rounded px-1">admin</span>}
+                  <h2 className="text-lg font-bold mb-4" style={{ fontFamily: '"Courier New", monospace' }}>your ratings</h2>
+                  {activeUserRatings.length === 0 ? (
+                    <div className="text-center text-gray-400 py-8 text-sm" style={{ fontFamily: '"Courier New", monospace' }}>no ratings yet — go rate something!</div>
+                  ) : activeUserRatings
+                    .sort((a, b) => (b.overall_score || 0) - (a.overall_score || 0))
+                    .map((rating, idx) => {
+                      const dishObj = allDishes.find(d => d.id === rating.dish_id);
+                      const srr = rating.overall_score != null
+                        ? parseFloat(parseFloat(rating.overall_score).toFixed(2))
+                        : rating.taste_score != null
+                          ? parseFloat(((rating.taste_score + rating.portion_score + rating.price_score) / 3).toFixed(2))
+                          : null;
+                      const dishName = rating.dish?.name || dishObj?.name || 'Unknown';
+                      const restaurantName = rating.dish?.restaurant_name || dishObj?.restaurantName || '';
+                      const price = rating.price || dishObj?.price;
+                      const hoursAgo = (Date.now() - new Date(rating.created_at)) / 3600000;
+                      const timeLabel = hoursAgo < 1 ? 'just now' : hoursAgo < 24 ? `${Math.floor(hoursAgo)}h ago` : `${Math.floor(hoursAgo / 24)}d ago`;
+                      return (
+                        <div key={rating.id} className="bg-white rounded-lg p-3 shadow-sm">
+                          <div
+                            onClick={() => { if (dishObj) setSelectedDish(dishObj); }}
+                            className="cursor-pointer hover:bg-gray-50 -m-3 p-3 rounded-lg"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <Image size={24} className="text-gray-400" />
                               </div>
-                              <p className="text-xs text-gray-400 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{lastMsg?.text || 'image'}</p>
-                            </div>
-                            {thread.unread > 0 && (
-                              <div className="w-5 h-5 bg-[#33a29b] text-white text-[10px] rounded-full flex items-center justify-center font-bold flex-shrink-0">{thread.unread}</div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </>
-                  ) : (
-                    <div className="flex flex-col h-[60vh]">
-                      <div className="flex items-center gap-3 mb-3">
-                        <button onClick={() => setSelectedDmThread(null)} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
-                        <span className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>
-                          @{selectedDmThread.otherUser?.user_metadata?.username || selectedDmThread.otherUser?.email?.split('@')[0]}
-                        </span>
-                      </div>
-                      <div className="flex-1 overflow-y-auto space-y-2 mb-3">
-                        {dmLoading ? <div className="text-center py-4"><div className="w-5 h-5 border-2 border-[#33a29b] border-t-transparent rounded-full animate-spin mx-auto" /></div>
-                          : dmMessages.map(msg => {
-                            const isMe = msg.sender_id === user.id;
-                            const msgColor = msg.dm_type === 'bug' ? 'bg-orange-50 border-orange-200' : msg.dm_type === 'admin' ? 'bg-red-50 border-red-200' : isMe ? 'bg-[#33a29b]/10 border-[#33a29b]/20' : 'bg-gray-50 border-gray-200';
-                            return (
-                              <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                                <div className={`max-w-[75%] rounded-xl px-3 py-2 border text-xs ${msgColor}`} style={{ fontFamily: '"Courier New", monospace' }}>
-                                  {msg.dm_type === 'bug' && <div className="text-[9px] font-bold text-orange-500 mb-1">bug report</div>}
-                                  {msg.dm_type === 'admin' && <div className="text-[9px] font-bold text-red-500 mb-1">admin</div>}
-                                  {msg.text && <p>{msg.text}</p>}
-                                  {msg.image_url && <img src={msg.image_url} alt="attachment" className="mt-1 rounded max-w-full max-h-40 object-cover" />}
+                              <div className="flex-1">
+                                <div className="font-semibold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>{dishName}</div>
+                                <div className="text-xs text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
+                                  {restaurantName}{price != null ? ` • $${parseFloat(price).toFixed(2)}` : ''}
+                                  {rating.edited_at && <span className="text-gray-400 ml-2">(edited)</span>}
                                 </div>
+                                <div className="text-xs text-gray-400 mt-1" style={{ fontFamily: '"Courier New", monospace' }}>rated {timeLabel}</div>
                               </div>
-                            );
-                          })
-                        }
-                      </div>
-                      <div className="flex gap-2 items-end border-t pt-3">
-                        <div className="flex-1">
-                          <input
-                            value={dmInput}
-                            onChange={e => setDmInput(e.target.value.slice(0, 2000))}
-                            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && dmInput.trim()) { e.preventDefault(); handleSendDm(selectedDmThread.otherId); } }}
-                            placeholder="message..."
-                            className="w-full bg-gray-100 rounded-full px-4 py-2 text-sm outline-none"
-                            style={{ fontFamily: '"Courier New", monospace' }}
-                          />
-                          {dmScreenshot && <div className="text-[10px] text-gray-400 mt-1 px-2" style={{ fontFamily: '"Courier New", monospace' }}>📎 {dmScreenshot.name}</div>}
+                              {srr != null && (
+                                <div className={`text-2xl font-bold ${getSRRColor(srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{srr.toFixed(2)}</div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Edit/Delete Buttons */}
+                          {canEditRating({ user_id: user.id, created_at: rating.created_at }) && (
+                            <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditRating({
+                                    id: rating.id,
+                                    dish_name: dishName,
+                                    dish: { name: dishName },
+                                    restaurant_name: restaurantName,
+                                    taste_score: rating.taste_score,
+                                    portion_score: rating.portion_score,
+                                    price_value_score: rating.price_value_score,
+                                    price: price,
+                                    comment: rating.comment || '',
+                                    created_at: rating.created_at,
+                                    edit_count: rating.edit_count || 0
+                                  });
+                                }}
+                                className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100 border border-blue-200 font-medium"
+                                style={{ fontFamily: '"Courier New", monospace' }}
+                              >Edit</button>
+
+                              {canDeleteRating({ user_id: user.id, created_at: rating.created_at }) && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteRating({
+                                      id: rating.id,
+                                      dish_name: dishName,
+                                      dish: { name: dishName },
+                                      restaurant_name: restaurantName,
+                                      user_id: user.id,
+                                      taste_score: rating.taste_score,
+                                      portion_score: rating.portion_score,
+                                      price_value_score: rating.price_value_score,
+                                      price: price,
+                                      comment: rating.comment || '',
+                                      created_at: rating.created_at
+                                    });
+                                  }}
+                                  className="px-3 py-1.5 text-xs bg-red-50 text-red-700 rounded hover:bg-red-100 border border-red-200 font-medium"
+                                  style={{ fontFamily: '"Courier New", monospace' }}
+                                >Delete</button>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        <label className="cursor-pointer p-2 text-gray-400 hover:text-gray-600">
-                          <input type="file" accept="image/*" className="hidden" onChange={e => setDmScreenshot(e.target.files[0])} />
-                          <Image size={18} />
-                        </label>
-                        <button onClick={() => handleSendDm(selectedDmThread.otherId)}
-                          className="p-2 bg-[#33a29b] text-white rounded-full hover:bg-[#2a8a84] transition">
-                          <Send size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                      );
+                    })}
                 </div>
               )}
 
-                            {youView === 'groups' && (
+              {youView === 'groups' && (
                 <div className="space-y-3">
                   <div className="flex justify-between mb-4">
                     <h2 className="text-lg font-bold" style={{ fontFamily: '"Courier New", monospace' }}>groups</h2>
@@ -8634,19 +8402,6 @@ ${adminBugNote}`,
                             >
                               Grant Badge to User
                             </button>
-
-                            <button
-                              onClick={() => setShowAdminBugPanel(true)}
-                              className="w-full text-left text-sm py-3 px-3 bg-white hover:bg-orange-50 rounded-lg transition border border-orange-200 font-medium flex justify-between items-center"
-                              style={{ fontFamily: '"Courier New", monospace' }}
-                            >
-                              <span>Bug & Request Inbox</span>
-                              {bugReports.filter(r => r.status === 'pending').length > 0 && (
-                                <span className="bg-orange-200 text-orange-800 px-2 py-0.5 rounded-full text-xs font-bold">
-                                  {bugReports.filter(r => r.status === 'pending').length}
-                                </span>
-                              )}
-                            </button>
                             
                             {userRole === 'admin' && (
                               <>
@@ -8981,7 +8736,7 @@ ${adminBugNote}`,
                 <div className="grid grid-cols-2 gap-2">
                   <div className="relative">
                     <div className="flex items-center gap-1 mb-0.5 relative">
-                      <label className="text-[10px] font-semibold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>category</label>
+                      <label className="text-[10px] font-semibold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>dish category</label>
                       <div className="relative flex-shrink-0">
                         <div
                           className="w-4 h-4 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-[9px] font-bold cursor-help hover:bg-[#33a29b] hover:text-white transition"
@@ -11386,161 +11141,7 @@ ${adminBugNote}`,
         </>
       )}
       
-      {/* Bug Report Modal */}
-      {showBugModal && user && (
-        <>
-          <div onClick={() => setShowBugModal(false)} className="fixed inset-0 bg-black/50 z-[70]" />
-          <div className="fixed inset-0 flex items-center justify-center z-[71] p-4 pointer-events-none">
-            <div className="bg-white rounded-2xl pointer-events-auto flex flex-col" style={{ width: 'min(92vw,460px)', maxHeight: '85vh', fontFamily: '"Courier New", monospace' }}>
-              {/* Tabs */}
-              <div className="flex border-b flex-shrink-0">
-                <button onClick={() => setBugModalTab('submit')} className={`flex-1 py-3 text-xs font-bold transition ${bugModalTab === 'submit' ? 'border-b-2 border-[#33a29b] text-[#33a29b]' : 'text-gray-400'}`}>submit</button>
-                <button onClick={() => setBugModalTab('fixed')} className={`flex-1 py-3 text-xs font-bold transition ${bugModalTab === 'fixed' ? 'border-b-2 border-[#33a29b] text-[#33a29b]' : 'text-gray-400'}`}>what's been fixed</button>
-                <button onClick={() => setShowBugModal(false)} className="px-4 text-gray-400 hover:text-gray-600"><X size={18} /></button>
-              </div>
-
-              <div className="overflow-y-auto flex-1 p-5">
-                {bugModalTab === 'submit' ? (
-                  <div className="space-y-4">
-                    <p className="text-xs text-gray-500">Found a bug or have a feature request? Let us know below.</p>
-                    {/* Type selector */}
-                    <div className="flex gap-2">
-                      <button onClick={() => setBugReportType('bug')} className={`flex-1 py-2 rounded-lg text-xs font-bold border-2 transition ${bugReportType === 'bug' ? 'border-orange-400 bg-orange-50 text-orange-600' : 'border-gray-200 text-gray-500'}`}>🐛 bug / issue</button>
-                      <button onClick={() => setBugReportType('request')} className={`flex-1 py-2 rounded-lg text-xs font-bold border-2 transition ${bugReportType === 'request' ? 'border-[#33a29b] bg-[#33a29b]/10 text-[#33a29b]' : 'border-gray-200 text-gray-500'}`}>✨ feature request</button>
-                    </div>
-                    {/* Text */}
-                    <textarea
-                      value={bugReportText}
-                      onChange={e => setBugReportText(e.target.value)}
-                      placeholder={bugReportType === 'bug' ? "describe what happened and how to reproduce it..." : "describe the feature you'd like to see..."}
-                      rows={5}
-                      className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-xs outline-none focus:border-[#33a29b] resize-none"
-                      style={{ fontFamily: '"Courier New", monospace' }}
-                    />
-                    {/* Screenshot */}
-                    <div>
-                      <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-500 hover:text-gray-700">
-                        <input type="file" accept="image/*" className="hidden" onChange={e => setBugReportScreenshot(e.target.files[0])} />
-                        <Image size={14} />
-                        {bugReportScreenshot ? <span className="text-[#33a29b]">{bugReportScreenshot.name}</span> : 'attach screenshot (optional)'}
-                      </label>
-                    </div>
-                    {/* Anonymous toggle */}
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={bugReportAnon} onChange={e => setBugReportAnon(e.target.checked)} className="rounded" />
-                      <span className="text-xs text-gray-500">submit anonymously</span>
-                    </label>
-                    <button
-                      onClick={handleSubmitBugReport}
-                      disabled={!bugReportText.trim() || bugReportSubmitting}
-                      className="w-full py-2.5 bg-[#33a29b] text-white rounded-xl text-sm font-bold hover:bg-[#2a8a84] transition disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {bugReportSubmitting ? 'submitting...' : 'submit'}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <p className="text-xs text-gray-500 mb-3">bugs fixed and requests shipped. upvote anything you care about.</p>
-                    {publicBugReports.length === 0 ? (
-                      <div className="text-center py-8 text-gray-300">
-                        <svg width={40} height={40} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="mx-auto mb-2"><path d="M12 22c4 0 7-3.1 7-7V9l-4-5H9L5 9v6c0 3.9 3 7 7 7z"/></svg>
-                        <p className="text-xs">nothing yet — check back soon!</p>
-                      </div>
-                    ) : publicBugReports.map(report => {
-                      const statusColors = { in_progress: 'bg-blue-100 text-blue-700', fixed: 'bg-green-100 text-green-700', shipped: 'bg-teal-100 text-teal-700', "won't fix": 'bg-gray-100 text-gray-500', duplicate: 'bg-purple-100 text-purple-700' };
-                      const hasUpvoted = bugUpvotes[report.id];
-                      return (
-                        <div key={report.id} className="bg-gray-50 rounded-xl p-3 border border-gray-100">
-                          <div className="flex items-start gap-3">
-                            <button
-                              onClick={() => { if (report.user_id !== user.id) handleBugUpvote(report.id); }}
-                              disabled={report.user_id === user.id}
-                              className={`flex flex-col items-center gap-0.5 flex-shrink-0 pt-0.5 ${report.user_id === user.id ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
-                            >
-                              <svg width={14} height={14} viewBox="0 0 24 24" fill={hasUpvoted ? '#33a29b' : 'none'} stroke={hasUpvoted ? '#33a29b' : '#9ca3af'} strokeWidth={2}><path d="M12 19V5M5 12l7-7 7 7"/></svg>
-                              <span className={`text-[10px] font-bold ${hasUpvoted ? 'text-[#33a29b]' : 'text-gray-400'}`}>{report.upvote_count || 0}</span>
-                            </button>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${report.type === 'bug' ? 'bg-orange-100 text-orange-600' : 'bg-teal-100 text-teal-600'}`}>{report.type === 'bug' ? 'bug' : 'request'}</span>
-                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${statusColors[report.status] || 'bg-gray-100 text-gray-500'}`}>{report.status?.replace('_', ' ')}</span>
-                                {!report.is_anonymous && <span className="text-[9px] text-gray-400">by @{report.username || 'user'}</span>}
-                              </div>
-                              <p className="text-xs text-gray-700">{report.text}</p>
-                              {report.admin_note && <p className="text-[10px] text-gray-400 mt-1 italic">admin: {report.admin_note}</p>}
-                              {report.screenshot_url && <img src={report.screenshot_url} alt="screenshot" className="mt-2 rounded max-h-24 object-cover" />}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Admin Bug Panel */}
-      {showAdminBugPanel && userRole === 'admin' && (
-        <>
-          <div onClick={() => setShowAdminBugPanel(false)} className="fixed inset-0 bg-black/50 z-[70]" />
-          <div className="fixed inset-0 flex items-center justify-center z-[71] p-4 pointer-events-none">
-            <div className="bg-white rounded-2xl pointer-events-auto flex flex-col" style={{ width: 'min(92vw,520px)', height: '80vh', fontFamily: '"Courier New", monospace' }}>
-              <div className="flex items-center justify-between px-5 py-4 border-b flex-shrink-0">
-                <h2 className="font-bold text-base">bug & request inbox</h2>
-                <button onClick={() => setShowAdminBugPanel(false)}><X size={18} className="text-gray-400" /></button>
-              </div>
-              {/* Filters */}
-              <div className="flex gap-1 px-5 py-2 border-b flex-shrink-0 flex-wrap">
-                {['all','bug','request','pending','in_progress','fixed','shipped'].map(f => (
-                  <button key={f} onClick={() => setAdminBugFilter(f)} className={`text-[10px] px-2 py-1 rounded-full font-bold transition ${adminBugFilter === f ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-500'}`}>{f.replace('_',' ')}</button>
-                ))}
-              </div>
-              <div className="overflow-y-auto flex-1">
-                {bugReports.filter(r => adminBugFilter === 'all' || r.type === adminBugFilter || r.status === adminBugFilter).map(report => (
-                  <div key={report.id} onClick={() => { setSelectedBugReport(report); setAdminBugNote(report.admin_note || ''); setAdminBugStatus(report.status || 'pending'); setAdminBugPublic(report.is_public || false); }}
-                    className={`px-5 py-3 border-b cursor-pointer hover:bg-gray-50 transition ${selectedBugReport?.id === report.id ? 'bg-blue-50' : ''}`}>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${report.type === 'bug' ? 'bg-orange-100 text-orange-600' : 'bg-teal-100 text-teal-600'}`}>{report.type}</span>
-                      <span className="text-[9px] text-gray-400">{report.is_anonymous ? 'anonymous' : `@${report.username || report.user_id?.slice(0,8)}`}</span>
-                      <span className="text-[9px] text-gray-300 ml-auto">{new Date(report.created_at).toLocaleDateString()}</span>
-                    </div>
-                    <p className="text-xs text-gray-700 line-clamp-2">{report.text}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[9px] text-gray-400">↑ {report.upvote_count || 0}</span>
-                      <span className={`text-[9px] font-bold px-1 rounded ${report.status === 'fixed' || report.status === 'shipped' ? 'text-green-600' : report.status === 'in_progress' ? 'text-blue-600' : 'text-gray-400'}`}>{report.status}</span>
-                      {report.is_public && <span className="text-[9px] text-[#33a29b] font-bold">public</span>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {/* Edit panel */}
-              {selectedBugReport && (
-                <div className="border-t p-4 flex-shrink-0 space-y-3 bg-gray-50">
-                  <p className="text-[10px] font-bold text-gray-600 uppercase">update report</p>
-                  <div className="flex gap-1 flex-wrap">
-                    {['pending','in_progress','fixed','shipped',"won't fix",'duplicate'].map(s => (
-                      <button key={s} onClick={() => setAdminBugStatus(s)} className={`text-[10px] px-2 py-1 rounded-full font-bold transition ${adminBugStatus === s ? 'bg-gray-800 text-white' : 'bg-white border text-gray-500'}`}>{s.replace('_',' ')}</button>
-                    ))}
-                  </div>
-                  <textarea value={adminBugNote} onChange={e => setAdminBugNote(e.target.value)} placeholder="admin note (shown publicly + sent as DM if making public)..." rows={2} className="w-full border rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#33a29b] resize-none" />
-                  <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-1.5 cursor-pointer text-xs text-gray-500">
-                      <input type="checkbox" checked={adminBugPublic} onChange={e => setAdminBugPublic(e.target.checked)} />
-                      make public on tracker
-                    </label>
-                    <button onClick={() => handleAdminUpdateBug(selectedBugReport)} className="ml-auto px-4 py-1.5 bg-[#33a29b] text-white rounded-lg text-xs font-bold hover:bg-[#2a8a84] transition">save</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </>
-      )}
-
-            {/* Grant Badge Modal (Admin/Mod) */}
+      {/* Grant Badge Modal (Admin/Mod) */}
       {showGrantBadgeModal && (userRole === 'admin' || userRole === 'moderator') && (
         <>
           <div onClick={() => { setShowGrantBadgeModal(false); setGbUser(null); setGbSearch(''); setGbResults([]); setGbBadge(''); setGbMsg(''); setGbUserBadges([]); }} className="fixed inset-0 bg-black/60 z-50" />
