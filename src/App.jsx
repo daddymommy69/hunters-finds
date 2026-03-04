@@ -767,7 +767,7 @@ const HuntersFindsApp = () => {
     localStorage.setItem('exploreView', exploreView);
   }, [exploreView]);
   const [youView, setYouView] = useState(() => {
-    return localStorage.getItem('youView') || 'profile';
+    const v = localStorage.getItem('youView'); return (v === 'ratings' ? 'profile' : v) || 'profile';
   });
   
   // Save youView changes
@@ -7453,21 +7453,7 @@ const HuntersFindsApp = () => {
                 <User size={18} />
                 {!user && <Lock size={10} className="absolute top-1 right-1 text-gray-500" />}
               </button>
-              <button 
-                onClick={() => setYouView('ratings')} 
-                disabled={!user}
-                className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition relative ${
-                  youView === 'ratings' 
-                    ? 'bg-gray-700 text-white' 
-                    : !user
-                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`} 
-                style={{ fontFamily: '"Courier New", monospace' }}
-              >
-                <Star size={18} />
-                {!user && <Lock size={10} className="absolute top-1 right-1 text-gray-500" />}
-              </button>
+
               <button 
                 onClick={() => setYouView('groups')} 
                 disabled={!user}
@@ -7768,103 +7754,81 @@ const HuntersFindsApp = () => {
                       ));
                     })()}
                   </div>
-                </div>
-              )}
 
-              {youView === 'ratings' && (
-                <div className="space-y-3">
-                  <h2 className="text-lg font-bold mb-4" style={{ fontFamily: '"Courier New", monospace' }}>your ratings</h2>
-                  {activeUserRatings.length === 0 ? (
-                    <div className="text-center text-gray-400 py-8 text-sm" style={{ fontFamily: '"Courier New", monospace' }}>no ratings yet — go rate something!</div>
-                  ) : activeUserRatings
-                    .sort((a, b) => (b.overall_score || 0) - (a.overall_score || 0))
-                    .map((rating, idx) => {
-                      const dishObj = allDishes.find(d => d.id === rating.dish_id);
-                      const srr = rating.overall_score != null
-                        ? parseFloat(parseFloat(rating.overall_score).toFixed(2))
-                        : rating.taste_score != null
-                          ? parseFloat(((rating.taste_score + rating.portion_score + rating.price_score) / 3).toFixed(2))
-                          : null;
-                      const dishName = rating.dish?.name || dishObj?.name || 'Unknown';
-                      const restaurantName = rating.dish?.restaurant_name || dishObj?.restaurantName || '';
-                      const price = rating.price || dishObj?.price;
-                      const hoursAgo = (Date.now() - new Date(rating.created_at)) / 3600000;
-                      const timeLabel = hoursAgo < 1 ? 'just now' : hoursAgo < 24 ? `${Math.floor(hoursAgo)}h ago` : `${Math.floor(hoursAgo / 24)}d ago`;
-                      return (
-                        <div key={rating.id} className="bg-white rounded-lg p-3 shadow-sm">
-                          <div
-                            onClick={() => { if (dishObj) setSelectedDish(dishObj); }}
-                            className="cursor-pointer hover:bg-gray-50 -m-3 p-3 rounded-lg"
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
-                                <Image size={24} className="text-gray-400" />
-                              </div>
-                              <div className="flex-1">
-                                <div className="font-semibold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>{dishName}</div>
-                                <div className="text-xs text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
-                                  {restaurantName}{price != null ? ` • $${parseFloat(price).toFixed(2)}` : ''}
-                                  {rating.edited_at && <span className="text-gray-400 ml-2">(edited)</span>}
+                  {/* All Ratings */}
+                  <div className="bg-white rounded-lg p-4 shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-semibold" style={{ fontFamily: '"Courier New", monospace' }}>your ratings</h3>
+                      <div className="flex gap-1">
+                        {[{key:'score',label:'top rated'},{key:'recent',label:'recent'}].map(opt => (
+                          <button key={opt.key}
+                            onClick={() => setRatingsFilter(opt.key)}
+                            className={`text-[10px] px-2 py-0.5 rounded-full font-bold transition ${ratingsFilter===opt.key ? 'bg-[#33a29b] text-white' : 'bg-gray-100 text-gray-500'}`}
+                            style={{ fontFamily: '"Courier New", monospace' }}>{opt.label}</button>
+                        ))}
+                      </div>
+                    </div>
+                    {activeUserRatings.length === 0
+                      ? <div className="text-center text-gray-400 py-6 text-sm" style={{ fontFamily: '"Courier New", monospace' }}>no ratings yet — go rate something!</div>
+                      : [...activeUserRatings]
+                          .sort((a, b) => ratingsFilter === 'recent'
+                            ? new Date(b.created_at) - new Date(a.created_at)
+                            : (b.overall_score || 0) - (a.overall_score || 0))
+                          .map((rating, idx) => {
+                            const dishObj = allDishes.find(d => d.id === rating.dish_id);
+                            const srr = rating.overall_score != null
+                              ? parseFloat(parseFloat(rating.overall_score).toFixed(2))
+                              : rating.taste_score != null
+                                ? parseFloat(((rating.taste_score + rating.portion_score + rating.price_score) / 3).toFixed(2))
+                                : null;
+                            const dishName = rating.dish?.name || dishObj?.name || 'Unknown';
+                            const restaurantName = rating.dish?.restaurant_name || dishObj?.restaurantName || '';
+                            const price = rating.price || dishObj?.price;
+                            const hoursAgo = (Date.now() - new Date(rating.created_at)) / 3600000;
+                            const timeLabel = hoursAgo < 1 ? 'just now' : hoursAgo < 24 ? `${Math.floor(hoursAgo)}h ago` : `${Math.floor(hoursAgo / 24)}d ago`;
+                            return (
+                              <div key={rating.id} className="bg-gray-50 rounded-lg p-3 mb-2">
+                                <div
+                                  onClick={() => { if (dishObj) setSelectedDish(dishObj); }}
+                                  className="cursor-pointer hover:opacity-80 transition"
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-14 h-14 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
+                                      <Image size={20} className="text-gray-400" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="font-semibold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}>{dishName}</div>
+                                      <div className="text-xs text-gray-500 truncate" style={{ fontFamily: '"Courier New", monospace' }}>
+                                        {restaurantName}{price != null ? ` • $${parseFloat(price).toFixed(2)}` : ''}
+                                      </div>
+                                      <div className="text-xs text-gray-400 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>rated {timeLabel}</div>
+                                    </div>
+                                    {srr != null && (
+                                      <div className={`text-xl font-bold flex-shrink-0 ${getSRRColor(srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{srr.toFixed(2)}</div>
+                                    )}
+                                  </div>
                                 </div>
-                                <div className="text-xs text-gray-400 mt-1" style={{ fontFamily: '"Courier New", monospace' }}>rated {timeLabel}</div>
+                                {canEditRating({ user_id: user.id, created_at: rating.created_at }) && (
+                                  <div className="flex gap-2 mt-2 pt-2 border-t border-gray-200">
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleEditRating({ id: rating.id, dish_name: dishName, dish: { name: dishName }, restaurant_name: restaurantName, taste_score: rating.taste_score, portion_score: rating.portion_score, price_value_score: rating.price_value_score, price, comment: rating.comment || '', created_at: rating.created_at, edit_count: rating.edit_count || 0 }); }}
+                                      className="px-3 py-1 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100 border border-blue-200 font-medium"
+                                      style={{ fontFamily: '"Courier New", monospace' }}
+                                    >Edit</button>
+                                    {canDeleteRating({ user_id: user.id, created_at: rating.created_at }) && (
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleDeleteRating({ id: rating.id, dish_name: dishName, dish: { name: dishName }, restaurant_name: restaurantName, user_id: user.id, taste_score: rating.taste_score, portion_score: rating.portion_score, price_value_score: rating.price_value_score, price, comment: rating.comment || '', created_at: rating.created_at }); }}
+                                        className="px-3 py-1 text-xs bg-red-50 text-red-700 rounded hover:bg-red-100 border border-red-200 font-medium"
+                                        style={{ fontFamily: '"Courier New", monospace' }}
+                                      >Delete</button>
+                                    )}
+                                  </div>
+                                )}
                               </div>
-                              {srr != null && (
-                                <div className={`text-2xl font-bold ${getSRRColor(srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{srr.toFixed(2)}</div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Edit/Delete Buttons */}
-                          {canEditRating({ user_id: user.id, created_at: rating.created_at }) && (
-                            <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleEditRating({
-                                    id: rating.id,
-                                    dish_name: dishName,
-                                    dish: { name: dishName },
-                                    restaurant_name: restaurantName,
-                                    taste_score: rating.taste_score,
-                                    portion_score: rating.portion_score,
-                                    price_value_score: rating.price_value_score,
-                                    price: price,
-                                    comment: rating.comment || '',
-                                    created_at: rating.created_at,
-                                    edit_count: rating.edit_count || 0
-                                  });
-                                }}
-                                className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100 border border-blue-200 font-medium"
-                                style={{ fontFamily: '"Courier New", monospace' }}
-                              >Edit</button>
-
-                              {canDeleteRating({ user_id: user.id, created_at: rating.created_at }) && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteRating({
-                                      id: rating.id,
-                                      dish_name: dishName,
-                                      dish: { name: dishName },
-                                      restaurant_name: restaurantName,
-                                      user_id: user.id,
-                                      taste_score: rating.taste_score,
-                                      portion_score: rating.portion_score,
-                                      price_value_score: rating.price_value_score,
-                                      price: price,
-                                      comment: rating.comment || '',
-                                      created_at: rating.created_at
-                                    });
-                                  }}
-                                  className="px-3 py-1.5 text-xs bg-red-50 text-red-700 rounded hover:bg-red-100 border border-red-200 font-medium"
-                                  style={{ fontFamily: '"Courier New", monospace' }}
-                                >Delete</button>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                            );
+                          })
+                    }
+                  </div>
                 </div>
               )}
 
