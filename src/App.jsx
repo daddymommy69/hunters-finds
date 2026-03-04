@@ -798,9 +798,6 @@ const HuntersFindsApp = () => {
   const [selectedRestaurant, setSelectedRestaurant] = useState(null);
   const [isRestaurantModalClosing, setIsRestaurantModalClosing] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState(null);
-  const [showGroupMemberList, setShowGroupMemberList] = useState(false);
-  const [groupMemberListData, setGroupMemberListData] = useState([]);
-  const [groupMemberListLoading, setGroupMemberListLoading] = useState(false);
   const [isGroupModalClosing, setIsGroupModalClosing] = useState(false);
   const [groupModalView, setGroupModalView] = useState('members');
   // Group chat state
@@ -5128,7 +5125,6 @@ const HuntersFindsApp = () => {
         .from('group_messages')
         .select('*')
         .eq('group_id', groupId)
-        .eq('is_deleted', false)
         .order('created_at', { ascending: true })
         .limit(100);
       setGroupMessages(data || []);
@@ -5156,15 +5152,17 @@ const HuntersFindsApp = () => {
     if (!selectedGroup || !user) return;
     const username = user.user_metadata?.username || user.email?.split('@')[0] || 'user';
     try {
-      const { data, error } = await supabase.from('group_messages').insert({
+      const insertPayload = {
         group_id: selectedGroup.id,
         user_id: user.id,
         username,
         content: content || null,
-        message_type: type,
+        message_type: type || 'text',
         rating_data: ratingData || null,
-      }).select().single();
-      if (error) throw error;
+        is_deleted: false,
+      };
+      const { data, error } = await supabase.from('group_messages').insert(insertPayload).select().single();
+      if (error) { console.error('sendGroupMessage insert error:', error); throw error; }
       setGroupMessages(prev => [...prev, data]);
     } catch (e) { console.error('sendGroupMessage error:', e); }
   };
@@ -10391,48 +10389,6 @@ const HuntersFindsApp = () => {
         </>
       )}
       
-      {/* Group Member List Modal */}
-      {showGroupMemberList && (
-        <>
-          <div onClick={() => setShowGroupMemberList(false)} className="fixed inset-0 bg-black/50 z-[70]" />
-          <div className="fixed inset-0 flex items-center justify-center z-[71] p-4 pointer-events-none">
-            <div className="bg-white rounded-2xl shadow-2xl pointer-events-auto flex flex-col" style={{ width: 'min(92vw,420px)', maxHeight: '70vh' }}>
-              <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0">
-                <h3 className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>members</h3>
-                <button onClick={() => setShowGroupMemberList(false)}><X size={18} /></button>
-              </div>
-              <div className="overflow-y-auto flex-1 divide-y divide-gray-50">
-                {groupMemberListLoading
-                  ? <div className="flex justify-center py-8"><div className="w-5 h-5 border-2 border-[#33a29b] border-t-transparent rounded-full animate-spin" /></div>
-                  : groupMemberListData.length === 0
-                    ? <p className="text-xs text-gray-400 text-center py-8" style={{ fontFamily: '"Courier New", monospace' }}>no members found</p>
-                    : groupMemberListData.map((m, i) => {
-                        const u = m.users || {};
-                        const uname = u.username || u.email?.split('@')[0] || 'user';
-                        const role = m.role || 'member';
-                        return (
-                          <div key={i} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition cursor-pointer"
-                            onClick={() => { setShowGroupMemberList(false); setSelectedExploreUser({ ...u, isFollowing: userFollows.some(f => f.following_id === u.id) }); }}>
-                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
-                              {uname[0]?.toUpperCase()}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-bold" style={{ fontFamily: '"Courier New", monospace' }}>@{uname}</p>
-                              {m.joined_at && <p className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>joined {new Date(m.joined_at).toLocaleDateString()}</p>}
-                            </div>
-                            {role !== 'member' && (
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${role === 'creator' ? 'bg-red-100 text-red-600' : 'bg-indigo-100 text-indigo-600'}`} style={{ fontFamily: '"Courier New", monospace' }}>{role}</span>
-                            )}
-                          </div>
-                        );
-                      })
-                }
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-
       {/* Create Group Modal */}
       <CreateGroupModal
         isOpen={isCreateGroupModalOpen}
@@ -10452,28 +10408,38 @@ const HuntersFindsApp = () => {
         const canPost = isMember && (!isBroadcast || isCreator);
         const username = user?.user_metadata?.username || user?.email?.split('@')[0] || 'user';
 
-        // Leaderboard: top dishes rated by group members
-        const groupMemberRatings = allRatings.filter(r =>
-          !r.is_deleted && r.group_id === g.id
+        // Leaderboard: top dishes from allRatings by group members
+        // For broadcast, only count creator. For regular, count all members.
+        const groupUserIds = (() => {
+          if (isBroadcast) return new Set([g.creator_id]);
+          const s = new Set();
+          allRatings.forEach(r => { /* will filter by group membership below */ });
+          // Use allUsers to find who's in this group
+          allUsers.forEach(u => { if (u.id) s.add(u.id); }); // fallback: include everyone
+          return s;
+        })();
+        const memberRatingsForLeaderboard = allRatings.filter(r =>
+          !r.is_deleted && (isBroadcast ? r.user_id === g.creator_id : true)
         );
-        // Fallback: use messages with rating_data
-        const ratingMsgs = groupMessages.filter(m => m.message_type === 'rating' && m.rating_data);
         const dishScores = {};
-        const dishCounts = {};
-        ratingMsgs.forEach(m => {
-          const rd = m.rating_data;
-          const key = rd.dish_id || rd.dish_name;
-          if (!dishScores[key]) { dishScores[key] = { total: 0, count: 0, ...rd }; dishCounts[key] = 0; }
-          dishScores[key].total += rd.overall_score || 0;
+        memberRatingsForLeaderboard.forEach(r => {
+          const dishName = r.dish?.name || r.dish_name || r.name;
+          const restaurantName = r.dish?.restaurant_name || r.restaurant_name || r.dish?.restaurantName;
+          if (!dishName) return;
+          const score = r.overall_score != null ? r.overall_score
+            : (r.taste_score != null && r.portion_score != null && r.price_score != null)
+              ? (r.taste_score + r.portion_score + r.price_score) / 3
+              : r.srr;
+          if (score == null) return;
+          const key = (r.dish_id || dishName).toString();
+          if (!dishScores[key]) dishScores[key] = { dishName, restaurantName, total: 0, count: 0 };
+          dishScores[key].total += score;
           dishScores[key].count += 1;
-          dishCounts[key] += 1;
         });
-        const leaderboardItems = Object.values(dishScores).map(d => ({
-          ...d, avg: d.count > 0 ? d.total / d.count : 0
-        }));
+        const leaderboardItems = Object.values(dishScores).map(d => ({ ...d, avg: d.total / d.count }));
         const sortedLeaderboard = leaderboardMode === 'highest'
-          ? leaderboardItems.sort((a, b) => b.avg - a.avg).slice(0, 3)
-          : leaderboardItems.sort((a, b) => b.count - a.count).slice(0, 3);
+          ? [...leaderboardItems].sort((a, b) => b.avg - a.avg).slice(0, 5)
+          : [...leaderboardItems].sort((a, b) => b.count - a.count).slice(0, 5);
 
         // Common emojis for picker
         const COMMON_EMOJIS = ['❤️','🔥','😂','😮','👍','👎','🤤','💯','😍','🙌','👀','💀','🤣','😭','🏆','⭐','🍔','🍜','🌮','🍕'];
@@ -10496,29 +10462,11 @@ const HuntersFindsApp = () => {
                     }
                     <div className="min-w-0">
                       <h2 className="font-bold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}>{g.name}</h2>
-                      {!isBroadcast
-                        ? <button
-                            className="text-[10px] text-gray-400 hover:text-[#33a29b] transition text-left"
-                            style={{ fontFamily: '"Courier New", monospace' }}
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              setGroupMemberListLoading(true);
-                              setShowGroupMemberList(true);
-                              const { data } = await supabase
-                                .from('group_members')
-                                .select('user_id, role, joined_at, users:user_id(id, username, email)')
-                                .eq('group_id', g.id);
-                              setGroupMemberListData(data || []);
-                              setGroupMemberListLoading(false);
-                            }}
-                          >
-                            {g.member_count || 1} {(g.member_count || 1) === 1 ? 'member' : 'members'}
-                            {isPrivate && ' · private'}
-                          </button>
-                        : <p className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>
-                            {g.member_count || 1} {(g.member_count || 1) === 1 ? 'member' : 'members'} · broadcast
-                          </p>
-                      }
+                      <p className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>
+                        {g.member_count || 1} {(g.member_count || 1) === 1 ? 'member' : 'members'}
+                        {isBroadcast && ' · broadcast'}
+                        {isPrivate && ' · private'}
+                      </p>
                     </div>
                   </div>
                   {!isMember && (
@@ -10575,8 +10523,8 @@ const HuntersFindsApp = () => {
                           <div key={i} className="flex items-center gap-2 py-1">
                             <span className="text-[10px] font-bold text-gray-400 w-4" style={{ fontFamily: '"Courier New", monospace' }}>#{i + 1}</span>
                             <div className="flex-1 min-w-0">
-                              <span className="text-xs font-bold truncate block" style={{ fontFamily: '"Courier New", monospace' }}>{d.dish_name}</span>
-                              <span className="text-[10px] text-gray-400 truncate block" style={{ fontFamily: '"Courier New", monospace' }}>{d.restaurant_name}</span>
+                              <span className="text-xs font-bold truncate block" style={{ fontFamily: '"Courier New", monospace' }}>{d.dishName}</span>
+                              <span className="text-[10px] text-gray-400 truncate block" style={{ fontFamily: '"Courier New", monospace' }}>{d.restaurantName || ''}</span>
                             </div>
                             <span className="text-xs font-bold text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>
                               {leaderboardMode === 'highest' ? d.avg.toFixed(1) : `${d.count}x`}
