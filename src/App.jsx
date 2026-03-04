@@ -484,6 +484,9 @@ const HuntersFindsApp = () => {
   // Groups state
   const [userGroups, setUserGroups] = useState([]);
   const [allGroups, setAllGroups] = useState([]);
+  const [groupMemberCounts, setGroupMemberCounts] = useState({}); // live counts keyed by group id
+  const [joinRequests, setJoinRequests] = useState({}); // { groupId: 'pending'|'approved'|'denied'|null }
+  const [pendingRequestsForAdmin, setPendingRequestsForAdmin] = useState([]); // requests awaiting my approval
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = useState(false);
   
@@ -619,61 +622,76 @@ const HuntersFindsApp = () => {
     const fetchGroups = async () => {
       console.log('🔄 Starting fetchGroups...');
       setGroupsLoading(true);
-      setHasAttemptedGroupFetch(true); // Set immediately to prevent re-entry
+      setHasAttemptedGroupFetch(true);
       
       try {
-        // First, get group IDs the user is a member of
-        console.log('📡 Fetching group_members for user:', user.id);
-        const { data: memberData, error: memberError } = await supabase
+        // Fetch all group_members for this user (approved only)
+        const { data: memberData } = await supabase
           .from('group_members')
-          .select('group_id')
+          .select('group_id, status')
           .eq('user_id', user.id);
 
-        if (memberError) {
-          console.error('❌ Error fetching member data:', memberError);
-          setUserGroups([]);
-        } else {
-          console.log('✅ Member data received:', memberData);
-          const groupIds = memberData?.map(m => m.group_id) || [];
-          
-          // Then fetch the actual group details
-          if (groupIds.length > 0) {
-            console.log('📡 Fetching groups for IDs:', groupIds);
-            const { data: userGroupsData, error: groupsError } = await supabase
-              .from('groups')
-              .select('*')
-              .in('id', groupIds)
-              .order('created_at', { ascending: false });
+        const approvedGroupIds = (memberData || [])
+          .filter(m => !m.status || m.status === 'approved')
+          .map(m => m.group_id);
 
-            if (groupsError) {
-              console.error('❌ Error fetching user groups:', groupsError);
-              setUserGroups([]);
-            } else {
-              console.log('✅ User groups fetched:', userGroupsData);
-              setUserGroups(userGroupsData || []);
-            }
-          } else {
-            console.log('ℹ️ User is not in any groups');
-            setUserGroups([]);
-          }
+        // Track pending requests
+        const pendingMap = {};
+        (memberData || []).forEach(m => {
+          if (m.status === 'pending') pendingMap[m.group_id] = 'pending';
+          if (m.status === 'approved') pendingMap[m.group_id] = 'approved';
+          if (m.status === 'denied') pendingMap[m.group_id] = 'denied';
+        });
+        setJoinRequests(pendingMap);
+
+        // Fetch user's approved groups
+        if (approvedGroupIds.length > 0) {
+          const { data: userGroupsData } = await supabase
+            .from('groups')
+            .select('*')
+            .in('id', approvedGroupIds)
+            .order('created_at', { ascending: false });
+          setUserGroups(userGroupsData || []);
+        } else {
+          setUserGroups([]);
         }
 
-        // Fetch all groups for discovery (public + private visible in explore)
-        console.log('📡 Fetching all groups...');
-        const { data: publicGroups, error: publicError } = await supabase
+        // Fetch all groups for explore
+        const { data: allGroupsData } = await supabase
           .from('groups')
           .select('*')
           .order('created_at', { ascending: false })
           .limit(100);
+        setAllGroups(allGroupsData || []);
 
-        if (publicError) {
-          console.error('❌ Error fetching public groups:', publicError);
-          setAllGroups([]);
-        } else {
-          console.log('✅ Public groups fetched:', publicGroups?.length || 0);
-          setAllGroups(publicGroups || []);
+        // Fetch live member counts for all groups
+        const { data: allMembers } = await supabase
+          .from('group_members')
+          .select('group_id')
+          .eq('status', 'approved');
+        const counts = {};
+        (allMembers || []).forEach(m => {
+          counts[m.group_id] = (counts[m.group_id] || 0) + 1;
+        });
+        setGroupMemberCounts(counts);
+
+        // Fetch pending requests for groups I admin/mod
+        if (approvedGroupIds.length > 0) {
+          const { data: pendingReqs } = await supabase
+            .from('group_members')
+            .select('*, users(username, email)')
+            .in('group_id', approvedGroupIds)
+            .eq('status', 'pending');
+          // Only show pending reqs for groups where I'm admin/mod
+          const { data: myRoles } = await supabase
+            .from('group_members')
+            .select('group_id, role')
+            .eq('user_id', user.id)
+            .in('role', ['admin', 'moderator']);
+          const adminGroupIds = new Set((myRoles || []).map(r => r.group_id));
+          setPendingRequestsForAdmin((pendingReqs || []).filter(r => adminGroupIds.has(r.group_id)));
         }
-        
+
         console.log('✅ fetchGroups complete');
       } catch (error) {
         console.error('❌ Critical error in fetchGroups:', error);
@@ -5025,26 +5043,66 @@ const HuntersFindsApp = () => {
   const handleJoinGroup = async (group) => {
     const targetGroup = group || selectedGroup;
     if (!targetGroup || !user) return;
+    const privacy = targetGroup.privacy || 'public';
+    const isInviteOnly = privacy === 'invite-only';
+    const isPrivate = privacy === 'private';
+    const needsRequest = isInviteOnly || isPrivate;
+    const status = needsRequest ? 'pending' : 'approved';
     try {
       const { error } = await supabase
         .from('group_members')
-        .insert({ group_id: targetGroup.id, user_id: user.id, role: 'member' });
+        .insert({ group_id: targetGroup.id, user_id: user.id, role: 'member', status });
       if (error) throw error;
-
-      // Update local state
-      setUserGroups(prev => [...prev, targetGroup]);
-      setErrorModal({
-        show: true,
-        title: 'Joined!',
-        message: `You've joined "${targetGroup.name}".`
-      });
+      if (needsRequest) {
+        setJoinRequests(prev => ({ ...prev, [targetGroup.id]: 'pending' }));
+        setErrorModal({ show: true, title: 'Request Sent!', message: `Your request to join "${targetGroup.name}" has been sent. You'll be notified when approved.` });
+      } else {
+        setUserGroups(prev => [...prev, targetGroup]);
+        setJoinRequests(prev => ({ ...prev, [targetGroup.id]: 'approved' }));
+        setGroupMemberCounts(prev => ({ ...prev, [targetGroup.id]: (prev[targetGroup.id] || 0) + 1 }));
+        setErrorModal({ show: true, title: 'Joined!', message: `You've joined "${targetGroup.name}".` });
+      }
     } catch (err) {
       console.error('Error joining group:', err);
-      setErrorModal({
-        show: true,
-        title: 'Error',
-        message: 'Could not join group. Please try again.'
-      });
+      setErrorModal({ show: true, title: 'Error', message: 'Could not join group. Please try again.' });
+    }
+  };
+
+  const handleCancelJoinRequest = async (group) => {
+    const targetGroup = group || selectedGroup;
+    if (!targetGroup || !user) return;
+    try {
+      await supabase.from('group_members')
+        .delete()
+        .eq('group_id', targetGroup.id)
+        .eq('user_id', user.id)
+        .eq('status', 'pending');
+      setJoinRequests(prev => ({ ...prev, [targetGroup.id]: null }));
+    } catch (err) {
+      console.error('Error cancelling request:', err);
+    }
+  };
+
+  const handleApproveRequest = async (req) => {
+    try {
+      await supabase.from('group_members')
+        .update({ status: 'approved' })
+        .eq('id', req.id);
+      setPendingRequestsForAdmin(prev => prev.filter(r => r.id !== req.id));
+      setGroupMemberCounts(prev => ({ ...prev, [req.group_id]: (prev[req.group_id] || 0) + 1 }));
+    } catch (err) {
+      console.error('Error approving request:', err);
+    }
+  };
+
+  const handleDenyRequest = async (req) => {
+    try {
+      await supabase.from('group_members')
+        .update({ status: 'denied' })
+        .eq('id', req.id);
+      setPendingRequestsForAdmin(prev => prev.filter(r => r.id !== req.id));
+    } catch (err) {
+      console.error('Error denying request:', err);
     }
   };
 
@@ -6873,44 +6931,31 @@ const HuntersFindsApp = () => {
                     />
                   ) : (
                     userGroups.map((group) => {
-                      const gType = group.group_type || group.type || 'public';
+                      const gPrivacy = group.privacy || 'public';
+                      const gType = group.group_type || group.type || 'regular';
                       const isBroadcast = gType === 'broadcast';
-                      const isPrivate = gType === 'private';
-                      const memberCount = group.member_count || 1;
+                      const isInviteOnly = !isBroadcast && gPrivacy === 'invite-only';
+                      const isPrivatG = !isBroadcast && gPrivacy === 'private';
+                      const memberCount = groupMemberCounts[group.id] ?? group.member_count ?? 1;
+                      const typeLabel = isBroadcast ? 'broadcast channel' : isInviteOnly ? 'invite-only' : isPrivatG ? 'private' : 'public';
+                      const typeColor = isBroadcast ? '#33a29b' : isInviteOnly ? '#f59e0b' : isPrivatG ? '#818cf8' : '#9ca3af';
                       return (
-                        <div
-                          key={group.id}
-                          onClick={() => setSelectedGroup(group)}
-                          className="bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition"
-                        >
+                        <div key={group.id} onClick={() => setSelectedGroup(group)} className="bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition">
                           <div className="flex items-center justify-between">
                             <div className="flex-1 min-w-0">
-                              <h3 className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>{group.name}</h3>
-                              <p className="text-xs text-gray-500 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
-                                {memberCount} {memberCount === 1 ? 'member' : 'members'}
-                                {isBroadcast && <span className="ml-1.5 text-[#33a29b]">· broadcast channel</span>}
-                                {isPrivate && <span className="ml-1.5 text-indigo-400">· private</span>}
-                                {!isBroadcast && !isPrivate && <span className="ml-1.5 text-gray-400">· public</span>}
-                              </p>
-                              {group.description && group.description !== group.name && (
-                                <p className="text-xs text-gray-400 mt-0.5 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{group.description}</p>
-                              )}
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="font-bold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}>{group.name}</h3>
+                                <span className="text-[10px] font-bold text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>member</span>
+                              </div>
+                              <p className="text-xs text-gray-500 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>{memberCount} {memberCount === 1 ? 'member' : 'members'}</p>
+                              {group.description && <p className="text-xs text-gray-400 mt-0.5 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{group.description}</p>}
                             </div>
-                            <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-                              <span className="text-[10px] font-bold text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>member</span>
-                              {isBroadcast
-                                ? <Megaphone size={20} className="text-[#33a29b]" />
-                                : isPrivate
-                                  ? <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-                                      <circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/>
-                                      <path d="M2 20c0-3.3 2.7-6 6-6h2"/><path d="M14 14h2c3.3 0 6 2.7 6 6"/>
-                                    </svg>
-                                  : <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-                                      <circle cx="8" cy="7" r="3"/><circle cx="16" cy="7" r="3"/><circle cx="12" cy="14" r="3"/>
-                                      <path d="M2 21c0-2.8 2.2-5 5-5h1"/><path d="M16 16h1c2.8 0 5 2.2 5 5"/>
-                                      <path d="M9 17c0-1.7 1.3-3 3-3s3 1.3 3 3"/>
-                                    </svg>
-                              }
+                            <div className="flex items-center gap-1.5 flex-shrink-0 ml-3">
+                              <span className="text-[10px] font-bold" style={{ color: typeColor, fontFamily: '"Courier New", monospace' }}>{typeLabel}</span>
+                              {isBroadcast ? <Megaphone size={18} style={{ color: '#33a29b' }} />
+                                : isInviteOnly ? <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+                                : isPrivatG ? <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                : <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="7" r="3"/><circle cx="16" cy="7" r="3"/><circle cx="12" cy="14" r="3"/><path d="M2 21c0-2.8 2.2-5 5-5h1"/><path d="M16 16h1c2.8 0 5 2.2 5 5"/><path d="M9 17c0-1.7 1.3-3 3-3s3 1.3 3 3"/></svg>}
                             </div>
                           </div>
                         </div>
@@ -7277,47 +7322,34 @@ const HuntersFindsApp = () => {
                     />
                   ) : (
                     allGroups.map(group => {
-                      const isUserMember = userGroups.some(ug => ug.id === group.id);
-                      const gType = group.group_type || group.type || 'public';
+                      const gPrivacy = group.privacy || 'public';
+                      const gType = group.group_type || group.type || 'regular';
                       const isBroadcast = gType === 'broadcast';
-                      const isPrivate = gType === 'private';
-                      const memberCount = group.member_count || 1;
+                      const isInviteOnly = !isBroadcast && gPrivacy === 'invite-only';
+                      const isPrivatG = !isBroadcast && gPrivacy === 'private';
+                      const memberCount = groupMemberCounts[group.id] ?? group.member_count ?? 1;
+                      const isMemberLocal = userGroups.some(ug => ug.id === group.id);
+                      const reqStatus = joinRequests[group.id];
+                      const typeLabel = isBroadcast ? 'broadcast channel' : isInviteOnly ? 'invite-only' : isPrivatG ? 'private' : 'public';
+                      const typeColor = isBroadcast ? '#33a29b' : isInviteOnly ? '#f59e0b' : isPrivatG ? '#818cf8' : '#9ca3af';
                       return (
-                        <div
-                          key={group.id}
-                          onClick={() => setSelectedGroup(group)}
-                          className="bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition"
-                        >
+                        <div key={group.id} onClick={() => setSelectedGroup(group)} className="bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition">
                           <div className="flex items-center justify-between">
                             <div className="flex-1 min-w-0">
-                              <h3 className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>{group.name}</h3>
-                              <p className="text-xs text-gray-500 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
-                                {memberCount} {memberCount === 1 ? 'member' : 'members'}
-                                {isBroadcast && <span className="ml-1.5 text-[#33a29b]">· broadcast channel</span>}
-                                {isPrivate && <span className="ml-1.5 text-indigo-400">· private</span>}
-                                {!isBroadcast && !isPrivate && <span className="ml-1.5 text-gray-400">· public</span>}
-                              </p>
-                              {group.description && group.description !== group.name && (
-                                <p className="text-xs text-gray-400 mt-0.5 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{group.description}</p>
-                              )}
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="font-bold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}>{group.name}</h3>
+                                {isMemberLocal && <span className="text-[10px] font-bold text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>member</span>}
+                                {reqStatus === 'pending' && <span className="text-[10px] font-bold text-amber-500" style={{ fontFamily: '"Courier New", monospace' }}>request pending</span>}
+                              </div>
+                              <p className="text-xs text-gray-500 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>{memberCount} {memberCount === 1 ? 'member' : 'members'}</p>
+                              {group.description && <p className="text-xs text-gray-400 mt-0.5 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{group.description}</p>}
                             </div>
-                            <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-                              {isUserMember && (
-                                <span className="text-[10px] font-bold text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>member</span>
-                              )}
-                              {isBroadcast
-                                ? <Megaphone size={20} className="text-[#33a29b]" />
-                                : isPrivate
-                                  ? <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-                                      <circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/>
-                                      <path d="M2 20c0-3.3 2.7-6 6-6h2"/><path d="M14 14h2c3.3 0 6 2.7 6 6"/>
-                                    </svg>
-                                  : <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-                                      <circle cx="8" cy="7" r="3"/><circle cx="16" cy="7" r="3"/><circle cx="12" cy="14" r="3"/>
-                                      <path d="M2 21c0-2.8 2.2-5 5-5h1"/><path d="M16 16h1c2.8 0 5 2.2 5 5"/>
-                                      <path d="M9 17c0-1.7 1.3-3 3-3s3 1.3 3 3"/>
-                                    </svg>
-                              }
+                            <div className="flex items-center gap-1.5 flex-shrink-0 ml-3">
+                              <span className="text-[10px] font-bold" style={{ color: typeColor, fontFamily: '"Courier New", monospace' }}>{typeLabel}</span>
+                              {isBroadcast ? <Megaphone size={18} style={{ color: '#33a29b' }} />
+                                : isInviteOnly ? <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+                                : isPrivatG ? <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                : <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="7" r="3"/><circle cx="16" cy="7" r="3"/><circle cx="12" cy="14" r="3"/><path d="M2 21c0-2.8 2.2-5 5-5h1"/><path d="M16 16h1c2.8 0 5 2.2 5 5"/><path d="M9 17c0-1.7 1.3-3 3-3s3 1.3 3 3"/></svg>}
                             </div>
                           </div>
                         </div>
@@ -7888,46 +7920,31 @@ const HuntersFindsApp = () => {
                     ) : (
                       <div className="space-y-2">
                         {userGroups.map(group => {
-                          const gType = group.group_type || group.type || 'public';
+                          const gPrivacy = group.privacy || 'public';
+                          const gType = group.group_type || group.type || 'regular';
                           const isBroadcast = gType === 'broadcast';
-                          const isPrivate = gType === 'private';
+                          const isInviteOnly = !isBroadcast && gPrivacy === 'invite-only';
+                          const isPrivatG = !isBroadcast && gPrivacy === 'private';
+                          const memberCount = groupMemberCounts[group.id] ?? group.member_count ?? 1;
+                          const typeLabel = isBroadcast ? 'broadcast channel' : isInviteOnly ? 'invite-only' : isPrivatG ? 'private' : 'public';
+                          const typeColor = isBroadcast ? '#33a29b' : isInviteOnly ? '#f59e0b' : isPrivatG ? '#818cf8' : '#9ca3af';
                           return (
-                            <div
-                              key={group.id}
-                              onClick={() => setSelectedGroup(group)}
-                              className="bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition"
-                            >
+                            <div key={group.id} onClick={() => setSelectedGroup(group)} className="bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md transition">
                               <div className="flex items-center justify-between">
                                 <div className="flex-1 min-w-0">
-                                  <h3 className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>{group.name}</h3>
-                                  <p className="text-xs text-gray-500 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
-                                    {group.member_count || 1} {(group.member_count || 1) === 1 ? 'member' : 'members'}
-                                    {isBroadcast && <span className="ml-1.5 text-[#33a29b]">· broadcast channel</span>}
-                                    {isPrivate && <span className="ml-1.5 text-indigo-400">· private</span>}
-                                    {!isBroadcast && !isPrivate && <span className="ml-1.5 text-gray-400">· public</span>}
-                                  </p>
-                                  {group.description && group.description !== group.name && (
-                                    <p className="text-xs text-gray-400 mt-0.5 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{group.description}</p>
-                                  )}
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <h3 className="font-bold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}>{group.name}</h3>
+                                    <span className="text-[10px] font-bold text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>member</span>
+                                  </div>
+                                  <p className="text-xs text-gray-500 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>{memberCount} {memberCount === 1 ? 'member' : 'members'}</p>
+                                  {group.description && <p className="text-xs text-gray-400 mt-0.5 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{group.description}</p>}
                                 </div>
-                                <div className="flex-shrink-0 ml-3">
-                                  {isBroadcast
-                                    ? <Megaphone size={20} className="text-[#33a29b]" />
-                                    : isPrivate
-                                      ? <div className="flex items-center justify-center w-6 h-6">
-                                          <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-                                            <circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/>
-                                            <path d="M2 20c0-3.3 2.7-6 6-6h2"/><path d="M14 14h2c3.3 0 6 2.7 6 6"/>
-                                          </svg>
-                                        </div>
-                                      : <div className="flex items-center justify-center w-6 h-6">
-                                          <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-                                            <circle cx="8" cy="7" r="3"/><circle cx="16" cy="7" r="3"/><circle cx="12" cy="14" r="3"/>
-                                            <path d="M2 21c0-2.8 2.2-5 5-5h1"/><path d="M16 16h1c2.8 0 5 2.2 5 5"/>
-                                            <path d="M9 17c0-1.7 1.3-3 3-3s3 1.3 3 3"/>
-                                          </svg>
-                                        </div>
-                                  }
+                                <div className="flex items-center gap-1.5 flex-shrink-0 ml-3">
+                                  <span className="text-[10px] font-bold" style={{ color: typeColor, fontFamily: '"Courier New", monospace' }}>{typeLabel}</span>
+                                  {isBroadcast ? <Megaphone size={18} style={{ color: '#33a29b' }} />
+                                    : isInviteOnly ? <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+                                    : isPrivatG ? <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                    : <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="7" r="3"/><circle cx="16" cy="7" r="3"/><circle cx="12" cy="14" r="3"/><path d="M2 21c0-2.8 2.2-5 5-5h1"/><path d="M16 16h1c2.8 0 5 2.2 5 5"/><path d="M9 17c0-1.7 1.3-3 3-3s3 1.3 3 3"/></svg>}
                                 </div>
                               </div>
                             </div>
@@ -10475,12 +10492,23 @@ const HuntersFindsApp = () => {
       {/* Group Chat Modal */}
       {selectedGroup && (() => {
         const g = selectedGroup;
-        const gType = g.group_type || g.type || 'public';
+        const gPrivacy = g.privacy || 'public';
+        const gType = g.group_type || g.type || 'regular';
         const isBroadcast = gType === 'broadcast';
-        const isPrivate = gType === 'private';
+        const isInviteOnly = !isBroadcast && gPrivacy === 'invite-only';
+        const isPrivate = !isBroadcast && gPrivacy === 'private';
         const isMember = userGroups.some(ug => ug.id === g.id);
         const isCreator = user && g.creator_id === user.id;
+        const isAdminOrMod = isMember && (() => {
+          // check pendingRequestsForAdmin to infer role
+          return isCreator || pendingRequestsForAdmin.some(r => r.group_id === g.id);
+        })();
         const canPost = isMember && (!isBroadcast || isCreator);
+        const reqStatus = joinRequests[g.id];
+        const liveCount = groupMemberCounts[g.id] ?? g.member_count ?? 1;
+        const typeLabel = isBroadcast ? 'broadcast' : isInviteOnly ? 'invite-only' : isPrivate ? 'private' : 'public';
+        const typeColor = isBroadcast ? '#33a29b' : isInviteOnly ? '#f59e0b' : isPrivate ? '#818cf8' : '#9ca3af';
+        const pendingForThisGroup = pendingRequestsForAdmin.filter(r => r.group_id === g.id);
         const username = user?.user_metadata?.username || user?.email?.split('@')[0] || 'user';
 
         // Leaderboard: top dishes rated by group members
@@ -10521,26 +10549,36 @@ const HuntersFindsApp = () => {
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     {isBroadcast
                       ? <Megaphone size={18} className="text-[#33a29b] flex-shrink-0" />
-                      : isPrivate
-                        ? <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0"><circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/><path d="M2 20c0-3.3 2.7-6 6-6h2"/><path d="M14 14h2c3.3 0 6 2.7 6 6"/></svg>
-                        : <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0"><circle cx="8" cy="7" r="3"/><circle cx="16" cy="7" r="3"/><circle cx="12" cy="14" r="3"/><path d="M2 21c0-2.8 2.2-5 5-5h1"/><path d="M16 16h1c2.8 0 5 2.2 5 5"/><path d="M9 17c0-1.7 1.3-3 3-3s3 1.3 3 3"/></svg>
+                      : isInviteOnly
+                        ? <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+                        : isPrivate
+                          ? <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                          : <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0"><circle cx="8" cy="7" r="3"/><circle cx="16" cy="7" r="3"/><circle cx="12" cy="14" r="3"/><path d="M2 21c0-2.8 2.2-5 5-5h1"/><path d="M16 16h1c2.8 0 5 2.2 5 5"/><path d="M9 17c0-1.7 1.3-3 3-3s3 1.3 3 3"/></svg>
                     }
                     <div className="min-w-0">
                       <h2 className="font-bold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}>{g.name}</h2>
                       <p className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>
-                        {g.member_count || 1} {(g.member_count || 1) === 1 ? 'member' : 'members'}
-                        {isBroadcast && ' · broadcast'}
-                        {isPrivate && ' · private'}
+                        {liveCount} {liveCount === 1 ? 'member' : 'members'}
+                        <span className="ml-1" style={{ color: typeColor }}>· {typeLabel}</span>
                       </p>
                     </div>
                   </div>
-                  {!isMember && (
+                  {!isMember && !reqStatus && (
                     <button
                       onClick={() => handleJoinGroup(g)}
                       className="px-3 py-1.5 bg-[#33a29b] text-white rounded-lg text-xs font-bold hover:bg-[#2a8a84] transition flex-shrink-0"
                       style={{ fontFamily: '"Courier New", monospace' }}
                     >
-                      {isPrivate ? 'request to join' : 'join'}
+                      {isInviteOnly || isPrivate ? 'request to join' : 'join'}
+                    </button>
+                  )}
+                  {!isMember && reqStatus === 'pending' && (
+                    <button
+                      onClick={() => handleCancelJoinRequest(g)}
+                      className="px-3 py-1.5 bg-amber-50 text-amber-600 border border-amber-300 rounded-lg text-xs font-bold hover:bg-amber-100 transition flex-shrink-0"
+                      style={{ fontFamily: '"Courier New", monospace' }}
+                    >
+                      cancel request
                     </button>
                   )}
                   {isMember && isCreator && (
@@ -10564,8 +10602,46 @@ const HuntersFindsApp = () => {
                   <button onClick={() => setSelectedGroup(null)} className="text-gray-400 hover:text-gray-600 flex-shrink-0"><X size={18} /></button>
                 </div>
 
+                {/* Private group gate for non-members */}
+                {isPrivate && !isMember && (
+                  <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+                    <svg width={40} height={40} viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="mb-3"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    <p className="font-bold text-sm text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>private group</p>
+                    <p className="text-xs text-gray-400 mb-4" style={{ fontFamily: '"Courier New", monospace' }}>only members can see the contents of this group.</p>
+                    {!reqStatus && (
+                      <button onClick={() => handleJoinGroup(g)} className="px-4 py-2 bg-[#33a29b] text-white rounded-lg text-xs font-bold hover:bg-[#2a8a84] transition" style={{ fontFamily: '"Courier New", monospace' }}>request access</button>
+                    )}
+                    {reqStatus === 'pending' && (
+                      <div className="flex flex-col items-center gap-2">
+                        <span className="text-xs text-amber-500 font-bold" style={{ fontFamily: '"Courier New", monospace' }}>request pending approval</span>
+                        <button onClick={() => handleCancelJoinRequest(g)} className="text-xs text-gray-400 hover:text-gray-600 underline" style={{ fontFamily: '"Courier New", monospace' }}>cancel request</button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Pending join requests panel for admins/mods */}
+                {(isMember && pendingForThisGroup.length > 0) && (
+                  <div className="border-b flex-shrink-0 bg-amber-50 px-4 py-3">
+                    <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wide mb-2" style={{ fontFamily: '"Courier New", monospace' }}>join requests ({pendingForThisGroup.length})</p>
+                    <div className="space-y-2">
+                      {pendingForThisGroup.map(req => (
+                        <div key={req.id} className="flex items-center justify-between">
+                          <span className="text-xs text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>
+                            @{req.users?.username || req.user_id?.slice(0, 8)}
+                          </span>
+                          <div className="flex gap-2">
+                            <button onClick={() => handleApproveRequest(req)} className="text-[10px] px-2 py-1 bg-[#33a29b] text-white rounded font-bold hover:bg-[#2a8a84] transition" style={{ fontFamily: '"Courier New", monospace' }}>approve</button>
+                            <button onClick={() => handleDenyRequest(req)} className="text-[10px] px-2 py-1 bg-red-100 text-red-600 rounded font-bold hover:bg-red-200 transition" style={{ fontFamily: '"Courier New", monospace' }}>deny</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Leaderboard bar */}
-                <div className="border-b flex-shrink-0">
+                {(!isPrivate || isMember) && <div className="border-b flex-shrink-0">
                   <button
                     onClick={() => setLeaderboardOpen(o => !o)}
                     className="w-full flex items-center justify-between px-4 py-2 hover:bg-gray-50 transition"
@@ -10599,10 +10675,10 @@ const HuntersFindsApp = () => {
                       }
                     </div>
                   )}
-                </div>
+                </div>}
 
-                {/* Messages area */}
-                <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 relative"
+                {/* Messages area - hidden for private non-members */}
+                {(!isPrivate || isMember) && <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 relative"
                   ref={el => { if (el) el.scrollTop = el.scrollHeight; }}>
                   {groupMessagesLoading && (
                     <div className="flex justify-center py-8">
@@ -10702,10 +10778,10 @@ const HuntersFindsApp = () => {
                       </div>
                     );
                   })}
-                </div>
+                </div>}
 
                 {/* Input bar */}
-                {canPost ? (
+                {(!isPrivate || isMember) && canPost ? (
                   <div className="border-t px-3 py-3 flex gap-2 items-center flex-shrink-0 rounded-b-2xl">
                     <input
                       value={groupChatInput}
