@@ -188,29 +188,6 @@ const BADGE_DEFS = {
 };
 
 const BADGE_CATEGORIES = ['castle','social','explorer','consistency','other','special'];
-
-// ── Special group colors ──────────────────────────────────────────────────────
-const SPECIAL_GROUPS = {
-  HUNTERS_CASTLE: '3de91db4-88e5-493f-8b6e-e4fdcd735a17',
-  DTPX4:          '275f8085-490f-4710-a230-2e9b50b49439',
-};
-// CSS classes — solid color only, no animation on the group name labels
-// Username glows defined in <style> block
-const SPECIAL_GROUP_STYLES = {
-  castle_lord:    { css: 'castle-lord-name',    groupCss: 'group-label-cl',   groupColor: '#ef4444', priority: 0 },
-  dtpx4:          { css: 'dtpx4-name',          groupCss: 'group-label-dtp',  groupColor: '#2563eb', priority: 1 },
-  hunters_castle: { css: 'hunters-castle-name', groupCss: 'group-label-hc',   groupColor: '#b45309', priority: 2 },
-};
-const getNameStyle = (userId, specialMemberships, ownId, ownNameStyle) => {
-  const key = userId === ownId ? ownNameStyle : (specialMemberships?.[userId] || null);
-  return key ? (SPECIAL_GROUP_STYLES[key] || null) : null;
-};
-// No icons — color only
-const SpecialUsername = ({ userId, username, ownId, ownNameStyle, specialMemberships, prefix='@', className='', style={} }) => {
-  const ns = getNameStyle(userId, specialMemberships, ownId, ownNameStyle);
-  if (!ns) return <span className={className} style={style}>{prefix}{username}</span>;
-  return <span className={`${ns.css} ${className}`} style={style}>{prefix}{username}</span>;
-};
 const BADGE_CATEGORY_LABELS = { castle:'castle trophies', social:'social', explorer:'explorer', consistency:'consistency', other:'achievements', special:'special' };
 
 const BadgeSVGIcon = ({ iconKey, size=20, color='white' }) => {
@@ -245,8 +222,8 @@ const BadgeSVGIcon = ({ iconKey, size=20, color='white' }) => {
 
 // Prestige order (highest first) for sorting badges
 const BADGE_PRESTIGE = [
-  'castle_lord','founder','taste_maker','ambassador','rat_helper',
   'castle_diamond','castle_gold','castle_silver','castle_bronze','castle_wood',
+  'castle_lord','founder','rat_helper','taste_maker','ambassador',
   'followers_10000','followers_1000','followers_100','followers_10','followers_1',
   'trendsetter','pioneer','most_liked','most_commented',
   'mr_worldwide','foreign_eater','local_diamond','city_hopper','state_wanderer','local_silver','local_bronze',
@@ -639,36 +616,6 @@ const HuntersFindsApp = () => {
       return;
     }
     
-    const fetchSpecialMemberships = async () => {
-      try {
-        const [{ data: members }, { data: clBadges }] = await Promise.all([
-          supabase.from('group_members').select('user_id, group_id').in('group_id', [SPECIAL_GROUPS.HUNTERS_CASTLE, SPECIAL_GROUPS.DTPX4]),
-          supabase.from('user_badges').select('user_id').eq('badge_id', 'castle_lord'),
-        ]);
-        const clSet  = new Set((clBadges||[]).map(b=>b.user_id));
-        const hcSet  = new Set((members||[]).filter(m=>m.group_id===SPECIAL_GROUPS.HUNTERS_CASTLE).map(m=>m.user_id));
-        const dtpSet = new Set((members||[]).filter(m=>m.group_id===SPECIAL_GROUPS.DTPX4).map(m=>m.user_id));
-        const map = {};
-        [...clSet,...hcSet,...dtpSet].forEach(uid => {
-          if (clSet.has(uid)) map[uid]='castle_lord';
-          else if (dtpSet.has(uid)) map[uid]='dtpx4';
-          else map[uid]='hunters_castle';
-        });
-        setSpecialMemberships(map);
-        if (user) {
-          if (clSet.has(user.id)) { setOwnNameStyle('castle_lord'); return; }
-          const inBoth = hcSet.has(user.id) && dtpSet.has(user.id);
-          if (inBoth) {
-            const { data: ud } = await supabase.from('users').select('username_color_pref').eq('id', user.id).single();
-            setOwnNameStyle(['hunters_castle','dtpx4'].includes(ud?.username_color_pref) ? ud.username_color_pref : 'dtpx4');
-          } else if (dtpSet.has(user.id)) setOwnNameStyle('dtpx4');
-          else if (hcSet.has(user.id)) setOwnNameStyle('hunters_castle');
-          else setOwnNameStyle(null);
-        }
-      } catch(e) { console.error('fetchSpecialMemberships:', e); }
-    };
-    fetchSpecialMemberships();
-
     const fetchGroups = async () => {
       console.log('🔄 Starting fetchGroups...');
       setGroupsLoading(true);
@@ -812,8 +759,6 @@ const HuntersFindsApp = () => {
   const [exploreForYouTab, setExploreForYouTab] = useState('recommended');
   const [exploreNearMe, setExploreNearMe] = useState(false);
   const [allUsers, setAllUsers] = useState([]);
-  const [specialMemberships, setSpecialMemberships] = useState({});
-  const [ownNameStyle, setOwnNameStyle] = useState(null);
   const [allUsersLoading, setAllUsersLoading] = useState(false);
   const [selectedExploreUser, setSelectedExploreUser] = useState(null);
   const [followingIds, setFollowingIds] = useState(new Set());
@@ -2046,7 +1991,7 @@ const HuntersFindsApp = () => {
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 mb-2 flex items-start gap-2">
             <Star size={11} className="text-yellow-500 mt-0.5 flex-shrink-0" />
             <div className="flex-1 min-w-0">
-              <SpecialUsername userId={undefined} username={ratingUsername} ownId={user?.id} ownNameStyle={ownNameStyle} specialMemberships={specialMemberships} className="text-[10px] font-bold no-glow" style={{ fontFamily: '"Courier New", monospace', color:'#92400e' }} />
+              <span className="text-[10px] font-bold text-yellow-700" style={{ fontFamily: '"Courier New", monospace' }}>@{ratingUsername}</span>
               <p className="text-xs text-gray-700 italic mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>"{ratingNote}"</p>
             </div>
           </div>
@@ -5636,21 +5581,6 @@ const HuntersFindsApp = () => {
   return (
     <div className="h-screen flex flex-col bg-gray-50" style={{ fontFamily: '"Courier New", monospace' }}>
       <style>{`
-        @keyframes glow-red      { 0%,100%{text-shadow:0 0 6px #ef444488,0 0 12px #ef444433} 50%{text-shadow:0 0 14px #ef4444cc,0 0 28px #ef444466} }
-        @keyframes glow-gold     { 0%,100%{text-shadow:0 0 6px #b4530988,0 0 12px #b4530933} 50%{text-shadow:0 0 14px #b45309cc,0 0 28px #b4530966} }
-        @keyframes glow-sapphire { 0%,100%{text-shadow:0 0 6px #2563eb88,0 0 12px #2563eb33} 50%{text-shadow:0 0 14px #2563ebcc,0 0 28px #2563eb66} }
-        /* Username glows — full animation */
-        .castle-lord-name    { color:#ef4444!important; animation:glow-red      2.5s ease-in-out infinite; font-weight:bold; }
-        .hunters-castle-name { color:#b45309!important; animation:glow-gold     2.5s ease-in-out infinite; font-weight:bold; }
-        .dtpx4-name          { color:#2563eb!important; animation:glow-sapphire 2.5s ease-in-out infinite; font-weight:bold; }
-        /* 'who rated this' — color but NO glow animation */
-        .castle-lord-name.no-glow    { animation:none!important; color:#ef4444!important; }
-        .hunters-castle-name.no-glow { animation:none!important; color:#b45309!important; }
-        .dtpx4-name.no-glow          { animation:none!important; color:#2563eb!important; }
-        /* Group name labels — solid color, no animation */
-        .group-label-cl  { color:#ef4444!important; font-weight:bold; }
-        .group-label-hc  { color:#b45309!important; font-weight:bold; }
-        .group-label-dtp { color:#2563eb!important; font-weight:bold; }
         .leaflet-control-attribution {
           font-size: 7px !important;
           opacity: 0.3 !important;
@@ -7346,7 +7276,9 @@ const HuntersFindsApp = () => {
                   <div className="fixed z-[47] bg-white rounded-2xl shadow-xl flex flex-col"
                     style={{ top: '10%', left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 500px)', maxHeight: '80vh' }}>
                     <div className="sticky top-0 bg-white border-b px-4 py-3 flex items-center justify-between rounded-t-2xl flex-shrink-0">
-                      <h2 className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}><SpecialUsername userId={u.id} username={u.username || u.email?.split('@')[0]} ownId={user?.id} ownNameStyle={ownNameStyle} specialMemberships={specialMemberships} /></h2>
+                      <h2 className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>
+                        @{u.username || u.email?.split('@')[0]}
+                      </h2>
                       <button onClick={() => setSelectedExploreUser(null)}><X size={20} /></button>
                     </div>
                     <div className="overflow-y-auto p-4 space-y-4">
@@ -7683,7 +7615,7 @@ const HuntersFindsApp = () => {
                   <div className="bg-white rounded-lg p-4 shadow-sm">
                     <div className="flex justify-between mb-3">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h2 className="text-xl font-bold"><SpecialUsername userId={user?.id} username={user?.user_metadata?.username || user?.email?.split('@')[0] || 'user'} ownId={user?.id} ownNameStyle={ownNameStyle} specialMemberships={specialMemberships} /></h2>
+                        <h2 className="text-xl font-bold">@{user?.user_metadata?.username || user?.email?.split('@')[0] || 'user'}</h2>
                         <div className="flex items-center gap-1">
                           {getDisplayBadges(userBadges, featuredBadges).map(b => <BadgeIcon key={b.badge_id} badgeId={b.badge_id} size={18} />)}
                           {userBadges.length > 0 && (
@@ -8131,7 +8063,7 @@ const HuntersFindsApp = () => {
                               {(u.username || u.email || '?')[0].toUpperCase()}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="font-bold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}><SpecialUsername userId={u.id} username={u.username || u.email?.split('@')[0]} ownId={user?.id} ownNameStyle={ownNameStyle} specialMemberships={specialMemberships} /></div>
+                              <div className="font-bold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}>@{u.username || u.email?.split('@')[0]}</div>
                               <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>{u.ratings} ratings{u.overlap > 0 ? ` • ${u.overlap}% overlap` : ''}</div>
                             </div>
                             <ChevronRight size={16} className="text-gray-400 flex-shrink-0" />
@@ -8159,7 +8091,7 @@ const HuntersFindsApp = () => {
                               {(u.username || u.email || '?')[0].toUpperCase()}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="font-bold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}><SpecialUsername userId={u.id} username={u.username || u.email?.split('@')[0]} ownId={user?.id} ownNameStyle={ownNameStyle} specialMemberships={specialMemberships} /></div>
+                              <div className="font-bold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}>@{u.username || u.email?.split('@')[0]}</div>
                               <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>{u.ratingsCount} ratings{u.dishOverlap > 0 ? ` • ${u.dishOverlap} dishes in common` : ''}</div>
                             </div>
                             <ChevronRight size={16} className="text-gray-400 flex-shrink-0" />
@@ -9302,7 +9234,7 @@ const HuntersFindsApp = () => {
                           setSelectedExploreUser({ ...u, isFollowing: userFollows.some(f => f.following_id === r.user_id) }); 
                         }} className="flex flex-col items-center gap-1 hover:opacity-75 transition">
                           <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-sm font-bold shadow-sm">{(r.username || '?')[0].toUpperCase()}</div>
-                          <SpecialUsername userId={r.user_id} username={r.username} ownId={user?.id} ownNameStyle={ownNameStyle} specialMemberships={specialMemberships} className="text-[10px] max-w-[52px] truncate no-glow" style={{ fontFamily: '"Courier New", monospace', color: '#9ca3af' }} />
+                          <span className="text-[10px] text-gray-400 max-w-[52px] truncate" style={{ fontFamily: '"Courier New", monospace' }}>@{r.username}</span>
                           {r.srr != null && <span className={`text-xs font-bold ${getSRRColor(r.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{r.srr.toFixed(1)}</span>}
 
                         </button>
@@ -9387,7 +9319,7 @@ const HuntersFindsApp = () => {
                                 <div className="flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-100 transition" onClick={() => handleToggleComments(rating.id)}>
                                   <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">{(ratingUsername || '?')[0].toUpperCase()}</div>
                                   <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2"><SpecialUsername userId={rating.user_id} username={ratingUsername} ownId={user?.id} ownNameStyle={ownNameStyle} specialMemberships={specialMemberships} className="text-sm font-bold no-glow" style={{ fontFamily: '"Courier New", monospace' }} />{computedSrr != null && <span className={`text-sm font-bold ${getSRRColor(computedSrr)}`} style={{ fontFamily: '"Courier New", monospace' }}>({computedSrr.toFixed(2)})</span>}</div>
+                                    <div className="flex items-center gap-2"><span className="text-sm font-bold" style={{ fontFamily: '"Courier New", monospace' }}>@{ratingUsername}</span>{computedSrr != null && <span className={`text-sm font-bold ${getSRRColor(computedSrr)}`} style={{ fontFamily: '"Courier New", monospace' }}>({computedSrr.toFixed(2)})</span>}</div>
                                     {rating.comment && <p className="text-xs text-gray-500 italic truncate" style={{ fontFamily: '"Courier New", monospace' }}>"{rating.comment}"</p>}
                                   </div>
                                   <div className="flex items-center gap-2 flex-shrink-0"><span className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>{commentsForRating.length > 0 ? `${commentsForRating.length} comment${commentsForRating.length !== 1 ? 's' : ''}` : 'no comments'}</span><MessageSquare size={14} className={isExpanded ? 'text-[#33a29b]' : 'text-gray-300'} /></div>
@@ -10485,7 +10417,7 @@ const HuntersFindsApp = () => {
                               {uname[0]?.toUpperCase()}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <SpecialUsername userId={u.id} username={uname} ownId={user?.id} ownNameStyle={ownNameStyle} specialMemberships={specialMemberships} className="text-sm font-bold" style={{ fontFamily: '"Courier New", monospace' }} />
+                              <p className="text-sm font-bold" style={{ fontFamily: '"Courier New", monospace' }}>@{uname}</p>
                               {m.joined_at && <p className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>joined {new Date(m.joined_at).toLocaleDateString()}</p>}
                             </div>
                             {role !== 'member' && (
@@ -10520,37 +10452,28 @@ const HuntersFindsApp = () => {
         const canPost = isMember && (!isBroadcast || isCreator);
         const username = user?.user_metadata?.username || user?.email?.split('@')[0] || 'user';
 
-        // Top dishes: pull from allRatings by group members
-        // Broadcast = creator only; regular = all members
-        const getGroupMemberIds = () => {
-          if (isBroadcast) return new Set([g.creator_id]);
-          // Use allUsers to find members — fallback to userGroups for own membership
-          const memberSet = new Set();
-          allUsers.forEach(u => { if (u.groups?.includes(g.id)) memberSet.add(u.id); });
-          if (isMember && user) memberSet.add(user.id);
-          // Also try group_members data if available on g
-          (g.members || []).forEach(m => memberSet.add(m.user_id || m.id));
-          return memberSet;
-        };
-        const memberIds = getGroupMemberIds();
-        const memberRatings = allRatings.filter(r =>
-          !r.is_deleted && (memberIds.size === 0 || memberIds.has(r.user_id))
+        // Leaderboard: top dishes rated by group members
+        const groupMemberRatings = allRatings.filter(r =>
+          !r.is_deleted && r.group_id === g.id
         );
-        // Aggregate by dish_id, average score across members
+        // Fallback: use messages with rating_data
+        const ratingMsgs = groupMessages.filter(m => m.message_type === 'rating' && m.rating_data);
         const dishScores = {};
-        memberRatings.forEach(r => {
-          const key = r.dish_id || r.dish_name || r.name;
-          if (!key) return;
-          const score = r.overall_score || (r.taste_score != null ? (r.taste_score + r.portion_score + r.price_score) / 3 : null) || r.srr;
-          if (score == null) return;
-          if (!dishScores[key]) dishScores[key] = { total: 0, count: 0, name: r.dish_name || r.name, restaurant: r.restaurant_name, dish_id: r.dish_id };
-          dishScores[key].total += score;
+        const dishCounts = {};
+        ratingMsgs.forEach(m => {
+          const rd = m.rating_data;
+          const key = rd.dish_id || rd.dish_name;
+          if (!dishScores[key]) { dishScores[key] = { total: 0, count: 0, ...rd }; dishCounts[key] = 0; }
+          dishScores[key].total += rd.overall_score || 0;
           dishScores[key].count += 1;
+          dishCounts[key] += 1;
         });
-        const sortedLeaderboard = Object.values(dishScores)
-          .map(d => ({ ...d, avg: d.total / d.count }))
-          .sort((a, b) => b.avg - a.avg)
-          .slice(0, 5);
+        const leaderboardItems = Object.values(dishScores).map(d => ({
+          ...d, avg: d.count > 0 ? d.total / d.count : 0
+        }));
+        const sortedLeaderboard = leaderboardMode === 'highest'
+          ? leaderboardItems.sort((a, b) => b.avg - a.avg).slice(0, 3)
+          : leaderboardItems.sort((a, b) => b.count - a.count).slice(0, 3);
 
         // Common emojis for picker
         const COMMON_EMOJIS = ['❤️','🔥','😂','😮','👍','👎','🤤','💯','😍','🙌','👀','💀','🤣','😭','🏆','⭐','🍔','🍜','🌮','🍕'];
@@ -10573,30 +10496,29 @@ const HuntersFindsApp = () => {
                     }
                     <div className="min-w-0">
                       <h2 className="font-bold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}>{g.name}</h2>
-                      <p className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>
-                        {!isBroadcast
-                          ? <button
-                              className="underline hover:text-[#33a29b] transition"
-                              style={{ fontFamily: '"Courier New", monospace' }}
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                setGroupMemberListLoading(true);
-                                setShowGroupMemberList(true);
-                                const { data } = await supabase
-                                  .from('group_members')
-                                  .select('user_id, role, joined_at, users:user_id(id, username, email)')
-                                  .eq('group_id', g.id);
-                                setGroupMemberListData(data || []);
-                                setGroupMemberListLoading(false);
-                              }}
-                            >
-                              {g.member_count || 1} {(g.member_count || 1) === 1 ? 'member' : 'members'}
-                            </button>
-                          : <span>{g.member_count || 1} {(g.member_count || 1) === 1 ? 'member' : 'members'}</span>
-                        }
-                        {isBroadcast && ' · broadcast'}
-                        {isPrivate && ' · private'}
-                      </p>
+                      {!isBroadcast
+                        ? <button
+                            className="text-[10px] text-gray-400 hover:text-[#33a29b] transition text-left"
+                            style={{ fontFamily: '"Courier New", monospace' }}
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              setGroupMemberListLoading(true);
+                              setShowGroupMemberList(true);
+                              const { data } = await supabase
+                                .from('group_members')
+                                .select('user_id, role, joined_at, users:user_id(id, username, email)')
+                                .eq('group_id', g.id);
+                              setGroupMemberListData(data || []);
+                              setGroupMemberListLoading(false);
+                            }}
+                          >
+                            {g.member_count || 1} {(g.member_count || 1) === 1 ? 'member' : 'members'}
+                            {isPrivate && ' · private'}
+                          </button>
+                        : <p className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>
+                            {g.member_count || 1} {(g.member_count || 1) === 1 ? 'member' : 'members'} · broadcast
+                          </p>
+                      }
                     </div>
                   </div>
                   {!isMember && (
@@ -10653,11 +10575,11 @@ const HuntersFindsApp = () => {
                           <div key={i} className="flex items-center gap-2 py-1">
                             <span className="text-[10px] font-bold text-gray-400 w-4" style={{ fontFamily: '"Courier New", monospace' }}>#{i + 1}</span>
                             <div className="flex-1 min-w-0">
-                              <span className="text-xs font-bold truncate block" style={{ fontFamily: '"Courier New", monospace' }}>{d.name || d.dish_name}</span>
-                              <span className="text-[10px] text-gray-400 truncate block" style={{ fontFamily: '"Courier New", monospace' }}>{d.restaurant || d.restaurant_name}</span>
+                              <span className="text-xs font-bold truncate block" style={{ fontFamily: '"Courier New", monospace' }}>{d.dish_name}</span>
+                              <span className="text-[10px] text-gray-400 truncate block" style={{ fontFamily: '"Courier New", monospace' }}>{d.restaurant_name}</span>
                             </div>
                             <span className="text-xs font-bold text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>
-                              {d.avg.toFixed(1)}
+                              {leaderboardMode === 'highest' ? d.avg.toFixed(1) : `${d.count}x`}
                             </span>
                           </div>
                         ))
@@ -10873,7 +10795,7 @@ const HuntersFindsApp = () => {
                           {(u.username || u.email || '?')[0].toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}><SpecialUsername userId={u.id} username={u.username || u.email?.split('@')[0]} ownId={user?.id} ownNameStyle={ownNameStyle} specialMemberships={specialMemberships} /></div>
+                          <div className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>@{u.username || u.email?.split('@')[0]}</div>
                           <div className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>{u.ratingsCount || 0} ratings</div>
                         </div>
                         <ChevronRight size={16} className="text-gray-300 flex-shrink-0" />
@@ -10895,7 +10817,7 @@ const HuntersFindsApp = () => {
                           {(u.username || u.email || '?')[0].toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}><SpecialUsername userId={u.id} username={u.username || u.email?.split('@')[0]} ownId={user?.id} ownNameStyle={ownNameStyle} specialMemberships={specialMemberships} /></div>
+                          <div className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>@{u.username || u.email?.split('@')[0]}</div>
                           <div className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>{u.ratingsCount || 0} ratings</div>
                         </div>
                         <ChevronRight size={16} className="text-gray-300 flex-shrink-0" />
@@ -10929,7 +10851,9 @@ const HuntersFindsApp = () => {
               style={{ top: '10%', left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 500px)', maxHeight: '80vh' }}>
               <div className="sticky top-0 bg-white border-b px-4 py-3 flex items-center justify-between rounded-t-2xl flex-shrink-0">
                 <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
-                  <h2 className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}><SpecialUsername userId={u.id} username={u.username || u.email?.split('@')[0]} ownId={user?.id} ownNameStyle={ownNameStyle} specialMemberships={specialMemberships} /></h2>
+                  <h2 className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>
+                    @{u.username || u.email?.split('@')[0]}
+                  </h2>
                   <div className="flex items-center gap-1">
                     {getDisplayBadges(theirBadges, viewingUserFeatured[u.id] || []).map(b => <BadgeIcon key={b.badge_id} badgeId={b.badge_id} size={18} />)}
                   </div>
@@ -11242,38 +11166,10 @@ const HuntersFindsApp = () => {
                   </p>
                 </div>
                 
-                {/* Username color pref for dual-group members */}
-                {(() => {
-                  const inHC  = userGroups.some(g => g.id === SPECIAL_GROUPS.HUNTERS_CASTLE);
-                  const inDTP = userGroups.some(g => g.id === SPECIAL_GROUPS.DTPX4);
-                  const hasCL = userBadges.some(b => (b.badge_id||b.id) === 'castle_lord');
-                  if (hasCL || !(inHC && inDTP)) return null;
-                  return (
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-2" style={{ fontFamily: '"Courier New", monospace' }}>username color</label>
-                      <div className="flex gap-2">
-                        {[
-                          { key:'hunters_castle', label:'🏰 hunters castle', color:'#b45309', border:'border-yellow-600' },
-                          { key:'dtpx4',          label:'💎 dtpx4',          color:'#2563eb', border:'border-blue-500' },
-                        ].map(opt => (
-                          <button key={opt.key} onClick={() => setOwnNameStyle(opt.key)}
-                            className={`flex-1 py-2 rounded-lg text-xs font-bold border-2 transition ${ownNameStyle===opt.key ? opt.border+' bg-gray-50' : 'border-gray-200 text-gray-400'}`}
-                            style={{ fontFamily:'"Courier New",monospace', color: ownNameStyle===opt.key ? opt.color : undefined }}>
-                            {opt.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })()}
-
                 {/* Save Button */}
                 <button
                   onClick={async () => {
                     try {
-                      if (ownNameStyle && ['hunters_castle','dtpx4'].includes(ownNameStyle)) {
-                        await supabase.from('users').update({ username_color_pref: ownNameStyle }).eq('id', user.id);
-                      }
                       await supabase.auth.updateUser({
                         data: {
                           username: editUsername,
