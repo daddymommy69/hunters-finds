@@ -798,6 +798,9 @@ const HuntersFindsApp = () => {
   const [selectedRestaurant, setSelectedRestaurant] = useState(null);
   const [isRestaurantModalClosing, setIsRestaurantModalClosing] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState(null);
+  const [showGroupMemberList, setShowGroupMemberList] = useState(false);
+  const [groupMemberListData, setGroupMemberListData] = useState([]);
+  const [groupMemberListLoading, setGroupMemberListLoading] = useState(false);
   const [isGroupModalClosing, setIsGroupModalClosing] = useState(false);
   const [groupModalView, setGroupModalView] = useState('members');
   // Group chat state
@@ -1844,6 +1847,15 @@ const HuntersFindsApp = () => {
   const [notifications, setNotifications] = useState([]);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showBugModal, setShowBugModal] = useState(false);
+  const [bugModalTab, setBugModalTab] = useState('submit');
+  const [bugReportType, setBugReportType] = useState('bug');
+  const [bugReportText, setBugReportText] = useState('');
+  const [bugReportAnon, setBugReportAnon] = useState(false);
+  const [bugReportScreenshot, setBugReportScreenshot] = useState(null);
+  const [bugReportSubmitting, setBugReportSubmitting] = useState(false);
+  const [publicBugReports, setPublicBugReports] = useState([]);
+  const [bugUpvotes, setBugUpvotes] = useState({});
   
   // Filter states
   const [selectedCuisine, setSelectedCuisine] = useState('all');
@@ -5022,6 +5034,38 @@ const HuntersFindsApp = () => {
     }
   };
 
+  const handleSubmitBugReport = async () => {
+    if (!bugReportText.trim() || !user) return;
+    setBugReportSubmitting(true);
+    try {
+      let screenshotUrl = null;
+      if (bugReportScreenshot) {
+        const ext = bugReportScreenshot.name.split('.').pop();
+        const path = `bug-reports/${user.id}-${Date.now()}.${ext}`;
+        const { error: upErr } = await supabase.storage.from('dm-images').upload(path, bugReportScreenshot);
+        if (!upErr) {
+          const { data: urlData } = supabase.storage.from('dm-images').getPublicUrl(path);
+          screenshotUrl = urlData?.publicUrl;
+        }
+      }
+      const { error } = await supabase.from('bug_reports').insert({
+        user_id: user.id,
+        type: bugReportType,
+        text: bugReportText.trim(),
+        is_anonymous: bugReportAnon,
+        screenshot_url: screenshotUrl,
+        status: 'pending',
+        is_public: false,
+        upvote_count: 0,
+      });
+      if (error) throw error;
+      setBugReportText(''); setBugReportScreenshot(null); setBugReportAnon(false); setShowBugModal(false);
+      setErrorModal({ show: true, title: 'Submitted!', message: 'Thanks for the report!' });
+    } catch (err) {
+      setErrorModal({ show: true, title: 'Error', message: 'Could not submit. Try again.' });
+    } finally { setBugReportSubmitting(false); }
+  };
+
   const handleJoinGroup = async (group) => {
     const targetGroup = group || selectedGroup;
     if (!targetGroup || !user) return;
@@ -5117,6 +5161,25 @@ const HuntersFindsApp = () => {
   };
 
   // ===== GROUP CHAT FUNCTIONS =====
+  // Fetch approved member IDs for the selected group (attaches to group object)
+  React.useEffect(() => {
+    if (!selectedGroup) return;
+    const g = selectedGroup;
+    if (g.group_type === 'broadcast' || g.type === 'broadcast') return; // not needed
+    if (g._approvedMemberIds) return; // already loaded
+    supabase
+      .from('group_members')
+      .select('user_id, status')
+      .eq('group_id', g.id)
+      .in('status', ['approved', 'member', null])
+      .then(({ data }) => {
+        const ids = new Set((data || []).map(m => m.user_id));
+        // Also always include creator
+        if (g.creator_id) ids.add(g.creator_id);
+        setSelectedGroup(prev => prev && prev.id === g.id ? { ...prev, _approvedMemberIds: ids } : prev);
+      });
+  }, [selectedGroup?.id]);
+
   const fetchGroupMessages = async (groupId) => {
     if (!groupId) return;
     setGroupMessagesLoading(true);
@@ -5125,6 +5188,7 @@ const HuntersFindsApp = () => {
         .from('group_messages')
         .select('*')
         .eq('group_id', groupId)
+        .eq('is_deleted', false)
         .order('created_at', { ascending: true })
         .limit(100);
       setGroupMessages(data || []);
@@ -5152,17 +5216,15 @@ const HuntersFindsApp = () => {
     if (!selectedGroup || !user) return;
     const username = user.user_metadata?.username || user.email?.split('@')[0] || 'user';
     try {
-      const insertPayload = {
+      const { data, error } = await supabase.from('group_messages').insert({
         group_id: selectedGroup.id,
         user_id: user.id,
         username,
         content: content || null,
-        message_type: type || 'text',
+        message_type: type,
         rating_data: ratingData || null,
-        is_deleted: false,
-      };
-      const { data, error } = await supabase.from('group_messages').insert(insertPayload).select().single();
-      if (error) { console.error('sendGroupMessage insert error:', error); throw error; }
+      }).select().single();
+      if (error) throw error;
       setGroupMessages(prev => [...prev, data]);
     } catch (e) { console.error('sendGroupMessage error:', e); }
   };
@@ -5922,7 +5984,20 @@ const HuntersFindsApp = () => {
           <div className="w-10"></div> {/* Spacer for centering */}
           <h1 className="text-xl font-bold text-gray-800">hunters finds</h1>
           {user && (
-            <div className="relative">
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setShowBugModal(true)}
+                className="p-2 hover:bg-gray-100 rounded-full transition"
+                title="report a bug or request a feature"
+              >
+                <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 22c4 0 7-3.1 7-7V9l-4-5H9L5 9v6c0 3.9 3 7 7 7z"/>
+                  <path d="M9 4c0-1.1.9-2 2-2h2a2 2 0 0 1 2 2"/>
+                  <line x1="12" y1="11" x2="12" y2="17"/>
+                  <line x1="9" y1="14" x2="15" y2="14"/>
+                </svg>
+              </button>
+              <div className="relative">
               <button 
                 onClick={() => setShowNotifications(!showNotifications)}
                 className="relative p-2 hover:bg-gray-100 rounded-full transition"
@@ -6009,6 +6084,7 @@ const HuntersFindsApp = () => {
                   </div>
                 </>
               )}
+            </div>
             </div>
           )}
           {!user && <div className="w-10"></div>}
@@ -10389,6 +10465,105 @@ const HuntersFindsApp = () => {
         </>
       )}
       
+      {/* Group Member List Modal */}
+      {showGroupMemberList && (
+        <>
+          <div onClick={() => setShowGroupMemberList(false)} className="fixed inset-0 bg-black/50 z-[70]" />
+          <div className="fixed inset-0 flex items-center justify-center z-[71] p-4 pointer-events-none">
+            <div className="bg-white rounded-2xl shadow-2xl pointer-events-auto flex flex-col" style={{ width: 'min(92vw,420px)', maxHeight: '70vh' }}>
+              <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0">
+                <h3 className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>members</h3>
+                <button onClick={() => setShowGroupMemberList(false)}><X size={18} /></button>
+              </div>
+              <div className="overflow-y-auto flex-1 divide-y divide-gray-50">
+                {groupMemberListLoading
+                  ? <div className="flex justify-center py-8"><div className="w-5 h-5 border-2 border-[#33a29b] border-t-transparent rounded-full animate-spin" /></div>
+                  : groupMemberListData.length === 0
+                    ? <p className="text-xs text-gray-400 text-center py-8" style={{ fontFamily: '"Courier New", monospace' }}>no members found</p>
+                    : groupMemberListData.map((m, i) => {
+                        const u = m.users || {};
+                        const uname = u.username || u.email?.split('@')[0] || 'user';
+                        const role = m.role || 'member';
+                        return (
+                          <div key={i} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition cursor-pointer"
+                            onClick={() => { setShowGroupMemberList(false); setSelectedExploreUser({ ...u, isFollowing: userFollows.some(f => f.following_id === u.id) }); }}>
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+                              {uname[0]?.toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-bold" style={{ fontFamily: '"Courier New", monospace' }}>@{uname}</p>
+                              {m.joined_at && <p className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>joined {new Date(m.joined_at).toLocaleDateString()}</p>}
+                            </div>
+                            {role !== 'member' && (
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${role === 'creator' ? 'bg-red-100 text-red-600' : 'bg-indigo-100 text-indigo-600'}`} style={{ fontFamily: '"Courier New", monospace' }}>{role}</span>
+                            )}
+                          </div>
+                        );
+                      })
+                }
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Bug Report Modal */}
+      {showBugModal && (
+        <>
+          <div onClick={() => setShowBugModal(false)} className="fixed inset-0 bg-black/50 z-50 animate-fade-in" />
+          <div className="fixed inset-0 flex items-center justify-center z-50 p-4 pointer-events-none">
+            <div className="bg-white rounded-2xl shadow-2xl pointer-events-auto flex flex-col" style={{ width: 'min(92vw,480px)', maxHeight: '80vh' }}>
+              <div className="flex items-center justify-between px-5 py-4 border-b">
+                <h3 className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>report / request</h3>
+                <button onClick={() => setShowBugModal(false)}><X size={20} /></button>
+              </div>
+              <div className="overflow-y-auto flex-1 p-5 space-y-4">
+                {/* Type toggle */}
+                <div className="flex gap-2">
+                  {[{key:'bug',label:'🐛 bug report'},{key:'request',label:'✨ feature request'}].map(opt => (
+                    <button key={opt.key} onClick={() => setBugReportType(opt.key)}
+                      className={`flex-1 py-2 rounded-lg text-xs font-bold border-2 transition ${bugReportType===opt.key ? 'border-[#33a29b] bg-teal-50 text-[#33a29b]' : 'border-gray-200 text-gray-400'}`}
+                      style={{ fontFamily: '"Courier New", monospace' }}>{opt.label}</button>
+                  ))}
+                </div>
+                {/* Text */}
+                <textarea
+                  value={bugReportText}
+                  onChange={e => setBugReportText(e.target.value)}
+                  placeholder={bugReportType === 'bug' ? "describe the bug — what happened, what did you expect?" : "describe the feature you'd like to see..."}
+                  rows={5}
+                  className="w-full px-3 py-2 text-sm border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none resize-none"
+                  style={{ fontFamily: '"Courier New", monospace' }}
+                />
+                {/* Screenshot */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>screenshot (optional)</label>
+                  <label className="flex items-center gap-2 px-3 py-2 border-2 border-dashed border-gray-200 rounded-lg cursor-pointer hover:border-[#33a29b] transition text-xs text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>
+                    <input type="file" accept="image/*" className="hidden" onChange={e => setBugReportScreenshot(e.target.files[0])} />
+                    {bugReportScreenshot ? `📎 ${bugReportScreenshot.name}` : '+ attach screenshot'}
+                  </label>
+                </div>
+                {/* Anon */}
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={bugReportAnon} onChange={e => setBugReportAnon(e.target.checked)} className="rounded" />
+                  <span className="text-xs text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>submit anonymously</span>
+                </label>
+              </div>
+              <div className="px-5 py-4 border-t">
+                <button
+                  onClick={handleSubmitBugReport}
+                  disabled={!bugReportText.trim() || bugReportSubmitting}
+                  className="w-full py-3 bg-[#33a29b] text-white rounded-xl font-bold text-sm disabled:opacity-40 transition hover:bg-[#2a8a84]"
+                  style={{ fontFamily: '"Courier New", monospace' }}
+                >
+                  {bugReportSubmitting ? 'submitting...' : 'submit'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Create Group Modal */}
       <CreateGroupModal
         isOpen={isCreateGroupModalOpen}
@@ -10408,31 +10583,27 @@ const HuntersFindsApp = () => {
         const canPost = isMember && (!isBroadcast || isCreator);
         const username = user?.user_metadata?.username || user?.email?.split('@')[0] || 'user';
 
-        // Leaderboard: top dishes from allRatings by group members
-        // For broadcast, only count creator. For regular, count all members.
-        const groupUserIds = (() => {
-          if (isBroadcast) return new Set([g.creator_id]);
-          const s = new Set();
-          allRatings.forEach(r => { /* will filter by group membership below */ });
-          // Use allUsers to find who's in this group
-          allUsers.forEach(u => { if (u.id) s.add(u.id); }); // fallback: include everyone
-          return s;
-        })();
-        const memberRatingsForLeaderboard = allRatings.filter(r =>
-          !r.is_deleted && (isBroadcast ? r.user_id === g.creator_id : true)
-        );
+        // Leaderboard: approved group members only, from allRatings
+        // approvedMemberIds is fetched fresh when group opens (see useEffect below tied to selectedGroup)
+        // We use g._approvedMemberIds if available, otherwise fall back to showing nothing until loaded
+        const approvedIds = g._approvedMemberIds || null; // null = not loaded yet
+        const memberRatings = allRatings.filter(r => {
+          if (r.is_deleted) return false;
+          if (isBroadcast) return r.user_id === g.creator_id;
+          if (!approvedIds) return false; // wait for fetch
+          return approvedIds.has(r.user_id);
+        });
         const dishScores = {};
-        memberRatingsForLeaderboard.forEach(r => {
+        memberRatings.forEach(r => {
           const dishName = r.dish?.name || r.dish_name || r.name;
           const restaurantName = r.dish?.restaurant_name || r.restaurant_name || r.dish?.restaurantName;
           if (!dishName) return;
           const score = r.overall_score != null ? r.overall_score
             : (r.taste_score != null && r.portion_score != null && r.price_score != null)
-              ? (r.taste_score + r.portion_score + r.price_score) / 3
-              : r.srr;
+              ? (r.taste_score + r.portion_score + r.price_score) / 3 : null;
           if (score == null) return;
-          const key = (r.dish_id || dishName).toString();
-          if (!dishScores[key]) dishScores[key] = { dishName, restaurantName, total: 0, count: 0 };
+          const key = r.dish_id || dishName;
+          if (!dishScores[key]) dishScores[key] = { dishName, restaurantName, dishId: r.dish_id, total: 0, count: 0 };
           dishScores[key].total += score;
           dishScores[key].count += 1;
         });
@@ -10453,7 +10624,21 @@ const HuntersFindsApp = () => {
 
                 {/* Header */}
                 <div className="flex items-center gap-3 px-4 py-3 border-b flex-shrink-0 rounded-t-2xl">
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <div
+                    className={`flex items-center gap-2 flex-1 min-w-0 ${!isBroadcast ? 'cursor-pointer hover:opacity-70 transition' : ''}`}
+                    onClick={!isBroadcast ? async (e) => {
+                      e.stopPropagation();
+                      setGroupMemberListLoading(true);
+                      setShowGroupMemberList(true);
+                      const { data } = await supabase
+                        .from('group_members')
+                        .select('user_id, role, status, joined_at, users:user_id(id, username, email)')
+                        .eq('group_id', g.id)
+                        .in('status', ['approved', 'member', null]);
+                      setGroupMemberListData(data || []);
+                      setGroupMemberListLoading(false);
+                    } : undefined}
+                  >
                     {isBroadcast
                       ? <Megaphone size={18} className="text-[#33a29b] flex-shrink-0" />
                       : isPrivate
@@ -10519,18 +10704,24 @@ const HuntersFindsApp = () => {
                       </div>
                       {sortedLeaderboard.length === 0
                         ? <p className="text-xs text-gray-400 text-center py-2" style={{ fontFamily: '"Courier New", monospace' }}>no ratings yet</p>
-                        : sortedLeaderboard.map((d, i) => (
-                          <div key={i} className="flex items-center gap-2 py-1">
-                            <span className="text-[10px] font-bold text-gray-400 w-4" style={{ fontFamily: '"Courier New", monospace' }}>#{i + 1}</span>
-                            <div className="flex-1 min-w-0">
-                              <span className="text-xs font-bold truncate block" style={{ fontFamily: '"Courier New", monospace' }}>{d.dishName}</span>
-                              <span className="text-[10px] text-gray-400 truncate block" style={{ fontFamily: '"Courier New", monospace' }}>{d.restaurantName || ''}</span>
+                        : sortedLeaderboard.map((d, i) => {
+                          const fullDish = allDishes.find(fd => fd.id === d.dishId || fd.name?.toLowerCase() === d.dishName?.toLowerCase());
+                          return (
+                            <div key={i}
+                              className="flex items-center gap-2 py-1.5 px-1 rounded-lg hover:bg-gray-50 cursor-pointer transition"
+                              onClick={() => { if (fullDish) { setSelectedDish(fullDish); } }}
+                            >
+                              <span className="text-[10px] font-bold text-gray-400 w-4 flex-shrink-0" style={{ fontFamily: '"Courier New", monospace' }}>#{i + 1}</span>
+                              <div className="flex-1 min-w-0">
+                                <span className="text-xs font-bold truncate block" style={{ fontFamily: '"Courier New", monospace' }}>{d.dishName}</span>
+                                <span className="text-[10px] text-gray-400 truncate block" style={{ fontFamily: '"Courier New", monospace' }}>{d.restaurantName || ''}</span>
+                              </div>
+                              <span className="text-xs font-bold text-[#33a29b] flex-shrink-0" style={{ fontFamily: '"Courier New", monospace' }}>
+                                {leaderboardMode === 'highest' ? d.avg.toFixed(1) : `${d.count}x`}
+                              </span>
                             </div>
-                            <span className="text-xs font-bold text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>
-                              {leaderboardMode === 'highest' ? d.avg.toFixed(1) : `${d.count}x`}
-                            </span>
-                          </div>
-                        ))
+                          );
+                        })
                       }
                     </div>
                   )}
