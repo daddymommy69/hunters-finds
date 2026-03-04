@@ -189,26 +189,27 @@ const BADGE_DEFS = {
 
 const BADGE_CATEGORIES = ['castle','social','explorer','consistency','other','special'];
 
-// ── Special group membership colors ──────────────────────────────────────────
+// ── Special group colors ──────────────────────────────────────────────────────
 const SPECIAL_GROUPS = {
   HUNTERS_CASTLE: '3de91db4-88e5-493f-8b6e-e4fdcd735a17',
   DTPX4:          '275f8085-490f-4710-a230-2e9b50b49439',
 };
+// CSS classes — solid color only, no animation on the group name labels
+// Username glows defined in <style> block
 const SPECIAL_GROUP_STYLES = {
-  castle_lord:    { css: 'castle-lord-name',    icon: '👑', priority: 0 },
-  dtpx4:          { css: 'dtpx4-name',          icon: '💎', priority: 1 },
-  hunters_castle: { css: 'hunters-castle-name', icon: '🏰', priority: 2 },
+  castle_lord:    { css: 'castle-lord-name',    groupCss: 'group-label-cl',   groupColor: '#ef4444', priority: 0 },
+  dtpx4:          { css: 'dtpx4-name',          groupCss: 'group-label-dtp',  groupColor: '#2563eb', priority: 1 },
+  hunters_castle: { css: 'hunters-castle-name', groupCss: 'group-label-hc',   groupColor: '#b45309', priority: 2 },
 };
 const getNameStyle = (userId, specialMemberships, ownId, ownNameStyle) => {
   const key = userId === ownId ? ownNameStyle : (specialMemberships?.[userId] || null);
-  if (!key) return null;
-  return SPECIAL_GROUP_STYLES[key] || null;
+  return key ? (SPECIAL_GROUP_STYLES[key] || null) : null;
 };
+// No icons — color only
 const SpecialUsername = ({ userId, username, ownId, ownNameStyle, specialMemberships, prefix='@', className='', style={} }) => {
   const ns = getNameStyle(userId, specialMemberships, ownId, ownNameStyle);
-  const displayName = `${prefix}${username}`;
-  if (!ns) return <span className={className} style={style}>{displayName}</span>;
-  return <span className={`${ns.css} ${className}`} style={style}>{displayName}<span style={{marginLeft:'3px',fontSize:'0.85em'}}>{ns.icon}</span></span>;
+  if (!ns) return <span className={className} style={style}>{prefix}{username}</span>;
+  return <span className={`${ns.css} ${className}`} style={style}>{prefix}{username}</span>;
 };
 const BADGE_CATEGORY_LABELS = { castle:'castle trophies', social:'social', explorer:'explorer', consistency:'consistency', other:'achievements', special:'special' };
 
@@ -243,7 +244,6 @@ const BadgeSVGIcon = ({ iconKey, size=20, color='white' }) => {
 };
 
 // Prestige order (highest first) for sorting badges
-// Special/admin badges always first, castle_lord is #1
 const BADGE_PRESTIGE = [
   'castle_lord','founder','taste_maker','ambassador','rat_helper',
   'castle_diamond','castle_gold','castle_silver','castle_bronze','castle_wood',
@@ -645,14 +645,14 @@ const HuntersFindsApp = () => {
           supabase.from('group_members').select('user_id, group_id').in('group_id', [SPECIAL_GROUPS.HUNTERS_CASTLE, SPECIAL_GROUPS.DTPX4]),
           supabase.from('user_badges').select('user_id').eq('badge_id', 'castle_lord'),
         ]);
-        const clSet  = new Set((clBadges  || []).map(b => b.user_id));
-        const hcSet  = new Set((members   || []).filter(m => m.group_id === SPECIAL_GROUPS.HUNTERS_CASTLE).map(m => m.user_id));
-        const dtpSet = new Set((members   || []).filter(m => m.group_id === SPECIAL_GROUPS.DTPX4).map(m => m.user_id));
+        const clSet  = new Set((clBadges||[]).map(b=>b.user_id));
+        const hcSet  = new Set((members||[]).filter(m=>m.group_id===SPECIAL_GROUPS.HUNTERS_CASTLE).map(m=>m.user_id));
+        const dtpSet = new Set((members||[]).filter(m=>m.group_id===SPECIAL_GROUPS.DTPX4).map(m=>m.user_id));
         const map = {};
-        [...clSet, ...hcSet, ...dtpSet].forEach(uid => {
-          if (clSet.has(uid)) map[uid] = 'castle_lord';
-          else if (dtpSet.has(uid)) map[uid] = 'dtpx4';
-          else map[uid] = 'hunters_castle';
+        [...clSet,...hcSet,...dtpSet].forEach(uid => {
+          if (clSet.has(uid)) map[uid]='castle_lord';
+          else if (dtpSet.has(uid)) map[uid]='dtpx4';
+          else map[uid]='hunters_castle';
         });
         setSpecialMemberships(map);
         if (user) {
@@ -853,6 +853,9 @@ const HuntersFindsApp = () => {
   const [selectedRestaurant, setSelectedRestaurant] = useState(null);
   const [isRestaurantModalClosing, setIsRestaurantModalClosing] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState(null);
+  const [showGroupMemberList, setShowGroupMemberList] = useState(false);
+  const [groupMemberListData, setGroupMemberListData] = useState([]);
+  const [groupMemberListLoading, setGroupMemberListLoading] = useState(false);
   const [isGroupModalClosing, setIsGroupModalClosing] = useState(false);
   const [groupModalView, setGroupModalView] = useState('members');
   // Group chat state
@@ -2043,7 +2046,7 @@ const HuntersFindsApp = () => {
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 mb-2 flex items-start gap-2">
             <Star size={11} className="text-yellow-500 mt-0.5 flex-shrink-0" />
             <div className="flex-1 min-w-0">
-              <SpecialUsername userId={undefined} username={ratingUsername} ownId={user?.id} ownNameStyle={ownNameStyle} specialMemberships={specialMemberships} className="text-[10px] font-bold" style={{ fontFamily: '"Courier New", monospace', color:'#92400e' }} />
+              <SpecialUsername userId={undefined} username={ratingUsername} ownId={user?.id} ownNameStyle={ownNameStyle} specialMemberships={specialMemberships} className="text-[10px] font-bold no-glow" style={{ fontFamily: '"Courier New", monospace', color:'#92400e' }} />
               <p className="text-xs text-gray-700 italic mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>"{ratingNote}"</p>
             </div>
           </div>
@@ -5634,11 +5637,20 @@ const HuntersFindsApp = () => {
     <div className="h-screen flex flex-col bg-gray-50" style={{ fontFamily: '"Courier New", monospace' }}>
       <style>{`
         @keyframes glow-red      { 0%,100%{text-shadow:0 0 6px #ef444488,0 0 12px #ef444433} 50%{text-shadow:0 0 14px #ef4444cc,0 0 28px #ef444466} }
-        @keyframes glow-gold     { 0%,100%{text-shadow:0 0 6px #d9770688,0 0 12px #d9770633} 50%{text-shadow:0 0 14px #d97706cc,0 0 28px #d9770666} }
-        @keyframes glow-sapphire { 0%,100%{text-shadow:0 0 6px #3b82f688,0 0 12px #3b82f633} 50%{text-shadow:0 0 14px #3b82f6cc,0 0 28px #3b82f666} }
+        @keyframes glow-gold     { 0%,100%{text-shadow:0 0 6px #b4530988,0 0 12px #b4530933} 50%{text-shadow:0 0 14px #b45309cc,0 0 28px #b4530966} }
+        @keyframes glow-sapphire { 0%,100%{text-shadow:0 0 6px #2563eb88,0 0 12px #2563eb33} 50%{text-shadow:0 0 14px #2563ebcc,0 0 28px #2563eb66} }
+        /* Username glows — full animation */
         .castle-lord-name    { color:#ef4444!important; animation:glow-red      2.5s ease-in-out infinite; font-weight:bold; }
-        .hunters-castle-name { color:#d97706!important; animation:glow-gold     2.5s ease-in-out infinite; font-weight:bold; }
-        .dtpx4-name          { color:#3b82f6!important; animation:glow-sapphire 2.5s ease-in-out infinite; font-weight:bold; }
+        .hunters-castle-name { color:#b45309!important; animation:glow-gold     2.5s ease-in-out infinite; font-weight:bold; }
+        .dtpx4-name          { color:#2563eb!important; animation:glow-sapphire 2.5s ease-in-out infinite; font-weight:bold; }
+        /* 'who rated this' — color but NO glow animation */
+        .castle-lord-name.no-glow    { animation:none!important; color:#ef4444!important; }
+        .hunters-castle-name.no-glow { animation:none!important; color:#b45309!important; }
+        .dtpx4-name.no-glow          { animation:none!important; color:#2563eb!important; }
+        /* Group name labels — solid color, no animation */
+        .group-label-cl  { color:#ef4444!important; font-weight:bold; }
+        .group-label-hc  { color:#b45309!important; font-weight:bold; }
+        .group-label-dtp { color:#2563eb!important; font-weight:bold; }
         .leaflet-control-attribution {
           font-size: 7px !important;
           opacity: 0.3 !important;
@@ -9290,7 +9302,7 @@ const HuntersFindsApp = () => {
                           setSelectedExploreUser({ ...u, isFollowing: userFollows.some(f => f.following_id === r.user_id) }); 
                         }} className="flex flex-col items-center gap-1 hover:opacity-75 transition">
                           <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-sm font-bold shadow-sm">{(r.username || '?')[0].toUpperCase()}</div>
-                          <SpecialUsername userId={r.user_id} username={r.username} ownId={user?.id} ownNameStyle={ownNameStyle} specialMemberships={specialMemberships} className="text-[10px] max-w-[52px] truncate" style={{ fontFamily: '"Courier New", monospace', color: '#9ca3af' }} />
+                          <SpecialUsername userId={r.user_id} username={r.username} ownId={user?.id} ownNameStyle={ownNameStyle} specialMemberships={specialMemberships} className="text-[10px] max-w-[52px] truncate no-glow" style={{ fontFamily: '"Courier New", monospace', color: '#9ca3af' }} />
                           {r.srr != null && <span className={`text-xs font-bold ${getSRRColor(r.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{r.srr.toFixed(1)}</span>}
 
                         </button>
@@ -9375,7 +9387,7 @@ const HuntersFindsApp = () => {
                                 <div className="flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-100 transition" onClick={() => handleToggleComments(rating.id)}>
                                   <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">{(ratingUsername || '?')[0].toUpperCase()}</div>
                                   <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2"><SpecialUsername userId={rating.user_id} username={ratingUsername} ownId={user?.id} ownNameStyle={ownNameStyle} specialMemberships={specialMemberships} className="text-sm font-bold" style={{ fontFamily: '"Courier New", monospace' }} />{computedSrr != null && <span className={`text-sm font-bold ${getSRRColor(computedSrr)}`} style={{ fontFamily: '"Courier New", monospace' }}>({computedSrr.toFixed(2)})</span>}</div>
+                                    <div className="flex items-center gap-2"><SpecialUsername userId={rating.user_id} username={ratingUsername} ownId={user?.id} ownNameStyle={ownNameStyle} specialMemberships={specialMemberships} className="text-sm font-bold no-glow" style={{ fontFamily: '"Courier New", monospace' }} />{computedSrr != null && <span className={`text-sm font-bold ${getSRRColor(computedSrr)}`} style={{ fontFamily: '"Courier New", monospace' }}>({computedSrr.toFixed(2)})</span>}</div>
                                     {rating.comment && <p className="text-xs text-gray-500 italic truncate" style={{ fontFamily: '"Courier New", monospace' }}>"{rating.comment}"</p>}
                                   </div>
                                   <div className="flex items-center gap-2 flex-shrink-0"><span className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>{commentsForRating.length > 0 ? `${commentsForRating.length} comment${commentsForRating.length !== 1 ? 's' : ''}` : 'no comments'}</span><MessageSquare size={14} className={isExpanded ? 'text-[#33a29b]' : 'text-gray-300'} /></div>
@@ -10447,6 +10459,48 @@ const HuntersFindsApp = () => {
         </>
       )}
       
+      {/* Group Member List Modal */}
+      {showGroupMemberList && (
+        <>
+          <div onClick={() => setShowGroupMemberList(false)} className="fixed inset-0 bg-black/50 z-[70]" />
+          <div className="fixed inset-0 flex items-center justify-center z-[71] p-4 pointer-events-none">
+            <div className="bg-white rounded-2xl shadow-2xl pointer-events-auto flex flex-col" style={{ width: 'min(92vw,420px)', maxHeight: '70vh' }}>
+              <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0">
+                <h3 className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>members</h3>
+                <button onClick={() => setShowGroupMemberList(false)}><X size={18} /></button>
+              </div>
+              <div className="overflow-y-auto flex-1 divide-y divide-gray-50">
+                {groupMemberListLoading
+                  ? <div className="flex justify-center py-8"><div className="w-5 h-5 border-2 border-[#33a29b] border-t-transparent rounded-full animate-spin" /></div>
+                  : groupMemberListData.length === 0
+                    ? <p className="text-xs text-gray-400 text-center py-8" style={{ fontFamily: '"Courier New", monospace' }}>no members found</p>
+                    : groupMemberListData.map((m, i) => {
+                        const u = m.users || {};
+                        const uname = u.username || u.email?.split('@')[0] || 'user';
+                        const role = m.role || 'member';
+                        return (
+                          <div key={i} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition cursor-pointer"
+                            onClick={() => { setShowGroupMemberList(false); setSelectedExploreUser({ ...u, isFollowing: userFollows.some(f => f.following_id === u.id) }); }}>
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+                              {uname[0]?.toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <SpecialUsername userId={u.id} username={uname} ownId={user?.id} ownNameStyle={ownNameStyle} specialMemberships={specialMemberships} className="text-sm font-bold" style={{ fontFamily: '"Courier New", monospace' }} />
+                              {m.joined_at && <p className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>joined {new Date(m.joined_at).toLocaleDateString()}</p>}
+                            </div>
+                            {role !== 'member' && (
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${role === 'creator' ? 'bg-red-100 text-red-600' : 'bg-indigo-100 text-indigo-600'}`} style={{ fontFamily: '"Courier New", monospace' }}>{role}</span>
+                            )}
+                          </div>
+                        );
+                      })
+                }
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Create Group Modal */}
       <CreateGroupModal
         isOpen={isCreateGroupModalOpen}
@@ -10466,28 +10520,37 @@ const HuntersFindsApp = () => {
         const canPost = isMember && (!isBroadcast || isCreator);
         const username = user?.user_metadata?.username || user?.email?.split('@')[0] || 'user';
 
-        // Leaderboard: top dishes rated by group members
-        const groupMemberRatings = allRatings.filter(r =>
-          !r.is_deleted && r.group_id === g.id
+        // Top dishes: pull from allRatings by group members
+        // Broadcast = creator only; regular = all members
+        const getGroupMemberIds = () => {
+          if (isBroadcast) return new Set([g.creator_id]);
+          // Use allUsers to find members — fallback to userGroups for own membership
+          const memberSet = new Set();
+          allUsers.forEach(u => { if (u.groups?.includes(g.id)) memberSet.add(u.id); });
+          if (isMember && user) memberSet.add(user.id);
+          // Also try group_members data if available on g
+          (g.members || []).forEach(m => memberSet.add(m.user_id || m.id));
+          return memberSet;
+        };
+        const memberIds = getGroupMemberIds();
+        const memberRatings = allRatings.filter(r =>
+          !r.is_deleted && (memberIds.size === 0 || memberIds.has(r.user_id))
         );
-        // Fallback: use messages with rating_data
-        const ratingMsgs = groupMessages.filter(m => m.message_type === 'rating' && m.rating_data);
+        // Aggregate by dish_id, average score across members
         const dishScores = {};
-        const dishCounts = {};
-        ratingMsgs.forEach(m => {
-          const rd = m.rating_data;
-          const key = rd.dish_id || rd.dish_name;
-          if (!dishScores[key]) { dishScores[key] = { total: 0, count: 0, ...rd }; dishCounts[key] = 0; }
-          dishScores[key].total += rd.overall_score || 0;
+        memberRatings.forEach(r => {
+          const key = r.dish_id || r.dish_name || r.name;
+          if (!key) return;
+          const score = r.overall_score || (r.taste_score != null ? (r.taste_score + r.portion_score + r.price_score) / 3 : null) || r.srr;
+          if (score == null) return;
+          if (!dishScores[key]) dishScores[key] = { total: 0, count: 0, name: r.dish_name || r.name, restaurant: r.restaurant_name, dish_id: r.dish_id };
+          dishScores[key].total += score;
           dishScores[key].count += 1;
-          dishCounts[key] += 1;
         });
-        const leaderboardItems = Object.values(dishScores).map(d => ({
-          ...d, avg: d.count > 0 ? d.total / d.count : 0
-        }));
-        const sortedLeaderboard = leaderboardMode === 'highest'
-          ? leaderboardItems.sort((a, b) => b.avg - a.avg).slice(0, 3)
-          : leaderboardItems.sort((a, b) => b.count - a.count).slice(0, 3);
+        const sortedLeaderboard = Object.values(dishScores)
+          .map(d => ({ ...d, avg: d.total / d.count }))
+          .sort((a, b) => b.avg - a.avg)
+          .slice(0, 5);
 
         // Common emojis for picker
         const COMMON_EMOJIS = ['❤️','🔥','😂','😮','👍','👎','🤤','💯','😍','🙌','👀','💀','🤣','😭','🏆','⭐','🍔','🍜','🌮','🍕'];
@@ -10511,7 +10574,26 @@ const HuntersFindsApp = () => {
                     <div className="min-w-0">
                       <h2 className="font-bold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}>{g.name}</h2>
                       <p className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>
-                        {g.member_count || 1} {(g.member_count || 1) === 1 ? 'member' : 'members'}
+                        {!isBroadcast
+                          ? <button
+                              className="underline hover:text-[#33a29b] transition"
+                              style={{ fontFamily: '"Courier New", monospace' }}
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                setGroupMemberListLoading(true);
+                                setShowGroupMemberList(true);
+                                const { data } = await supabase
+                                  .from('group_members')
+                                  .select('user_id, role, joined_at, users:user_id(id, username, email)')
+                                  .eq('group_id', g.id);
+                                setGroupMemberListData(data || []);
+                                setGroupMemberListLoading(false);
+                              }}
+                            >
+                              {g.member_count || 1} {(g.member_count || 1) === 1 ? 'member' : 'members'}
+                            </button>
+                          : <span>{g.member_count || 1} {(g.member_count || 1) === 1 ? 'member' : 'members'}</span>
+                        }
                         {isBroadcast && ' · broadcast'}
                         {isPrivate && ' · private'}
                       </p>
@@ -10571,11 +10653,11 @@ const HuntersFindsApp = () => {
                           <div key={i} className="flex items-center gap-2 py-1">
                             <span className="text-[10px] font-bold text-gray-400 w-4" style={{ fontFamily: '"Courier New", monospace' }}>#{i + 1}</span>
                             <div className="flex-1 min-w-0">
-                              <span className="text-xs font-bold truncate block" style={{ fontFamily: '"Courier New", monospace' }}>{d.dish_name}</span>
-                              <span className="text-[10px] text-gray-400 truncate block" style={{ fontFamily: '"Courier New", monospace' }}>{d.restaurant_name}</span>
+                              <span className="text-xs font-bold truncate block" style={{ fontFamily: '"Courier New", monospace' }}>{d.name || d.dish_name}</span>
+                              <span className="text-[10px] text-gray-400 truncate block" style={{ fontFamily: '"Courier New", monospace' }}>{d.restaurant || d.restaurant_name}</span>
                             </div>
                             <span className="text-xs font-bold text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>
-                              {leaderboardMode === 'highest' ? d.avg.toFixed(1) : `${d.count}x`}
+                              {d.avg.toFixed(1)}
                             </span>
                           </div>
                         ))
@@ -11171,11 +11253,11 @@ const HuntersFindsApp = () => {
                       <label className="block text-xs font-semibold text-gray-700 mb-2" style={{ fontFamily: '"Courier New", monospace' }}>username color</label>
                       <div className="flex gap-2">
                         {[
-                          { key:'hunters_castle', label:'🏰 hunters castle gold', active:'border-yellow-400 bg-yellow-50', color:'#d97706' },
-                          { key:'dtpx4',          label:'💎 dtpx4 sapphire',       active:'border-blue-400 bg-blue-50',   color:'#3b82f6' },
+                          { key:'hunters_castle', label:'🏰 hunters castle', color:'#b45309', border:'border-yellow-600' },
+                          { key:'dtpx4',          label:'💎 dtpx4',          color:'#2563eb', border:'border-blue-500' },
                         ].map(opt => (
                           <button key={opt.key} onClick={() => setOwnNameStyle(opt.key)}
-                            className={`flex-1 py-2 rounded-lg text-xs font-bold border-2 transition ${ownNameStyle===opt.key ? opt.active : 'border-gray-200 text-gray-400'}`}
+                            className={`flex-1 py-2 rounded-lg text-xs font-bold border-2 transition ${ownNameStyle===opt.key ? opt.border+' bg-gray-50' : 'border-gray-200 text-gray-400'}`}
                             style={{ fontFamily:'"Courier New",monospace', color: ownNameStyle===opt.key ? opt.color : undefined }}>
                             {opt.label}
                           </button>
