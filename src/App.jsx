@@ -5535,10 +5535,11 @@ ${adminBugNote}`,
       const insertPayload = {
         group_id: selectedGroup.id,
         user_id: user.id,
-        username,
-        message: content || null,
-        message_type: type || 'text',
-        rating_data: ratingData || null,
+        // username / message_type / rating_data added by SQL migration
+        ...(content != null ? { message: content } : {}),
+        ...(typeof username === 'string' ? { username } : {}),
+        ...(type && type !== 'text' ? { message_type: type } : {}),
+        ...(ratingData ? { rating_data: ratingData } : {}),
         is_deleted: false,
       };
       const { data, error } = await supabase.from('group_messages').insert(insertPayload).select().single();
@@ -9406,7 +9407,7 @@ ${adminBugNote}`,
                           const val = e.target.value.toLowerCase();
                           setCategoryInput(val);
                           setCategoryLocked(false);
-                          setDishCategory(''); // require explicit selection
+                          setDishCategory(val); // allow typed value to count for submit
                           setShowCategorySuggestions(true);
                           setCategoryShowAll(false);
                           setCategoryConfirmNew(null);
