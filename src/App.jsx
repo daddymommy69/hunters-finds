@@ -1388,8 +1388,8 @@ const HuntersFindsApp = () => {
         message: 'Your changes have been saved!'
       });
       
-      // Immediately remove from allRatings state
-      setAllRatings(prev => prev.filter(r => r.id !== deletingRating.id));
+      // Immediately update allRatings state
+      setAllRatings(prev => prev.map(r => r.id === editingRating?.id ? { ...r, taste_score: editTaste, portion_score: editPortion, price_score: editPriceValue, overall_score: (editTaste + editPortion + editPriceValue) / 3, comment: editComment } : r));
       // Refetch all data to sync
       if (refetchData) refetchData();
       
@@ -1959,6 +1959,9 @@ const HuntersFindsApp = () => {
   const [bugReports, setBugReports] = useState([]);
   const [publicBugReports, setPublicBugReports] = useState([]);
   const [bugUpvotes, setBugUpvotes] = useState({});
+  const [bugComments, setBugComments] = useState({}); // { bugId: [{text, created_at}] }
+  const [bugCommentInputs, setBugCommentInputs] = useState({}); // { bugId: inputText }
+  const [expandedBugComments, setExpandedBugComments] = useState({}); // { bugId: bool }
   const [showAdminBugPanel, setShowAdminBugPanel] = useState(false);
   const [showDmShareModal, setShowDmShareModal] = useState(false);
   const [dmShareDish, setDmShareDish] = useState(null);
@@ -2426,7 +2429,7 @@ const HuntersFindsApp = () => {
     
     // Filter by cuisine
     if (selectedCuisine !== 'all') {
-      filtered = filtered.filter(dish => dish.cuisine.toLowerCase() === selectedCuisine.toLowerCase());
+      filtered = filtered.filter(dish => (dish.cuisine || '').toLowerCase() === selectedCuisine.toLowerCase());
     }
     
     // Filter by price range
@@ -2474,7 +2477,7 @@ const HuntersFindsApp = () => {
     
     // Filter by cuisine
     if (selectedCuisine !== 'all') {
-      filtered = filtered.filter(restaurant => restaurant.cuisine.toLowerCase() === selectedCuisine.toLowerCase());
+      filtered = filtered.filter(restaurant => (restaurant.cuisine || '').toLowerCase() === selectedCuisine.toLowerCase());
     }
     
     // Filter by rating
@@ -2489,8 +2492,8 @@ const HuntersFindsApp = () => {
   // Get unique cuisines from all dishes and restaurants
   const getAvailableCuisines = () => {
     const cuisines = new Set();
-    allDishes.forEach(dish => cuisines.add(dish.cuisine));
-    (allRestaurants || []).forEach(restaurant => cuisines.add(restaurant.cuisine));
+    allDishes.forEach(dish => { if (dish.cuisine) cuisines.add(dish.cuisine); });
+    (allRestaurants || []).forEach(restaurant => { if (restaurant.cuisine) cuisines.add(restaurant.cuisine); });
     return Array.from(cuisines).sort();
   };
   
@@ -2681,7 +2684,7 @@ const HuntersFindsApp = () => {
     const matchingDishes = allDishes.filter(dish => 
       dish.name.toLowerCase().includes(lowerQuery) ||
       dish.restaurantName.toLowerCase().includes(lowerQuery) ||
-      dish.cuisine.toLowerCase().includes(lowerQuery)
+      (dish.cuisine || '').toLowerCase().includes(lowerQuery)
     );
 
     const matchingRestaurants = (allRestaurants || []).filter(restaurant =>
@@ -3199,31 +3202,36 @@ const HuntersFindsApp = () => {
       return { ...item, popularity, hoursAgo };
     });
 
-    // Sort: 70% recency, 30% popularity (popularity only counts if threshold met)
-    scored.sort((a, b) => {
-      const aScore = (1 / (a.hoursAgo + 1)) * 0.7 + a.popularity * 0.3;
-      const bScore = (1 / (b.hoursAgo + 1)) * 0.7 + b.popularity * 0.3;
-      return bScore - aScore;
-    });
+    // Sort: purely chronological, newest first
+    scored.sort((a, b) => a.hoursAgo - b.hoursAgo);
 
     return scored;
   }, [allRatings, userFollows, ratingLikes, user]);
 
-  // Fetch activity for explore global feed
+  // Fetch activity for explore global feed + 60s auto-refresh
   React.useEffect(() => {
     if (activeTab === 'explore' && exploreView === 'activity') {
-      setGlobalActivityLoading(true);
-      const feed = buildGlobalActivityFeed();
-      setGlobalActivityFeed(feed);
-      const ratingIds = feed.filter(a => a.rating_id).map(a => a.rating_id);
-      if (ratingIds.length > 0) { fetchLikesForRatings(ratingIds); fetchCommentCountsForFeed(ratingIds); }
-      setGlobalActivityLoading(false);
+      const refresh = () => {
+        setGlobalActivityLoading(true);
+        const feed = buildGlobalActivityFeed();
+        setGlobalActivityFeed(feed);
+        const ratingIds = feed.filter(a => a.rating_id).map(a => a.rating_id);
+        if (ratingIds.length > 0) { fetchLikesForRatings(ratingIds); fetchCommentCountsForFeed(ratingIds); }
+        setGlobalActivityLoading(false);
+      };
+      refresh();
+      const interval = setInterval(refresh, 60000);
+      return () => clearInterval(interval);
     }
   }, [activeTab, exploreView, allRatings, userFollows, ratingLikes]);
 
-  // Refresh you activity feed without filter dropdown
+  // Refresh you activity feed + 60s auto-refresh
   React.useEffect(() => {
-    if (user && youView === 'activity') fetchActivityFeed();
+    if (user && youView === 'activity') {
+      fetchActivityFeed();
+      const interval = setInterval(fetchActivityFeed, 60000);
+      return () => clearInterval(interval);
+    }
   }, [user, youView]);
 
   // Fetch followers (people who follow current user)
@@ -5243,6 +5251,18 @@ const HuntersFindsApp = () => {
     } catch (err) {
       setErrorModal({ show: true, title: 'Error', message: 'Could not submit. Try again.' });
     } finally { setBugReportSubmitting(false); }
+  };
+
+  const fetchBugComments = async (bugId) => {
+    const { data } = await supabase.from('bug_comments').select('*').eq('bug_id', bugId).order('created_at', { ascending: true });
+    setBugComments(prev => ({ ...prev, [bugId]: data || [] }));
+  };
+
+  const submitBugComment = async (bugId, text) => {
+    if (!text.trim()) return;
+    await supabase.from('bug_comments').insert({ bug_id: bugId, text: text.trim() });
+    setBugCommentInputs(prev => ({ ...prev, [bugId]: '' }));
+    fetchBugComments(bugId);
   };
 
   const handleBugUpvote = async (reportId) => {
@@ -7881,12 +7901,23 @@ ${adminBugNote}`,
               </button>
               {user && (
                 <button onClick={() => setYouView('badges')} className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition ${youView === 'badges' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} style={{ fontFamily: '"Courier New", monospace' }}>
-                  badges
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill={youView === 'badges' ? '#FFD700' : '#9ca3af'} stroke={youView === 'badges' ? '#FFD700' : '#9ca3af'} strokeWidth="1"/>
+                  </svg>
                 </button>
               )}
               <button onClick={() => setYouView('settings')} className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition ${youView === 'settings' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} style={{ fontFamily: '"Courier New", monospace' }}>
                 <Settings size={18} />
               </button>
+              {user && (userRole === 'admin' || userRole === 'moderator') && (
+                <button onClick={() => setYouView('admin')} className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap font-medium transition ${youView === 'admin' ? 'bg-red-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} style={{ fontFamily: '"Courier New", monospace' }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M3 21V7l3-4h12l3 4v14H3z" fill="#ef4444" stroke="#ef4444" strokeWidth="1"/>
+                    <path d="M3 7h18M9 7V3M15 7V3M9 21v-6h6v6" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+                    <circle cx="12" cy="13" r="1.5" fill="white"/>
+                  </svg>
+                </button>
+              )}
             </div>
 
             <div className="max-w-4xl mx-auto p-4">
@@ -8667,7 +8698,15 @@ ${adminBugNote}`,
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="font-bold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}>@{u.username || u.email?.split('@')[0]}</div>
-                              <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>{u.ratings} ratings{u.overlap > 0 ? ` • ${u.overlap}% overlap` : ''}</div>
+                              <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
+                              {u.ratingsCount || 0} ratings
+                              {(() => {
+                                const myDishIds = new Set(allRatings.filter(r => r.user_id === user?.id && !r.is_deleted).map(r => r.dish_id));
+                                const theirDishIds = new Set(allRatings.filter(r => r.user_id === u.id && !r.is_deleted).map(r => r.dish_id));
+                                const inCommon = [...myDishIds].filter(id => theirDishIds.has(id)).length;
+                                return inCommon > 0 ? ` • ${inCommon} in common` : '';
+                              })()}
+                            </div>
                             </div>
                             <ChevronRight size={16} className="text-gray-400 flex-shrink-0" />
                           </div>
@@ -8695,7 +8734,15 @@ ${adminBugNote}`,
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="font-bold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}>@{u.username || u.email?.split('@')[0]}</div>
-                              <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>{u.ratingsCount} ratings{u.dishOverlap > 0 ? ` • ${u.dishOverlap} dishes in common` : ''}</div>
+                              <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
+                                {(() => {
+                                  const cnt = allRatings.filter(r => r.user_id === u.id && !r.is_deleted).length;
+                                  const myDishIds = new Set(allRatings.filter(r => r.user_id === user?.id && !r.is_deleted).map(r => r.dish_id));
+                                  const theirDishIds = new Set(allRatings.filter(r => r.user_id === u.id && !r.is_deleted).map(r => r.dish_id));
+                                  const inCommon = [...myDishIds].filter(id => theirDishIds.has(id)).length;
+                                  return `${cnt} ratings${inCommon > 0 ? ` • ${inCommon} in common` : ''}`;
+                                })()}
+                              </div>
                             </div>
                             <ChevronRight size={16} className="text-gray-400 flex-shrink-0" />
                           </div>
@@ -8940,8 +8987,8 @@ ${adminBugNote}`,
                         </button>
                       </div>
 
-                      {/* ADMIN TOOLS SECTION */}
-                      {(userRole === 'admin' || userRole === 'moderator') && (
+                      {/* ADMIN TOOLS SECTION - hidden when admin has own tab */}
+                      {false && (userRole === 'admin' || userRole === 'moderator') && (
                         <div className="bg-gradient-to-r from-red-50 to-orange-50 rounded-lg p-4 shadow-sm border-2 border-red-200">
                           <h3 className="text-sm font-bold mb-3 text-red-700 flex items-center gap-2" style={{ fontFamily: '"Courier New", monospace' }}>
                             {userRole === 'admin' ? 'ADMIN TOOLS' : 'MODERATOR TOOLS'}
@@ -9095,6 +9142,39 @@ ${adminBugNote}`,
                       </button>
                     </div>
                   )}
+                </div>
+              )}
+
+              {youView === 'admin' && user && (userRole === 'admin' || userRole === 'moderator') && (
+                <div className="space-y-3">
+                  <h2 className="text-lg font-bold mb-4 text-red-700 flex items-center gap-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 21V7l3-4h12l3 4v14H3z" fill="#ef4444" stroke="#ef4444" strokeWidth="1"/><path d="M3 7h18M9 7V3M15 7V3M9 21v-6h6v6" stroke="white" strokeWidth="1.5" strokeLinecap="round"/><circle cx="12" cy="13" r="1.5" fill="white"/></svg>
+                    {userRole === 'admin' ? 'admin tools' : 'moderator tools'}
+                  </h2>
+                  <div className="space-y-2">
+                    <button onClick={() => { setErrorModal({ show: true, title: 'Admin Dashboard', message: 'Dashboard with stats and analytics coming soon!' }); }} className="w-full text-left text-sm py-3 px-3 bg-white hover:bg-red-50 rounded-lg transition border border-red-200 font-medium" style={{ fontFamily: '"Courier New", monospace' }}>Admin Dashboard</button>
+                    <button onClick={() => setShowDeletedItems(true)} className="w-full text-left text-sm py-3 px-3 bg-white hover:bg-yellow-50 rounded-lg transition border border-yellow-200 font-medium flex justify-between items-center" style={{ fontFamily: '"Courier New", monospace' }}>
+                      Deleted Items
+                      {allRatings.filter(r => r.is_deleted).length > 0 && <span className="bg-yellow-400 text-yellow-900 text-xs font-bold px-2 py-0.5 rounded-full">{allRatings.filter(r => r.is_deleted).length}</span>}
+                    </button>
+                    {userRole === 'admin' && (<>
+                      <button onClick={() => setShowMergeModal(true)} className="w-full text-left text-sm py-3 px-3 bg-white hover:bg-blue-50 rounded-lg transition border border-blue-200 font-medium" style={{ fontFamily: '"Courier New", monospace' }}>Merge Restaurants</button>
+                      <button onClick={() => setShowLinkRestaurantModal(true)} className="w-full text-left text-sm py-3 px-3 bg-white hover:bg-blue-50 rounded-lg transition border border-blue-200 font-medium" style={{ fontFamily: '"Courier New", monospace' }}>Link Restaurants to Map</button>
+                    </>)}
+                    <button onClick={() => setShowGrantBadgeModal(true)} className="w-full text-left text-sm py-3 px-3 bg-white hover:bg-purple-50 rounded-lg transition border border-purple-200 font-medium" style={{ fontFamily: '"Courier New", monospace' }}>Grant Badge to User</button>
+                    <button onClick={() => setShowBugInbox(true)} className="w-full text-left text-sm py-3 px-3 bg-white hover:bg-orange-50 rounded-lg transition border border-orange-200 font-medium flex justify-between items-center" style={{ fontFamily: '"Courier New", monospace' }}>
+                      Bug & Request Inbox
+                      {adminBugReports.filter(r => r.status === 'pending').length > 0 && <span className="bg-orange-400 text-white text-xs font-bold px-2 py-0.5 rounded-full">{adminBugReports.filter(r => r.status === 'pending').length} pending</span>}
+                    </button>
+                    {userRole === 'admin' && (
+                      <button onClick={() => setShowModeratorModal(true)} className="w-full text-left text-sm py-3 px-3 bg-white hover:bg-gray-50 rounded-lg transition border border-gray-200 font-medium" style={{ fontFamily: '"Courier New", monospace' }}>Manage Moderators</button>
+                    )}
+                    <button onClick={() => setShowAllRatingsModal(true)} className="w-full text-left text-sm py-3 px-3 bg-white hover:bg-gray-50 rounded-lg transition border border-gray-200 font-medium" style={{ fontFamily: '"Courier New", monospace' }}>All Ratings</button>
+                    <div className="mt-2 p-2 bg-red-50 rounded-lg border border-red-200 flex items-center justify-between">
+                      <span className="text-xs text-gray-600" style={{ fontFamily: '"Courier New", monospace' }}>{userRole === 'admin' ? 'Admin Mode' : 'Moderator Mode'}</span>
+                      <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full uppercase">{userRole}</span>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -9364,9 +9444,9 @@ ${adminBugNote}`,
                           onClick={() => setShowCategoryTooltip(v => !v)}
                         >?</div>
                         {showCategoryTooltip && (
-                          <div className="absolute bottom-full left-0 mb-2 w-56 bg-gray-900 text-white text-[10px] rounded-lg px-3 py-2 z-50 shadow-xl pointer-events-none" style={{ fontFamily: '"Courier New", monospace' }}>
+                          <div className="absolute top-full left-0 mt-2 w-56 bg-gray-900 text-white text-[10px] rounded-lg px-3 py-2 z-50 shadow-xl pointer-events-none" style={{ fontFamily: '"Courier New", monospace' }}>
+                            <div className="absolute bottom-full left-3 w-0 h-0 border-l-4 border-r-4 border-b-4 border-transparent border-b-gray-900"></div>
                             <p>this is the type of food, not cuisine. a "pho ga" dish would be in the "pho" category, not "vietnamese".</p>
-                            <div className="absolute top-full left-3 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
                           </div>
                         )}
                       </div>
@@ -11540,19 +11620,28 @@ ${adminBugNote}`,
                   )}
                 </div>
 
-                {/* Follow button */}
+                {/* Follow + Message buttons */}
                 {user && (
-                  <button
-                    onClick={async () => {
-                      await handleFollowUser(u);
-                      setSelectedExploreUser(prev => ({ ...prev, isFollowing: !prev.isFollowing }));
-                      setAllUsers(prev => prev.map(p => p.id === u.id ? { ...p, isFollowing: !p.isFollowing } : p));
-                    }}
-                    className={`w-full py-2 rounded-lg text-sm font-bold transition ${u.isFollowing ? 'bg-gray-200 text-gray-700 hover:bg-red-100 hover:text-red-600' : 'bg-[#33a29b] text-white hover:bg-[#2a8a84]'}`}
-                    style={{ fontFamily: '"Courier New", monospace' }}
-                  >
-                    {u.isFollowing ? 'unfollow' : 'follow'}
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={async () => {
+                        await handleFollowUser(u);
+                        setSelectedExploreUser(prev => ({ ...prev, isFollowing: !prev.isFollowing }));
+                        setAllUsers(prev => prev.map(p => p.id === u.id ? { ...p, isFollowing: !p.isFollowing } : p));
+                      }}
+                      className={`flex-1 py-2 rounded-lg text-sm font-bold transition ${u.isFollowing ? 'bg-gray-200 text-gray-700 hover:bg-red-100 hover:text-red-600' : 'bg-[#33a29b] text-white hover:bg-[#2a8a84]'}`}
+                      style={{ fontFamily: '"Courier New", monospace' }}
+                    >
+                      {u.isFollowing ? 'unfollow' : 'follow'}
+                    </button>
+                    {u.id !== user.id && (
+                      <button
+                        onClick={() => { const uname = u.username || u.email?.split('@')[0] || 'user'; handleStartDm(u.id, uname); setSelectedExploreUser(null); setYouView('dms'); }}
+                        className="flex-1 py-2 rounded-lg text-sm font-bold transition bg-gray-100 text-gray-700 hover:bg-gray-200"
+                        style={{ fontFamily: '"Courier New", monospace' }}
+                      >message</button>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -11870,7 +11959,8 @@ ${adminBugNote}`,
             <div className="bg-white rounded-2xl pointer-events-auto flex flex-col" style={{ width: 'min(92vw,460px)', maxHeight: '85vh', fontFamily: '"Courier New", monospace' }}>
               <div className="flex border-b flex-shrink-0">
                 <button onClick={() => setBugModalTab('submit')} className={`flex-1 py-3 text-xs font-bold transition ${bugModalTab==='submit' ? 'border-b-2 border-[#33a29b] text-[#33a29b]' : 'text-gray-400'}`}>submit</button>
-                <button onClick={() => setBugModalTab('fixed')} className={`flex-1 py-3 text-xs font-bold transition ${bugModalTab==='fixed' ? 'border-b-2 border-[#33a29b] text-[#33a29b]' : 'text-gray-400'}`}>what's been fixed</button>
+                <button onClick={() => setBugModalTab('known')} className={`flex-1 py-3 text-xs font-bold transition ${bugModalTab==='known' ? 'border-b-2 border-[#33a29b] text-[#33a29b]' : 'text-gray-400'}`}>known issues</button>
+                <button onClick={() => setBugModalTab('fixed')} className={`flex-1 py-3 text-xs font-bold transition ${bugModalTab==='fixed' ? 'border-b-2 border-[#33a29b] text-[#33a29b]' : 'text-gray-400'}`}>what's fixed</button>
                 <button onClick={() => setShowBugModal(false)} className="px-4 text-gray-400 hover:text-gray-600"><X size={18} /></button>
               </div>
               <div className="overflow-y-auto flex-1 p-5">
@@ -11900,17 +11990,21 @@ ${adminBugNote}`,
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    <p className="text-xs text-gray-500 mb-3">bugs fixed and requests shipped. upvote what you care about.</p>
-                    {publicBugReports.length === 0
-                      ? <div className="text-center py-8 text-gray-300"><p className="text-xs">nothing yet — check back soon!</p></div>
-                      : publicBugReports.map(report => {
+                    <p className="text-xs text-gray-500 mb-3">{bugModalTab === 'known' ? "issues we know about. upvote to prioritize." : "bugs fixed and requests shipped."}</p>
+                    {(() => {
+                      const filtered = bugModalTab === 'known'
+                        ? publicBugReports.filter(r => r.status !== 'fixed' && r.status !== 'shipped')
+                        : publicBugReports.filter(r => r.status === 'fixed' || r.status === 'shipped');
+                      return filtered.length === 0
+                        ? <div className="text-center py-8 text-gray-300"><p className="text-xs">nothing yet — check back soon!</p></div>
+                        : filtered.map(report => {
                           const statusColors = { in_progress:'bg-blue-100 text-blue-700', fixed:'bg-green-100 text-green-700', shipped:'bg-teal-100 text-teal-700', "won't fix":'bg-gray-100 text-gray-500', duplicate:'bg-purple-100 text-purple-700' };
                           const hasUpvoted = bugUpvotes[report.id];
                           return (
                             <div key={report.id} className="bg-gray-50 rounded-xl p-3 border border-gray-100">
                               <div className="flex items-start gap-3">
-                                <button onClick={() => { if (report.user_id !== user.id) handleBugUpvote(report.id); }} disabled={report.user_id === user.id}
-                                  className={`flex flex-col items-center gap-0.5 flex-shrink-0 pt-0.5 ${report.user_id === user.id ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}>
+                                <button onClick={() => handleBugUpvote(report.id)}
+                                  className="flex flex-col items-center gap-0.5 flex-shrink-0 pt-0.5 cursor-pointer">
                                   <svg width={14} height={14} viewBox="0 0 24 24" fill={hasUpvoted ? '#33a29b' : 'none'} stroke={hasUpvoted ? '#33a29b' : '#9ca3af'} strokeWidth={2}><path d="M12 19V5M5 12l7-7 7 7"/></svg>
                                   <span className={`text-[10px] font-bold ${hasUpvoted ? 'text-[#33a29b]' : 'text-gray-400'}`}>{report.upvote_count || 0}</span>
                                 </button>
@@ -11923,12 +12017,41 @@ ${adminBugNote}`,
                                   <p className="text-xs text-gray-700">{report.text}</p>
                                   {report.admin_note && <p className="text-[10px] text-gray-400 mt-1 italic">admin: {report.admin_note}</p>}
                                   {report.screenshot_url && <img src={report.screenshot_url} alt="screenshot" className="mt-2 rounded max-h-24 object-cover" />}
+                                  {/* Comments section */}
+                                  <div className="mt-2 border-t border-gray-200 pt-2">
+                                    <button onClick={() => {
+                                      setExpandedBugComments(prev => ({ ...prev, [report.id]: !prev[report.id] }));
+                                      if (!bugComments[report.id]) fetchBugComments(report.id);
+                                    }} className="text-[10px] text-gray-400 hover:text-[#33a29b] transition">
+                                      💬 {bugComments[report.id]?.length > 0 ? `${bugComments[report.id].length} comment${bugComments[report.id].length > 1 ? 's' : ''}` : 'add comment'}
+                                    </button>
+                                    {expandedBugComments[report.id] && (
+                                      <div className="mt-2 space-y-1">
+                                        {(bugComments[report.id] || []).map((c, i) => (
+                                          <div key={i} className="text-[10px] text-gray-600 bg-white rounded p-1.5 border border-gray-100">
+                                            <span className="text-gray-400 mr-1">{new Date(c.created_at).toLocaleDateString()}</span>{c.text}
+                                          </div>
+                                        ))}
+                                        <div className="flex gap-1 mt-1">
+                                          <input
+                                            value={bugCommentInputs[report.id] || ''}
+                                            onChange={e => setBugCommentInputs(prev => ({ ...prev, [report.id]: e.target.value }))}
+                                            onKeyDown={e => { if (e.key === 'Enter') submitBugComment(report.id, bugCommentInputs[report.id] || ''); }}
+                                            placeholder="add a comment..."
+                                            className="flex-1 text-[10px] border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-[#33a29b]"
+                                            style={{ fontFamily: '"Courier New", monospace' }}
+                                          />
+                                          <button onClick={() => submitBugComment(report.id, bugCommentInputs[report.id] || '')} className="text-[10px] bg-[#33a29b] text-white px-2 py-1 rounded hover:bg-[#2a8a84] transition">→</button>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             </div>
                           );
                         })
-                    }
+                    })()}
                   </div>
                 )}
               </div>
@@ -12068,7 +12191,7 @@ ${adminBugNote}`,
         <>
           <div onClick={() => { setShowGrantBadgeModal(false); setGbUser(null); setGbSearch(''); setGbResults([]); setGbBadge(''); setGbMsg(''); setGbUserBadges([]); }} className="fixed inset-0 bg-black/60 z-50" />
           <div className="fixed inset-0 flex items-center justify-center z-50 p-4 pointer-events-none">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md pointer-events-auto" style={{ fontFamily:'"Courier New",monospace', maxHeight:'85vh', display:'flex', flexDirection:'column' }}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg pointer-events-auto" style={{ fontFamily:'"Courier New",monospace', minHeight:'60vh', maxHeight:'92vh', display:'flex', flexDirection:'column' }}>
               <div className="flex items-center justify-between p-4 border-b flex-shrink-0">
                 <h2 className="font-bold text-base">Grant Badge</h2>
                 <button onClick={() => { setShowGrantBadgeModal(false); setGbUser(null); setGbSearch(''); setGbResults([]); setGbBadge(''); setGbMsg(''); setGbUserBadges([]); }}><X size={20}/></button>
@@ -12102,7 +12225,7 @@ ${adminBugNote}`,
                         style={{ fontFamily: '"Courier New", monospace' }}
                       />
                       {gbResults.length > 0 && (
-                        <div className="absolute z-50 w-full mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-lg" style={{ top: '100%' }}>
+                        <div className="absolute z-[200] w-full mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto" style={{ top: '100%' }}>
                           {gbResults.map(u => (
                             <div
                               key={u.id}
