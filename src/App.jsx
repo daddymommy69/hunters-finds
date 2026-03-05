@@ -543,6 +543,22 @@ const HuntersFindsApp = () => {
         console.log('PASSWORD_RECOVERY event fired! Opening modal...');
         setShowNewPasswordModal(true);
       }
+      
+      // Ensure new users exist in public.users table (required for RLS to work)
+      if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && session?.user) {
+        const u = session.user;
+        const username = u.user_metadata?.username || u.email?.split('@')[0];
+        try {
+          await supabase.from('users').upsert({
+            id: u.id,
+            email: u.email,
+            username: username,
+          }, { onConflict: 'id', ignoreDuplicates: true });
+          console.log('✅ User upserted into public.users');
+        } catch (e) {
+          console.log('Note: Could not upsert user:', e.message);
+        }
+      }
     });
     
     // Cleanup subscription
@@ -675,6 +691,32 @@ const HuntersFindsApp = () => {
         }
         
         console.log('✅ fetchGroups complete');
+        
+        // Fetch special group memberships for username colors
+        try {
+          const { data: allGroupsData } = await supabase.from('groups').select('id, name');
+          if (allGroupsData) {
+            const hcIds = allGroupsData.filter(g => HUNTERS_CASTLE_NAMES.some(n => g.name?.toLowerCase().includes(n))).map(g => g.id);
+            const d4Ids = allGroupsData.filter(g => DTPX4_NAMES.some(n => g.name?.toLowerCase().includes(n))).map(g => g.id);
+            
+            const [hcMembers, d4Members] = await Promise.all([
+              hcIds.length > 0 ? supabase.from('group_members').select('user_id').in('group_id', hcIds).eq('status', 'approved') : { data: [] },
+              d4Ids.length > 0 ? supabase.from('group_members').select('user_id').in('group_id', d4Ids).eq('status', 'approved') : { data: [] },
+            ]);
+            setSpecialGroupMembers({
+              huntersCastle: new Set((hcMembers.data || []).map(m => m.user_id)),
+              dtpx4: new Set((d4Members.data || []).map(m => m.user_id)),
+            });
+          }
+        } catch (e) {
+          console.log('Could not fetch special group members:', e.message);
+        }
+
+        // Load current user's color pref
+        if (user) {
+          const { data: prefData } = await supabase.from('users').select('username_color_pref').eq('id', user.id).maybeSingle();
+          if (prefData?.username_color_pref) setUserColorPref(prefData.username_color_pref);
+        }
       } catch (error) {
         console.error('❌ Critical error in fetchGroups:', error);
       } finally {
@@ -1880,6 +1922,9 @@ const HuntersFindsApp = () => {
   const [gbMsg, setGbMsg] = useState('');
   const [gbResults, setGbResults] = useState([]);
   const [gbUserBadges, setGbUserBadges] = useState([]);
+  // Special group membership for username colors
+  const [specialGroupMembers, setSpecialGroupMembers] = useState({ huntersCastle: new Set(), dtpx4: new Set() });
+  const [userColorPref, setUserColorPref] = useState(null); // 'castle' | 'dtpx4' | null
   const [ratingLikes, setRatingLikes] = useState({});
   const [selectedRatingDetail, setSelectedRatingDetail] = useState(null);
   const [ratingComments, setRatingComments] = useState({}); // { ratingId: { comments, loading, loaded } }
@@ -2021,7 +2066,7 @@ const HuntersFindsApp = () => {
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-xs font-bold" style={{ fontFamily: '"Courier New", monospace' }}>@{c.username}</span>
+              <span className="text-xs font-bold" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(c.user_id) || {}) }}>@{c.username}</span>
               <span className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>{timeAgo(c.created_at)}</span>
               {isOwn && (
                 <button onClick={(e) => handleDeleteComment(c.id, ratingId, e)} className="text-[10px] text-gray-400 hover:text-red-400 transition" style={{ fontFamily: '"Courier New", monospace' }}>delete</button>
@@ -2125,6 +2170,45 @@ const HuntersFindsApp = () => {
     if (score >= 81) return 'text-gray-400';
     if (score >= 72) return 'text-green-500';
     return 'text-blue-500';
+  };
+
+  // Username color system
+  // Hardwired group names (case-insensitive match) + DB lookup
+  const HUNTERS_CASTLE_NAMES = ['hunters castle', 'hunters castel'];
+  const DTPX4_NAMES = ['dtpx4', 'dtpx 4'];
+  
+  const getUsernameStyle = (userId, overridePref = null) => {
+    const isCastleLord = userBadges.some(b => b.user_id === userId && b.badge_id === 'castle_lord') ||
+      (userId === user?.id && userBadges.some(b => b.badge_id === 'castle_lord'));
+    if (isCastleLord) return { color: '#ef4444', fontWeight: 'bold' }; // red
+    
+    const inHuntersCastle = specialGroupMembers.huntersCastle.has(userId);
+    const inDtpx4 = specialGroupMembers.dtpx4.has(userId);
+    
+    // Both groups — use stored preference
+    if (inHuntersCastle && inDtpx4) {
+      const pref = userId === user?.id ? (userColorPref || overridePref) : null;
+      if (pref === 'castle') return { color: '#b8960c', fontWeight: 'bold' }; // dark gold
+      if (pref === 'dtpx4') return { color: '#1d6fa4', fontWeight: 'bold' }; // sapphire
+      return { color: '#b8960c', fontWeight: 'bold' }; // default gold
+    }
+    if (inDtpx4) return { color: '#1d6fa4', fontWeight: 'bold' }; // sapphire
+    if (inHuntersCastle) return { color: '#b8960c', fontWeight: 'bold' }; // dark gold
+    return null;
+  };
+
+  const getUsernameBadgeForViewingUser = (badges) => {
+    if (!badges) return null;
+    const isCastleLord = (Array.isArray(badges) ? badges : []).some(b => b.badge_id === 'castle_lord');
+    if (isCastleLord) return { color: '#ef4444', fontWeight: 'bold' };
+    return null;
+  };
+
+  const getGroupNameStyle = (groupName) => {
+    const n = (groupName || '').toLowerCase();
+    if (HUNTERS_CASTLE_NAMES.some(k => n.includes(k))) return { color: '#b8960c', fontWeight: 'bold' };
+    if (DTPX4_NAMES.some(k => n.includes(k))) return { color: '#1d6fa4', fontWeight: 'bold' };
+    return {};
   };
 
   const getTierBadge = (score) => {
@@ -4930,7 +5014,7 @@ const HuntersFindsApp = () => {
         setErrorModal({
           show: true,
           title: 'Error Saving Rating',
-          message: 'Could not save your rating. Please try again.'
+          message: `Could not save your rating. ${ratingError.message || 'Please try again.'}`
         });
         return;
       }
@@ -7418,7 +7502,7 @@ ${adminBugNote}`,
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>
-                                  @{item.username}
+                                  <span style={getUsernameStyle(item.user_id) || {}}>@{item.username}</span>
                                 </div>
                                 <div className="text-xs text-gray-600 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
                                   {(item.activity_type === 'rating' || item.activity_type === 'group_rating') && (
@@ -7922,7 +8006,7 @@ ${adminBugNote}`,
                   <div className="bg-white rounded-lg p-4 shadow-sm">
                     <div className="flex justify-between mb-3">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h2 className="text-xl font-bold">@{user?.user_metadata?.username || user?.email?.split('@')[0] || 'user'}</h2>
+                        <h2 className="text-xl font-bold" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(user?.id) || {}) }}>@{user?.user_metadata?.username || user?.email?.split('@')[0] || 'user'}</h2>
                         <div className="flex items-center gap-1">
                           {getDisplayBadges(userBadges, featuredBadges).map(b => <BadgeIcon key={b.badge_id} badgeId={b.badge_id} size={18} />)}
                           {userBadges.length > 0 && (
@@ -8054,9 +8138,9 @@ ${adminBugNote}`,
                                   {/* Sub-scores horizontal */}
                                   {(t || pr || po) && (
                                     <div className="flex items-center gap-2">
-                                      {t && <span className="text-[10px] font-bold" style={{ color: '#f97316', fontFamily: '"Courier New", monospace' }}>T {t}</span>}
-                                      {pr && <span className="text-[10px] font-bold" style={{ color: '#22c55e', fontFamily: '"Courier New", monospace' }}>P {pr}</span>}
-                                      {po && <span className="text-[10px] font-bold" style={{ color: '#3b82f6', fontFamily: '"Courier New", monospace' }}>Po {po}</span>}
+                                      {t && <span className="text-[10px] font-bold" style={{ color: '#f97316', fontFamily: '"Courier New", monospace' }}>{t}</span>}
+                                      {pr && <span className="text-[10px] font-bold" style={{ color: '#22c55e', fontFamily: '"Courier New", monospace' }}>{pr}</span>}
+                                      {po && <span className="text-[10px] font-bold" style={{ color: '#3b82f6', fontFamily: '"Courier New", monospace' }}>{po}</span>}
                                     </div>
                                   )}
                                   {/* Overall score with glow */}
@@ -8335,7 +8419,7 @@ ${adminBugNote}`,
                             >
                               <div className="flex items-center justify-between">
                                 <div className="flex-1 min-w-0">
-                                  <h3 className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>{group.name}</h3>
+                                  <h3 className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace', ...getGroupNameStyle(group.name) }}>{group.name}</h3>
                                   <p className="text-xs text-gray-500 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
                                     {group.member_count || 1} {(group.member_count || 1) === 1 ? 'member' : 'members'}
                                     {isBroadcast && <span className="ml-1 text-[#33a29b]">• broadcast channel</span>}
@@ -8533,7 +8617,7 @@ ${adminBugNote}`,
                             {friendSearchResults.map((foundUser) => (
                               <div key={foundUser.id} className="p-3 hover:bg-gray-50 rounded cursor-pointer transition border-b last:border-b-0">
                                 <div className="flex items-center justify-between">
-                                  <div className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>@{foundUser.username}</div>
+                                  <div className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(foundUser.id) || {}) }}>@{foundUser.username}</div>
                                   <button
                                     onClick={(e) => { e.stopPropagation(); handleFollowUser(foundUser); setShowFriendSearch(false); setFriendSearchQuery(''); }}
                                     className="px-3 py-1 bg-[#33a29b] text-white text-xs rounded-lg font-semibold hover:bg-[#2a8a84] transition"
@@ -8681,7 +8765,7 @@ ${adminBugNote}`,
                                   <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border border-white ${style.dot}`} />
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <div className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>@{activity.username}</div>
+                                  <div className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(activity.user_id) || {}) }}>@{activity.username}</div>
                                   <div className="text-xs text-gray-600 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
                                     {(activity.activity_type === 'rating' || activity.activity_type === 'group_rating') && (
                                       <span>rated <span className="font-semibold">{activity.content.dish_name}</span> {activity.content.score != null && <span className={`font-bold ${getSRRColor(activity.content.score)}`}>({activity.content.score})</span>}</span>
@@ -9837,7 +9921,7 @@ ${adminBugNote}`,
                                 <div className="flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-100 transition" onClick={() => handleToggleComments(rating.id)}>
                                   <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">{(ratingUsername || '?')[0].toUpperCase()}</div>
                                   <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2"><span className="text-sm font-bold" style={{ fontFamily: '"Courier New", monospace' }}>@{ratingUsername}</span>{computedSrr != null && <span className={`text-sm font-bold ${getSRRColor(computedSrr)}`} style={{ fontFamily: '"Courier New", monospace' }}>({computedSrr.toFixed(2)})</span>}</div>
+                                    <div className="flex items-center gap-2"><span className="text-sm font-bold" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(ratingUserId) || {}) }}>@{ratingUsername}</span>{computedSrr != null && <span className={`text-sm font-bold ${getSRRColor(computedSrr)}`} style={{ fontFamily: '"Courier New", monospace' }}>({computedSrr.toFixed(2)})</span>}</div>
                                     {rating.comment && <p className="text-xs text-gray-500 italic truncate" style={{ fontFamily: '"Courier New", monospace' }}>"{rating.comment}"</p>}
                                   </div>
                                   <div className="flex items-center gap-2 flex-shrink-0"><span className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>{commentsForRating.length > 0 ? `${commentsForRating.length} comment${commentsForRating.length !== 1 ? 's' : ''}` : 'no comments'}</span><MessageSquare size={14} className={isExpanded ? 'text-[#33a29b]' : 'text-gray-300'} /></div>
@@ -10550,7 +10634,7 @@ ${adminBugNote}`,
                     <div className="bg-white rounded-lg p-4 border border-gray-200">
                       <div className="flex justify-between mb-3">
                         <div>
-                          <h3 className="text-xl font-bold" style={{ fontFamily: '"Courier New", monospace' }}>@{topModal.data.username}</h3>
+                          <h3 className="text-xl font-bold" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(topModal.data.id) || {}) }}>@{topModal.data.username}</h3>
                           <p className="text-sm text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>{topModal.data.location}</p>
                         </div>
                         <button className="px-3 py-1.5 bg-[#33a29b] text-white rounded-lg text-sm hover:bg-[#2a8a84] transition">
@@ -10754,7 +10838,7 @@ ${adminBugNote}`,
                               <div className="flex justify-between items-center">
                                 <div className="flex items-center gap-2">
                                   <User size={18} className="text-gray-500" />
-                                  <span className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>@{member.username}</span>
+                                  <span className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(member.user_id) || {}) }}>@{member.username}</span>
                                 </div>
                                 <div className="flex items-center gap-3">
                                   <div className="text-right">
@@ -11054,7 +11138,7 @@ ${adminBugNote}`,
                         : <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0"><circle cx="8" cy="7" r="3"/><circle cx="16" cy="7" r="3"/><circle cx="12" cy="14" r="3"/><path d="M2 21c0-2.8 2.2-5 5-5h1"/><path d="M16 16h1c2.8 0 5 2.2 5 5"/><path d="M9 17c0-1.7 1.3-3 3-3s3 1.3 3 3"/></svg>
                     }
                     <div className="min-w-0">
-                      <h2 className="font-bold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}>{g.name}</h2>
+                      <h2 className="font-bold text-sm truncate" style={{ fontFamily: '"Courier New", monospace', ...getGroupNameStyle(g.name) }}>{g.name}</h2>
                       <p className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>
                         {g.member_count || 1} {(g.member_count || 1) === 1 ? 'member' : 'members'}
                         {isBroadcast && ' · broadcast'}
@@ -11170,7 +11254,7 @@ ${adminBugNote}`,
                         <div className={`flex flex-col max-w-[72%] ${isOwn ? 'items-end' : 'items-start'}`}>
                           {/* Username + time */}
                           <div className={`flex items-center gap-2 mb-0.5 ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}>
-                            <span className="text-[10px] font-bold text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>@{msg.username}</span>
+                            <span className="text-[10px] font-bold" style={{ fontFamily: '"Courier New", monospace', color: getUsernameStyle(msg.user_id)?.color || '#6b7280' }}>@{msg.username}</span>
                             <span className="text-[9px] text-gray-300" style={{ fontFamily: '"Courier New", monospace' }}>
                               {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
@@ -11713,6 +11797,27 @@ ${adminBugNote}`,
                   </p>
                 </div>
                 
+                {/* Color pref toggle — only for dual group members */}
+                {user && specialGroupMembers.huntersCastle.has(user.id) && specialGroupMembers.dtpx4.has(user.id) && (
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                      username color
+                    </label>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setUserColorPref('castle')}
+                        className={`flex-1 py-2 rounded-lg text-xs font-bold border-2 transition ${userColorPref === 'castle' || (!userColorPref) ? 'border-yellow-600 bg-yellow-50' : 'border-gray-200 bg-white'}`}
+                        style={{ color: '#b8960c', fontFamily: '"Courier New", monospace' }}
+                      >🏰 hunters castle gold</button>
+                      <button
+                        onClick={() => setUserColorPref('dtpx4')}
+                        className={`flex-1 py-2 rounded-lg text-xs font-bold border-2 transition ${userColorPref === 'dtpx4' ? 'border-blue-600 bg-blue-50' : 'border-gray-200 bg-white'}`}
+                        style={{ color: '#1d6fa4', fontFamily: '"Courier New", monospace' }}
+                      >💎 dtpx4 sapphire</button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Save Button */}
                 <button
                   onClick={async () => {
@@ -11723,6 +11828,10 @@ ${adminBugNote}`,
                           location: editLocation
                         }
                       });
+                      // Save color pref if dual member
+                      if (user && specialGroupMembers.huntersCastle.has(user.id) && specialGroupMembers.dtpx4.has(user.id)) {
+                        await supabase.from('users').update({ username_color_pref: userColorPref || 'castle' }).eq('id', user.id);
+                      }
                       
                       setErrorModal({
                         show: true,
