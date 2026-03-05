@@ -2102,6 +2102,45 @@ const HuntersFindsApp = () => {
     );
   };
 
+  // Username color system
+  // Hardwired group names (case-insensitive match) + DB lookup
+  const HUNTERS_CASTLE_NAMES = ['hunters castle', 'hunters castel'];
+  const DTPX4_NAMES = ['dtpx4', 'dtpx 4'];
+  
+  const getUsernameStyle = (userId, overridePref = null) => {
+    const isCastleLord = userBadges.some(b => b.user_id === userId && b.badge_id === 'castle_lord') ||
+      (userId === user?.id && userBadges.some(b => b.badge_id === 'castle_lord'));
+    if (isCastleLord) return { color: '#ef4444', fontWeight: 'bold' }; // red
+    
+    const inHuntersCastle = specialGroupMembers.huntersCastle.has(userId);
+    const inDtpx4 = specialGroupMembers.dtpx4.has(userId);
+    
+    // Both groups — use stored preference
+    if (inHuntersCastle && inDtpx4) {
+      const pref = userId === user?.id ? (userColorPref || overridePref) : null;
+      if (pref === 'castle') return { color: '#b8960c', fontWeight: 'bold' }; // dark gold
+      if (pref === 'dtpx4') return { color: '#1d6fa4', fontWeight: 'bold' }; // sapphire
+      return { color: '#b8960c', fontWeight: 'bold' }; // default gold
+    }
+    if (inDtpx4) return { color: '#1d6fa4', fontWeight: 'bold' }; // sapphire
+    if (inHuntersCastle) return { color: '#b8960c', fontWeight: 'bold' }; // dark gold
+    return null;
+  };
+
+  const getUsernameBadgeForViewingUser = (badges) => {
+    if (!badges) return null;
+    const isCastleLord = (Array.isArray(badges) ? badges : []).some(b => b.badge_id === 'castle_lord');
+    if (isCastleLord) return { color: '#ef4444', fontWeight: 'bold' };
+    return null;
+  };
+
+  const getGroupNameStyle = (groupName) => {
+    const n = (groupName || '').toLowerCase();
+    if (HUNTERS_CASTLE_NAMES.some(k => n.includes(k))) return { color: '#b8960c', fontWeight: 'bold' };
+    if (DTPX4_NAMES.some(k => n.includes(k))) return { color: '#1d6fa4', fontWeight: 'bold' };
+    return {};
+  };
+
   const renderCommentThread = (ratingId, ratingNote, ratingUsername, bgClass = 'bg-white') => {
     const state = ratingComments[ratingId] || { comments: [], loading: false, loaded: false };
     const allComments = state.comments || [];
@@ -2170,45 +2209,6 @@ const HuntersFindsApp = () => {
     if (score >= 81) return 'text-gray-400';
     if (score >= 72) return 'text-green-500';
     return 'text-blue-500';
-  };
-
-  // Username color system
-  // Hardwired group names (case-insensitive match) + DB lookup
-  const HUNTERS_CASTLE_NAMES = ['hunters castle', 'hunters castel'];
-  const DTPX4_NAMES = ['dtpx4', 'dtpx 4'];
-  
-  const getUsernameStyle = (userId, overridePref = null) => {
-    const isCastleLord = userBadges.some(b => b.user_id === userId && b.badge_id === 'castle_lord') ||
-      (userId === user?.id && userBadges.some(b => b.badge_id === 'castle_lord'));
-    if (isCastleLord) return { color: '#ef4444', fontWeight: 'bold' }; // red
-    
-    const inHuntersCastle = specialGroupMembers.huntersCastle.has(userId);
-    const inDtpx4 = specialGroupMembers.dtpx4.has(userId);
-    
-    // Both groups — use stored preference
-    if (inHuntersCastle && inDtpx4) {
-      const pref = userId === user?.id ? (userColorPref || overridePref) : null;
-      if (pref === 'castle') return { color: '#b8960c', fontWeight: 'bold' }; // dark gold
-      if (pref === 'dtpx4') return { color: '#1d6fa4', fontWeight: 'bold' }; // sapphire
-      return { color: '#b8960c', fontWeight: 'bold' }; // default gold
-    }
-    if (inDtpx4) return { color: '#1d6fa4', fontWeight: 'bold' }; // sapphire
-    if (inHuntersCastle) return { color: '#b8960c', fontWeight: 'bold' }; // dark gold
-    return null;
-  };
-
-  const getUsernameBadgeForViewingUser = (badges) => {
-    if (!badges) return null;
-    const isCastleLord = (Array.isArray(badges) ? badges : []).some(b => b.badge_id === 'castle_lord');
-    if (isCastleLord) return { color: '#ef4444', fontWeight: 'bold' };
-    return null;
-  };
-
-  const getGroupNameStyle = (groupName) => {
-    const n = (groupName || '').toLowerCase();
-    if (HUNTERS_CASTLE_NAMES.some(k => n.includes(k))) return { color: '#b8960c', fontWeight: 'bold' };
-    if (DTPX4_NAMES.some(k => n.includes(k))) return { color: '#1d6fa4', fontWeight: 'bold' };
-    return {};
   };
 
   const getTierBadge = (score) => {
