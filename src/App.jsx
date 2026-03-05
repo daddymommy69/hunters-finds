@@ -545,19 +545,19 @@ const HuntersFindsApp = () => {
       }
       
       // Ensure new users exist in public.users table (required for RLS to work)
-      if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && session?.user) {
+      if (event === 'SIGNED_IN' && session?.user) {
         const u = session.user;
         const username = u.user_metadata?.username || u.email?.split('@')[0];
-        try {
-          await supabase.from('users').upsert({
-            id: u.id,
-            email: u.email,
-            username: username,
-          }, { onConflict: 'id', ignoreDuplicates: true });
-          console.log('✅ User upserted into public.users');
-        } catch (e) {
-          console.log('Note: Could not upsert user:', e.message);
-        }
+        // Fire and forget - don't await so auth state isn't blocked
+        supabase.from('users').upsert({
+          id: u.id,
+          email: u.email,
+          username: username,
+        }, { onConflict: 'id', ignoreDuplicates: true }).then(() => {
+          console.log('✅ User synced to public.users');
+        }).catch(e => {
+          console.log('Note:', e.message);
+        });
       }
     });
     
@@ -693,15 +693,17 @@ const HuntersFindsApp = () => {
         console.log('✅ fetchGroups complete');
         
         // Fetch special group memberships for username colors
+        // Use inline arrays to avoid TDZ issues with consts defined later in component
         try {
-          const { data: allGroupsData } = await supabase.from('groups').select('id, name');
-          if (allGroupsData) {
-            const hcIds = allGroupsData.filter(g => HUNTERS_CASTLE_NAMES.some(n => g.name?.toLowerCase().includes(n))).map(g => g.id);
-            const d4Ids = allGroupsData.filter(g => DTPX4_NAMES.some(n => g.name?.toLowerCase().includes(n))).map(g => g.id);
-            
+          const hcNames = ['hunters castle', 'hunters castel'];
+          const d4Names = ['dtpx4', 'dtpx 4'];
+          // Reuse publicGroups already fetched above
+          if (publicGroups) {
+            const hcIds = publicGroups.filter(g => hcNames.some(n => g.name?.toLowerCase().includes(n))).map(g => g.id);
+            const d4Ids = publicGroups.filter(g => d4Names.some(n => g.name?.toLowerCase().includes(n))).map(g => g.id);
             const [hcMembers, d4Members] = await Promise.all([
-              hcIds.length > 0 ? supabase.from('group_members').select('user_id').in('group_id', hcIds).eq('status', 'approved') : { data: [] },
-              d4Ids.length > 0 ? supabase.from('group_members').select('user_id').in('group_id', d4Ids).eq('status', 'approved') : { data: [] },
+              hcIds.length > 0 ? supabase.from('group_members').select('user_id').in('group_id', hcIds) : Promise.resolve({ data: [] }),
+              d4Ids.length > 0 ? supabase.from('group_members').select('user_id').in('group_id', d4Ids) : Promise.resolve({ data: [] }),
             ]);
             setSpecialGroupMembers({
               huntersCastle: new Set((hcMembers.data || []).map(m => m.user_id)),
@@ -712,10 +714,14 @@ const HuntersFindsApp = () => {
           console.log('Could not fetch special group members:', e.message);
         }
 
-        // Load current user's color pref
-        if (user) {
-          const { data: prefData } = await supabase.from('users').select('username_color_pref').eq('id', user.id).maybeSingle();
-          if (prefData?.username_color_pref) setUserColorPref(prefData.username_color_pref);
+        // Load current user's color pref (only if column exists)
+        try {
+          if (user) {
+            const { data: prefData } = await supabase.from('users').select('username_color_pref').eq('id', user.id).maybeSingle();
+            if (prefData?.username_color_pref) setUserColorPref(prefData.username_color_pref);
+          }
+        } catch (e) {
+          // Column may not exist yet
         }
       } catch (error) {
         console.error('❌ Critical error in fetchGroups:', error);
@@ -2136,8 +2142,8 @@ const HuntersFindsApp = () => {
 
   const getGroupNameStyle = (groupName) => {
     const n = (groupName || '').toLowerCase();
-    if (HUNTERS_CASTLE_NAMES.some(k => n.includes(k))) return { color: '#b8960c', fontWeight: 'bold' };
-    if (DTPX4_NAMES.some(k => n.includes(k))) return { color: '#1d6fa4', fontWeight: 'bold' };
+    if (['hunters castle', 'hunters castel'].some(k => n.includes(k))) return { color: '#b8960c', fontWeight: 'bold' };
+    if (['dtpx4', 'dtpx 4'].some(k => n.includes(k))) return { color: '#1d6fa4', fontWeight: 'bold' };
     return {};
   };
 
