@@ -9413,7 +9413,7 @@ ${adminBugNote}`,
                           setCategoryConfirmNew(null);
                         }}
                         onFocus={() => { setShowCategorySuggestions(true); setCategoryShowAll(false); setCategoryConfirmNew(null); }}
-                        onBlur={() => setTimeout(() => setShowCategorySuggestions(false), 150)}
+                        onBlur={() => setTimeout(() => setShowCategorySuggestions(false), 300)}
                         placeholder="start typing or pick below..."
                         className={`w-full px-2 py-1.5 text-xs border-2 rounded-lg focus:outline-none ${categoryLocked ? 'border-[#33a29b] bg-[#33a29b]/5' : 'border-gray-200 focus:border-[#33a29b]'}`}
                         style={{ fontFamily: '"Courier New", monospace' }}
@@ -9451,6 +9451,14 @@ ${adminBugNote}`,
                               setShowCategorySuggestions(false);
                               setCategoryShowAll(false);
                             }}
+                            onTouchEnd={(e) => {
+                              e.preventDefault();
+                              setCategoryInput(cat);
+                              setDishCategory(cat);
+                              setCategoryLocked(true);
+                              setShowCategorySuggestions(false);
+                              setCategoryShowAll(false);
+                            }}
                             className="px-2 py-1.5 hover:bg-[#33a29b]/10 cursor-pointer border-b border-gray-100 flex justify-between items-center"
                           >
                             <span className="text-xs font-medium text-gray-800" style={{ fontFamily: '"Courier New", monospace' }}>{cat}</span>
@@ -9462,6 +9470,7 @@ ${adminBugNote}`,
                         {hasMoreCategories && (
                           <button
                             onMouseDown={(e) => { e.preventDefault(); setCategoryShowAll(v => !v); }}
+                            onTouchEnd={(e) => { e.preventDefault(); setCategoryShowAll(v => !v); }}
                             className="w-full px-2 py-1.5 text-[10px] text-[#33a29b] font-semibold hover:bg-gray-50 border-b border-gray-100 text-left"
                             style={{ fontFamily: '"Courier New", monospace' }}
                           >
