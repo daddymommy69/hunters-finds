@@ -4561,7 +4561,14 @@ const HuntersFindsApp = () => {
                   const badge = isTop ? '<span style="font-size:9px;background:#a855f7;color:white;border-radius:3px;padding:1px 4px;margin-right:4px;">★</span>' : '';
                   const scoreColor = isTop ? '#a855f7' : '#10b981';
                   const scoreStr = typeof dish.srr === 'number' ? dish.srr.toFixed(2) : dish.srr;
-                  return '<div style="font-size: 11px; padding: 3px 0; display: flex; justify-content: space-between; align-items: center;"><span>' + badge + dish.name + '</span><span style="font-weight: bold; color: ' + scoreColor + ';">' + scoreStr + '</span></div>';
+                  // Get top rater username + color for this dish
+                  const topRating = allRatings.filter(r => r.dish_id === dish.id && !r.is_deleted).sort((a,b) => (b.overall_score||0)-(a.overall_score||0))[0];
+                  const topRaterName = topRating ? (topRating.username || topRating.rater?.username) : null;
+                  const topRaterId = topRating?.user_id;
+                  const usernameStyle = topRaterId ? getUsernameStyle(topRaterId) : null;
+                  const nameColor = usernameStyle?.color || '#9ca3af';
+                  const raterHtml = topRaterName ? '<span style="font-size:9px;color:' + nameColor + ';font-weight:bold;">@' + topRaterName + '</span>' : '';
+                  return '<div style="font-size: 11px; padding: 3px 0; display: flex; justify-content: space-between; align-items: center;"><span>' + badge + dish.name + raterHtml + '</span><span style="font-weight: bold; color: ' + scoreColor + ';">' + scoreStr + '</span></div>';
                 }).join('')}
               ` : ''}
             </div>
@@ -8318,7 +8325,7 @@ ${adminBugNote}`,
                                   <div key={u.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 cursor-pointer"
                                     onClick={() => { setDmUserSearch(''); handleStartDm(u.id, uname); }}>
                                     <DmAvatar name={uname} size={8} photo={u.avatar_url} />
-                                    <span className="text-xs font-medium" style={{ fontFamily: '"Courier New", monospace' }}>@{uname}</span>
+                                    <span className="text-xs font-medium" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(u.id) || {}) }}>@{uname}</span>
                                   </div>
                                 );
                               })
@@ -8337,7 +8344,7 @@ ${adminBugNote}`,
                                 <div key={u.id} className="flex flex-col items-center gap-1 cursor-pointer flex-shrink-0"
                                   onClick={() => handleStartDm(u.id, uname)}>
                                   <DmAvatar name={uname} size={10} photo={u.avatar_url} />
-                                  <span className="text-[10px] text-gray-500 max-w-[48px] truncate text-center" style={{ fontFamily: '"Courier New", monospace' }}>@{uname}</span>
+                                  <span className="text-[10px] max-w-[48px] truncate text-center" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(u.id) || { color: '#6b7280' }) }}>@{uname}</span>
                                 </div>
                               );
                             })}
@@ -9842,7 +9849,7 @@ ${adminBugNote}`,
                           setSelectedExploreUser({ ...u, isFollowing: userFollows.some(f => f.following_id === r.user_id) }); 
                         }} className="flex flex-col items-center gap-1 hover:opacity-75 transition">
                           <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-sm font-bold shadow-sm">{(r.username || '?')[0].toUpperCase()}</div>
-                          <span className="text-[10px] text-gray-400 max-w-[52px] truncate" style={{ fontFamily: '"Courier New", monospace' }}>@{r.username}</span>
+                          <span className="text-[10px] max-w-[52px] truncate" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(r.user_id) || { color: '#9ca3af' }) }}>@{r.username}</span>
                           {r.srr != null && <span className={`text-xs font-bold ${getSRRColor(r.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{r.srr.toFixed(1)}</span>}
 
                         </button>
@@ -9919,6 +9926,7 @@ ${adminBugNote}`,
                         <>
                           {dishRatings.map(rating => {
                             const ratingUsername = rating.username || (user && rating.user_id === user.id ? (user.user_metadata?.username || user.email?.split('@')[0]) : 'user');
+                            const ratingUserId = rating.user_id;
                             const computedSrr = rating.overall_score ? parseFloat(rating.overall_score.toFixed(2)) : rating.taste_score != null ? parseFloat(((rating.taste_score + rating.portion_score + rating.price_score) / 3).toFixed(2)) : null;
                             const isExpanded = expandedComments.has(rating.id);
                             const commentsForRating = ratingComments[rating.id]?.comments?.filter(c => !c.parent_id) || [];
@@ -10629,7 +10637,7 @@ ${adminBugNote}`,
                         </svg>
                       </button>
                     )}
-                    <h2 className="text-lg font-bold flex-1" style={{ fontFamily: '"Courier New", monospace' }}>@{topModal.data.username}</h2>
+                    <h2 className="text-lg font-bold flex-1" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(topModal.data.id) || {}) }}>@{topModal.data.username}</h2>
                     <button onClick={handleCloseModalStack} className="text-gray-500 hover:text-gray-700">
                       <X size={20} />
                     </button>
@@ -11040,7 +11048,7 @@ ${adminBugNote}`,
                               {uname[0]?.toUpperCase()}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-bold" style={{ fontFamily: '"Courier New", monospace' }}>@{uname}</p>
+                              <p className="text-sm font-bold" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(u.id) || {}) }}>@{uname}</p>
                               {m.joined_at && <p className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>joined {new Date(m.joined_at).toLocaleDateString()}</p>}
                             </div>
                             {role !== 'member' && (
@@ -11432,7 +11440,7 @@ ${adminBugNote}`,
                           {(u.username || u.email || '?')[0].toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>@{u.username || u.email?.split('@')[0]}</div>
+                          <div className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(u.id) || {}) }}>@{u.username || u.email?.split('@')[0]}</div>
                           <div className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>{u.ratingsCount || 0} ratings</div>
                         </div>
                         <ChevronRight size={16} className="text-gray-300 flex-shrink-0" />
@@ -11454,7 +11462,7 @@ ${adminBugNote}`,
                           {(u.username || u.email || '?')[0].toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>@{u.username || u.email?.split('@')[0]}</div>
+                          <div className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(u.id) || {}) }}>@{u.username || u.email?.split('@')[0]}</div>
                           <div className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>{u.ratingsCount || 0} ratings</div>
                         </div>
                         <ChevronRight size={16} className="text-gray-300 flex-shrink-0" />
@@ -12052,7 +12060,7 @@ ${adminBugNote}`,
                         <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
                           {uname[0]?.toUpperCase()}
                         </div>
-                        <span className="text-sm font-medium">@{uname}</span>
+                        <span className="text-sm font-medium" style={getUsernameStyle(u.id) || {}}>@{uname}</span>
                         <span className="ml-auto text-[10px] text-[#33a29b] font-bold">send →</span>
                       </div>
                     );
@@ -12083,7 +12091,7 @@ ${adminBugNote}`,
                   <label className="text-xs text-gray-500 font-bold uppercase tracking-wider">User</label>
                   {gbUser ? (
                     <div className="flex items-center justify-between mt-1 p-2 bg-gray-50 rounded-lg border">
-                      <span className="text-sm font-bold">@{gbUser.username}</span>
+                      <span className="text-sm font-bold" style={getUsernameStyle(gbUser.id) || {}}>@{gbUser.username}</span>
                       <button onClick={() => { setGbUser(null); setGbUserBadges([]); setGbMsg(''); setGbBadge(''); setGbSearch(''); setGbResults([]); }} className="text-xs text-red-400 hover:text-red-600">change</button>
                     </div>
                   ) : (
@@ -12120,7 +12128,7 @@ ${adminBugNote}`,
                               className="px-3 py-2 hover:bg-[#33a29b]/10 cursor-pointer border-b border-gray-100 last:border-0 text-sm font-medium"
                               style={{ fontFamily: '"Courier New", monospace' }}
                             >
-                              @{u.username}
+                              <span style={getUsernameStyle(u.id) || {}}>@{u.username}</span>
                             </div>
                           ))}
                         </div>
