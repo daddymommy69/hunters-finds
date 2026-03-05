@@ -9372,33 +9372,6 @@ ${adminBugNote}`,
                       </div>
                     </div>
 
-                    {/* Confirm new category prompt */}
-                    {categoryConfirmNew && (
-                      <div className="absolute z-20 w-full mt-0 bg-white border-2 border-[#33a29b] rounded-lg shadow-lg p-2" style={{ top: '100%' }}>
-                        <p className="text-xs text-gray-700 mb-2" style={{ fontFamily: '"Courier New", monospace' }}>
-                          add <span className="font-bold text-[#33a29b]">"{categoryConfirmNew}"</span> as a new category?
-                        </p>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => {
-                              setDishCategory(categoryConfirmNew);
-                              setCategoryInput(categoryConfirmNew);
-                              setCategoryLocked(true);
-                              setCategoryConfirmNew(null);
-                              setShowCategorySuggestions(false);
-                            }}
-                            className="flex-1 py-1 bg-[#33a29b] text-white text-xs rounded-lg font-bold"
-                            style={{ fontFamily: '"Courier New", monospace' }}
-                          >yes, add it</button>
-                          <button
-                            onClick={() => setCategoryConfirmNew(null)}
-                            className="flex-1 py-1 bg-gray-100 text-gray-600 text-xs rounded-lg font-bold"
-                            style={{ fontFamily: '"Courier New", monospace' }}
-                          >cancel</button>
-                        </div>
-                      </div>
-                    )}
-
                     <div className="relative">
                       <input
                         type="text"
@@ -9413,11 +9386,24 @@ ${adminBugNote}`,
                           setCategoryConfirmNew(null);
                         }}
                         onFocus={() => { setShowCategorySuggestions(true); setCategoryShowAll(false); setCategoryConfirmNew(null); }}
-                        onBlur={() => setTimeout(() => setShowCategorySuggestions(false), 300)}
+                        onBlur={() => setTimeout(() => {
+                          setShowCategorySuggestions(false);
+                          // Auto-lock on blur if something was typed
+                          if (categoryInput.trim() && !categoryLocked) {
+                            setCategoryLocked(true);
+                            setDishCategory(categoryInput.trim());
+                          }
+                        }, 300)}
                         placeholder="start typing or pick below..."
                         className={`w-full px-2 py-1.5 text-xs border-2 rounded-lg focus:outline-none ${categoryLocked ? 'border-[#33a29b] bg-[#33a29b]/5' : 'border-gray-200 focus:border-[#33a29b]'}`}
                         style={{ fontFamily: '"Courier New", monospace' }}
                         onKeyDown={(e) => {
+                          if (e.key === 'Enter' && categoryInput.trim()) {
+                            e.preventDefault();
+                            setCategoryLocked(true);
+                            setDishCategory(categoryInput.trim());
+                            setShowCategorySuggestions(false);
+                          }
                           if ((e.key === 'Backspace' || e.key === 'Delete') && categoryLocked) {
                             setCategoryLocked(false);
                             setDishCategory('');
@@ -9478,19 +9464,11 @@ ${adminBugNote}`,
                           </button>
                         )}
 
-                        {/* Add new — only show if typed something not in list */}
+                        {/* Typed value not in list — accepted as-is, no confirm needed */}
                         {categoryInput && !categorySuggestions.some(({ cat }) => cat === categoryInput.trim()) && (
-                          <button
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              setCategoryConfirmNew(categoryInput.trim());
-                              setShowCategorySuggestions(false);
-                            }}
-                            className="w-full px-2 py-1.5 text-[10px] text-gray-500 hover:bg-gray-50 text-left flex items-center gap-1"
-                            style={{ fontFamily: '"Courier New", monospace' }}
-                          >
-                            <span className="text-[#33a29b] font-bold">+ add new:</span> "{categoryInput.trim()}"
-                          </button>
+                          <div className="px-2 py-1.5 text-[10px] text-gray-400 italic" style={{ fontFamily: '"Courier New", monospace' }}>
+                            press enter or keep typing — "{categoryInput.trim()}" will be used
+                          </div>
                         )}
                       </div>
                     )}
