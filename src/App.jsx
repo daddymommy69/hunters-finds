@@ -5049,7 +5049,7 @@ const HuntersFindsApp = () => {
       }
 
       // Save the rating
-      const { error: ratingError } = await supabase
+      const { data: newRatingData, error: ratingError } = await supabase
         .from('ratings')
         .insert([{
           dish_id: dishId,
@@ -5059,7 +5059,9 @@ const HuntersFindsApp = () => {
           price_score: priceScore,
           overall_score: finalSRR,
           comment: comment || null
-        }]);
+        }])
+        .select()
+        .single();
 
       if (ratingError) {
         console.error('Error saving rating:', ratingError);
@@ -5073,13 +5075,22 @@ const HuntersFindsApp = () => {
 
       console.log('✅ Rating saved to database!');
       
+      // Auto-insert rating comment as a dish comment
+      if (comment && comment.trim() && newRatingData?.id) {
+        await supabase.from('rating_comments').insert({
+          rating_id: newRatingData.id,
+          user_id: user.id,
+          content: comment.trim(),
+        });
+      }
+      
       // PHASE 4B: Handle mentions in comment
       if (comment) {
         const mentions = extractMentions(comment);
         if (mentions.length > 0) {
           // Create mention notifications for each mentioned user
           for (const mentionedUsername of mentions) {
-            await createMentionNotification(mentionedUsername, 'rating', ratingData[0].id);
+            await createMentionNotification(mentionedUsername, 'rating', newRatingData.id);
           }
         }
       }
@@ -9342,14 +9353,11 @@ ${adminBugNote}`,
               <div onClick={handleCloseSubmission} className={`fixed inset-0 z-[46] bg-black/40 ${isSubmissionClosing ? 'animate-fade-out' : 'animate-fade-in'}`} />
               {/* Mobile: bottom sheet. Desktop: centered floating */}
               <div className={`fixed z-[47] bg-white shadow-xl flex flex-col ${isSubmissionClosing ? 'animate-slide-down-fade' : 'animate-slide-up-fade'}
-                md:top-[200px] md:left-1/2 md:-translate-x-1/2 md:rounded-2xl
-                bottom-0 left-0 right-0 rounded-t-2xl w-full md:w-auto`}
+                md:top-[200px] md:left-1/2 md:-translate-x-1/2 md:rounded-2xl md:w-[min(92vw,600px)]
+                bottom-0 left-0 right-0 rounded-t-2xl w-full`}
                 style={{
-                  maxWidth: 'min(92vw, 600px)',
                   maxHeight: 'calc(100vh - 80px)',
                   overflowY: 'auto',
-                  marginLeft: 'auto',
-                  marginRight: 'auto',
                 }}
                 onClick={e => e.stopPropagation()}
               >
@@ -9955,7 +9963,7 @@ ${adminBugNote}`,
             style={{ maxHeight: '92vh', overflowY: 'auto' }}
             onClick={e => e.stopPropagation()}
           >
-          <div className="md:bg-white md:rounded-2xl md:w-full md:flex md:flex-col" style={{ maxWidth: '600px', maxHeight: '90vh', width: '100%' }}>
+          <div className="md:bg-white md:rounded-2xl md:w-full md:flex md:flex-col md:pointer-events-auto" style={{ maxWidth: '600px', maxHeight: '90vh', width: '100%' }}>
 
               {/* HEADER with score wash */}
               <div className="relative rounded-t-2xl px-4 pt-5 pb-4 flex-shrink-0" style={{ background: washBg }}>
