@@ -912,6 +912,9 @@ const HuntersFindsApp = () => {
   const [dishCategory, setDishCategory] = useState('');
   const [categoryInput, setCategoryInput] = useState('');
   const [showCategorySuggestions, setShowCategorySuggestions] = useState(false);
+  const [dishSubcategory, setDishSubcategory] = useState('');
+  const [subcategoryInput, setSubcategoryInput] = useState('');
+  const [showSubcategorySuggestions, setShowSubcategorySuggestions] = useState(false);
   const [showDishTooltip, setShowDishTooltip] = useState(false);
   const [showCategoryTooltip, setShowCategoryTooltip] = useState(false);
   const [showFoodSuggestions, setShowFoodSuggestions] = useState(false);
@@ -1936,6 +1939,7 @@ const HuntersFindsApp = () => {
   const [ratingComments, setRatingComments] = useState({}); // { ratingId: { comments, loading, loaded } }
   const [expandedComments, setExpandedComments] = useState(new Set()); // ratingIds with open comment threads
   const [commentInputs, setCommentInputs] = useState({}); // { ratingId: text }
+  const [newCommentText, setNewCommentText] = useState('');
   const [replyingTo, setReplyingTo] = useState({}); // { ratingId: { commentId, username } }
   const [commentShowAll, setCommentShowAll] = useState({}); // { ratingId: bool }
   const [commentLikes, setCommentLikes] = useState({}); // { commentId: { count, likedByMe } }
@@ -1985,6 +1989,7 @@ const HuntersFindsApp = () => {
   
   // Filter states
   const [selectedCuisine, setSelectedCuisine] = useState('all');
+  const [selectedSubcategory, setSelectedSubcategory] = useState('all');
   const [selectedPriceRange, setSelectedPriceRange] = useState('all');
   const [selectedRating, setSelectedRating] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
@@ -2312,6 +2317,7 @@ const HuntersFindsApp = () => {
         name: dish.name,
         restaurantName: dish.restaurant_name,
         cuisine: dish.cuisine_type || 'various',
+        subcategory: dish.subcategory || null,
         price: dish.price || 0,
         srr: calculatedSRR,
         taste_score: avgTaste,
@@ -2430,6 +2436,10 @@ const HuntersFindsApp = () => {
     // Filter by cuisine
     if (selectedCuisine !== 'all') {
       filtered = filtered.filter(dish => (dish.cuisine || '').toLowerCase() === selectedCuisine.toLowerCase());
+    }
+    // Filter by subcategory
+    if (selectedSubcategory !== 'all') {
+      filtered = filtered.filter(dish => (dish.subcategory || '').toLowerCase() === selectedSubcategory.toLowerCase());
     }
     
     // Filter by price range
@@ -3368,7 +3378,7 @@ const HuntersFindsApp = () => {
       if (error) throw error;
       const enriched = (data || []).map(c => {
         const u = allUsers.find(u => u.id === c.user_id);
-        return { ...c, username: u?.username || u?.email?.split('@')[0] || (user && c.user_id === user.id ? (user.user_metadata?.username || user.email?.split('@')[0]) : 'user') };
+        return { ...c, username: u?.username || u?.email?.split('@')[0] || (user && c.user_id === user.id ? (user.user_metadata?.username || user.email?.split('@')[0]) : 'user'), text: c.content || c.text };
       });
       setDishComments(enriched);
       // Also update ratingComments cache
@@ -4569,14 +4579,21 @@ const HuntersFindsApp = () => {
                   const badge = isTop ? '<span style="font-size:9px;background:#a855f7;color:white;border-radius:3px;padding:1px 4px;margin-right:4px;">★</span>' : '';
                   const scoreColor = isTop ? '#a855f7' : '#10b981';
                   const scoreStr = typeof dish.srr === 'number' ? dish.srr.toFixed(2) : dish.srr;
-                  // Get top rater username + color for this dish
-                  const topRating = allRatings.filter(r => r.dish_id === dish.id && !r.is_deleted).sort((a,b) => (b.overall_score||0)-(a.overall_score||0))[0];
-                  const topRaterName = topRating ? (topRating.username || topRating.rater?.username) : null;
-                  const topRaterId = topRating?.user_id;
-                  const usernameStyle = topRaterId ? getUsernameStyle(topRaterId) : null;
-                  const nameColor = usernameStyle?.color || '#9ca3af';
-                  const raterHtml = topRaterName ? '<span style="font-size:9px;color:' + nameColor + ';font-weight:bold;">@' + topRaterName + '</span>' : '';
-                  return '<div style="font-size: 11px; padding: 3px 0; display: flex; justify-content: space-between; align-items: center;"><span>' + badge + dish.name + raterHtml + '</span><span style="font-weight: bold; color: ' + scoreColor + ';">' + scoreStr + '</span></div>';
+                  // Get all raters for this dish (up to 5)
+                  const dishRatings = allRatings.filter(r => r.dish_id === dish.id && !r.is_deleted).sort((a,b) => (b.overall_score||0)-(a.overall_score||0));
+                  const ratersHtml = dishRatings.slice(0, 5).map(r => {
+                    const uObj = allUsers.find(u => u.id === r.user_id);
+                    const uStyle = r.user_id ? getUsernameStyle(r.user_id) : null;
+                    const nameColor = uStyle?.color || '#9ca3af';
+                    const rName = uObj?.username || r.username || 'user';
+                    const rScore = r.overall_score ? parseFloat(r.overall_score).toFixed(1) : null;
+                    return '<div style="display:flex;align-items:center;gap:6px;padding:1px 0;"><span style="font-size:9px;color:' + nameColor + ';font-weight:bold;">@' + rName + '</span>' + (rScore ? '<span style="font-size:9px;font-weight:bold;color:#374151;">' + rScore + '</span>' : '') + '</div>';
+                  }).join('');
+                  return '<div style="padding: 4px 0; border-bottom: 1px solid #f0f0f0;"><div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="event.stopPropagation();window.openDishFromMap(\'' + dish.id + '\')">' +
+                    '<span style="font-size:11px;font-weight:bold;">' + badge + dish.name + '</span>' +
+                    '<span style="font-weight:bold;color:' + scoreColor + ';font-size:12px;">' + scoreStr + '</span></div>' +
+                    (ratersHtml ? '<div style="margin-top:2px;">' + ratersHtml + '</div>' : '') +
+                  '</div>';
                 }).join('')}
               ` : ''}
             </div>
@@ -4627,6 +4644,13 @@ const HuntersFindsApp = () => {
         restaurantModalJustOpenedRef.current = true;
         setSelectedRestaurant(restaurant);
         setTimeout(() => { restaurantModalJustOpenedRef.current = false; }, 600);
+      }
+    };
+    window.openDishFromMap = (dishId) => {
+      const dish = allDishes.find(d => d.id === dishId);
+      if (dish) {
+        if (window._mapInstance) window._mapInstance.closePopup();
+        setSelectedDish(dish);
       }
     };
   }
@@ -4733,6 +4757,8 @@ const HuntersFindsApp = () => {
       setCategoryLocked(false);
       setRestaurantLocked(false);
       setShowFoodSuggestions(false);
+      setDishSubcategory('');
+      setSubcategoryInput('');
       setPrice('');
       setTasteScore(50);
       setPortionScore(50);
@@ -4941,6 +4967,10 @@ const HuntersFindsApp = () => {
         // Dish already exists
         dishId = existingDishes[0].id;
         console.log('✅ Using existing dish:', dishName);
+        // Update subcategory on the dish if provided
+        if (dishSubcategory) {
+          await supabase.from('dishes').update({ subcategory: dishSubcategory }).eq('id', dishId);
+        }
         
         // Check if user already has an ACTIVE (non-deleted) rating for this dish
         const { data: existingRating } = await supabase
@@ -4999,6 +5029,7 @@ const HuntersFindsApp = () => {
             restaurant_id: restaurantId,
             restaurant_name: restaurant.trim(), // Backward compatibility
             cuisine_type: dishCategory,
+            subcategory: dishSubcategory || null,
             price: parseFloat(price)
           }])
           .select()
@@ -6316,6 +6347,48 @@ ${adminBugNote}`,
         .animate-slide-down-fade-simple {
           animation: slideDownFadeSimple 0.3s ease-in forwards;
         }
+
+        /* ===== MOBILE SCALING ===== */
+        @media (max-width: 768px) {
+          /* Base font size reduction */
+          html { font-size: 14px; }
+
+          /* Map controls */
+          .map-find-nearby { font-size: 11px !important; padding: 6px 12px !important; }
+          .map-legend { padding: 8px !important; font-size: 10px !important; }
+          .map-legend h4 { font-size: 10px !important; margin-bottom: 4px !important; }
+          .map-legend .space-y-2 > div { margin-bottom: 3px !important; }
+
+          /* Rankings tab */
+          .rankings-pill { font-size: 11px !important; padding: 6px 10px !important; }
+          .rankings-card { padding: 10px 12px !important; }
+          .rankings-card .rank-num { font-size: 12px !important; }
+          .rankings-card .dish-name { font-size: 13px !important; }
+          .rankings-card .dish-meta { font-size: 10px !important; }
+          .rankings-card .score { font-size: 18px !important; }
+          .rankings-card .rating-count { font-size: 10px !important; }
+
+          /* Dish modal */
+          .dish-modal-score-badge { width: 72px !important; height: 72px !important; }
+          .dish-modal-score-badge .score-num { font-size: 1.4rem !important; }
+
+          /* Submission modal */
+          .submission-field label { font-size: 10px !important; }
+          .submission-field input { font-size: 12px !important; }
+          .submission-slider-label { font-size: 10px !important; }
+
+          /* Buttons globally */
+          .btn-sm-mobile { font-size: 11px !important; padding: 6px 10px !important; }
+
+          /* Header */
+          .app-header-title { font-size: 18px !important; }
+
+          /* Nav tabs */
+          .bottom-nav-label { font-size: 9px !important; }
+
+          /* Search bar */
+          .global-search input { font-size: 13px !important; padding: 8px 12px !important; }
+        }
       `}</style>
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-4 py-3">
@@ -6655,7 +6728,7 @@ ${adminBugNote}`,
                       }
                       setTimeout(() => setShowMapFindNearby(true), 10000);
                     }}
-                    className="absolute top-4 left-1/2 -translate-x-1/2 px-4 py-2.5 bg-[#33a29b] text-white rounded-lg font-bold hover:bg-[#2a8a84] transition shadow-lg z-10 text-sm"
+                    className="absolute top-4 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-[#33a29b] text-white rounded-lg font-bold hover:bg-[#2a8a84] transition shadow-lg z-10 text-xs map-find-nearby"
                     style={{ fontFamily: '"Courier New", monospace' }}
                   >
                     Find Nearby Restaurants
@@ -6831,27 +6904,27 @@ ${adminBugNote}`,
                 </div>
                 
                 {/* Legend */}
-                <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-lg p-3 z-10" style={{ fontFamily: '"Courier New", monospace' }}>
+                <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-lg p-2 z-10 map-legend" style={{ fontFamily: '"Courier New", monospace' }}>
                   <h4 className="text-xs font-bold mb-2">Legend</h4>
                   <div className="space-y-2 text-xs">
                     <div className="flex items-center gap-2">
-                      <div style={{ width: 16, height: 16, background: 'linear-gradient(135deg, #e0f7ff 0%, #bae6fd 50%, #7dd3fc 100%)', borderRadius: '50%', border: '2px solid white', boxShadow: '0 1px 4px rgba(125,211,252,0.7)' }}></div>
+                      <div style={{ width: 12, height: 12, background: 'linear-gradient(135deg, #e0f7ff 0%, #bae6fd 50%, #7dd3fc 100%)', borderRadius: '50%', border: '2px solid white', boxShadow: '0 1px 4px rgba(125,211,252,0.7)' }}></div>
                       <span>Top 3 Restaurants</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div style={{ width: 16, height: 16, background: '#c084fc', borderRadius: '50%', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}></div>
+                      <div style={{ width: 12, height: 12, background: '#c084fc', borderRadius: '50%', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}></div>
                       <span>Top 3 Dishes</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div style={{ width: 16, height: 16, background: '#33a29b', borderRadius: '50%', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}></div>
+                      <div style={{ width: 12, height: 12, background: '#33a29b', borderRadius: '50%', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}></div>
                       <span>Your Restaurants</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div style={{ width: 16, height: 16, background: '#3b82f6', borderRadius: '50%', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}></div>
+                      <div style={{ width: 12, height: 12, background: '#3b82f6', borderRadius: '50%', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}></div>
                       <span>Community Rated</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div style={{ width: 16, height: 16, background: '#9ca3af', borderRadius: '50%', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}></div>
+                      <div style={{ width: 12, height: 12, background: '#9ca3af', borderRadius: '50%', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}></div>
                       <span>Unrated</span>
                     </div>
                   </div>
@@ -6876,10 +6949,10 @@ ${adminBugNote}`,
         {/* RANKINGS TAB */}
         {activeTab === 'rankings' && (
           <div>
-            <div className="bg-white border-b px-4 py-2 flex gap-2 items-center">
+            <div className="bg-white border-b px-3 py-1.5 flex gap-1.5 items-center overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
               <button
                 onClick={() => setRankingView('dishes')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition whitespace-nowrap ${
                   rankingView === 'dishes' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
@@ -6887,7 +6960,7 @@ ${adminBugNote}`,
               </button>
               <button
                 onClick={() => setRankingView('restaurants')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition whitespace-nowrap ${
                   rankingView === 'restaurants' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
@@ -6895,7 +6968,7 @@ ${adminBugNote}`,
               </button>
               <button
                 onClick={() => setRankingView('groups')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition whitespace-nowrap ${
                   rankingView === 'groups' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
@@ -6913,14 +6986,14 @@ ${adminBugNote}`,
                       setUserLocation(null);
                     }
                   }}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-1 ${
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition flex items-center gap-1 whitespace-nowrap ${
                     nearMeEnabled
                       ? 'bg-[#33a29b] text-white' 
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                   style={{ fontFamily: '"Courier New", monospace' }}
                 >
-                  <MapPin size={16} />
+                  <MapPin size={12} />
                   near me
                 </button>
               )}
@@ -6929,7 +7002,7 @@ ${adminBugNote}`,
               {(rankingView === 'dishes' || rankingView === 'restaurants') && (
                 <button
                   onClick={() => setShowFilters(!showFilters)}
-                  className={`ml-auto px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-1 ${
+                  className={`ml-auto px-2.5 py-1 rounded-lg text-xs font-medium transition flex items-center gap-1 whitespace-nowrap ${
                     showFilters || selectedCuisine !== 'all' || selectedPriceRange !== 'all' || selectedRating !== 'all'
                       ? 'bg-[#33a29b] text-white' 
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -6963,7 +7036,7 @@ ${adminBugNote}`,
                     <label className="block text-xs font-semibold mb-1.5 text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>
                       cuisine
                     </label>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex gap-2 overflow-x-auto pb-1" style={{ WebkitOverflowScrolling: "touch" }}>
                       <button
                         onClick={() => setSelectedCuisine('all')}
                         className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
@@ -6978,7 +7051,7 @@ ${adminBugNote}`,
                       {availableCuisines.map(cuisine => (
                         <button
                           key={cuisine}
-                          onClick={() => setSelectedCuisine(cuisine)}
+                          onClick={() => { setSelectedCuisine(cuisine); setSelectedSubcategory('all'); }}
                           className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
                             selectedCuisine === cuisine
                               ? 'bg-[#33a29b] text-white'
@@ -6991,6 +7064,25 @@ ${adminBugNote}`,
                       ))}
                     </div>
                   </div>
+
+                  {/* Subcategory Filter - shown when a cuisine is selected */}
+                  {selectedCuisine !== 'all' && rankingView === 'dishes' && (() => {
+                    const subs = [...new Set(allDishes.filter(d => (d.cuisine || '').toLowerCase() === selectedCuisine.toLowerCase() && d.subcategory).map(d => d.subcategory.toLowerCase()))].sort();
+                    if (subs.length === 0) return null;
+                    return (
+                      <div>
+                        <label className="block text-xs font-semibold mb-1.5 text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>
+                          subcategory
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          <button onClick={() => setSelectedSubcategory('all')} className={`px-3 py-1 rounded-full text-xs font-semibold transition ${selectedSubcategory === 'all' ? 'bg-gray-700 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'}`} style={{ fontFamily: '"Courier New", monospace' }}>all</button>
+                          {subs.map(sub => (
+                            <button key={sub} onClick={() => setSelectedSubcategory(sub)} className={`px-3 py-1 rounded-full text-xs font-semibold transition ${selectedSubcategory === sub ? 'bg-gray-700 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'}`} style={{ fontFamily: '"Courier New", monospace' }}>{sub}</button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   
                   {/* Price Range Filter - only for dishes */}
                   {rankingView === 'dishes' && (
@@ -7212,12 +7304,12 @@ ${adminBugNote}`,
                   ) : (
                     <div className="space-y-2">
                       {getFilteredDishes().map((dish, idx) => {                        return (
-                          <div key={idx} className="bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition cursor-pointer stagger-item" onClick={() => setSelectedDish(dish)}>
+                          <div key={idx} className="bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition cursor-pointer stagger-item rankings-card" onClick={() => setSelectedDish(dish)}>
                             <div className="flex items-center gap-3">
-                              <div className="w-8 text-center text-lg font-bold text-gray-400">#{idx + 1}</div>
+                              <div className="w-8 text-center text-lg font-bold text-gray-400 rank-num">#{idx + 1}</div>
                               <div className="flex-1">
-                                <div className="font-semibold text-sm">{dish.name}</div>
-                                <div className="text-xs text-gray-500">{dish.restaurantName} • {dish.cuisine} • ${dish.price.toFixed(2)}</div>
+                                <div className="font-semibold text-sm dish-name">{dish.name}</div>
+                                <div className="text-xs text-gray-500 dish-meta">{dish.restaurantName} • {dish.cuisine}{dish.subcategory ? ` • ${dish.subcategory}` : ''} • ${dish.price.toFixed(2)}</div>
                               </div>
                               {/* Tag circles */}
                               <div className="flex gap-1">
@@ -7233,8 +7325,8 @@ ${adminBugNote}`,
                                     />
                                   );
                                 })}
-                              </div>                              <div className={`text-2xl font-bold ${getSRRColor(dish.srr)} ${dish.srr >= 90 ? 'score-shine' : ''}`}>{typeof dish.srr === "number" ? dish.srr.toFixed(2) : dish.srr}</div>
-                              <div className="text-[10px] text-gray-500 text-center mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
+                              </div>                              <div className={`text-2xl font-bold score ${getSRRColor(dish.srr)} ${dish.srr >= 90 ? 'score-shine' : ''}`}>{typeof dish.srr === "number" ? dish.srr.toFixed(2) : dish.srr}</div>
+                              <div className="text-[10px] text-gray-500 text-center mt-0.5 rating-count" style={{ fontFamily: '"Courier New", monospace' }}>
                                 {dish.numRatings} rating{dish.numRatings !== 1 ? 's' : ''}
                               </div>
                             </div>
@@ -7389,20 +7481,20 @@ ${adminBugNote}`,
                   <div
                     key={dish.id || idx}
                     onClick={() => setSelectedDish(dish)}
-                    className="bg-white rounded-xl p-3 shadow-sm cursor-pointer hover:shadow-md transition flex items-center gap-3"
+                    className="bg-white rounded-xl p-2.5 shadow-sm cursor-pointer hover:shadow-md transition flex items-center gap-2"
                   >
-                    <div className="w-7 text-center text-sm font-bold text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>#{idx + 1}</div>
+                    <div className="w-6 text-center text-xs font-bold text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>#{idx + 1}</div>
                     <div className="flex-1 min-w-0">
-                      <h4 className="font-bold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}>{dish.name}</h4>
+                      <h4 className="font-bold text-xs truncate" style={{ fontFamily: '"Courier New", monospace' }}>{dish.name}</h4>
                       <p className="text-xs text-gray-500 truncate" style={{ fontFamily: '"Courier New", monospace' }}>
-                        {dish.restaurantName || dish.restaurant_name} • {dish.cuisine || dish.category}
+                        {dish.restaurantName || dish.restaurant_name} • {dish.cuisine || dish.category}{dish.subcategory ? ` • ${dish.subcategory}` : ''}
                         {dish.price ? ` • $${parseFloat(dish.price).toFixed(2)}` : ''}
                       </p>
-                      <p className="text-[10px] text-gray-400 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
-                        {dish.ratingCount} {dish.ratingCount === 1 ? 'rating' : 'ratings'} from community
+                      <p className="text-[9px] text-gray-400 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
+                        {dish.ratingCount} {dish.ratingCount === 1 ? 'rating' : 'ratings'}
                       </p>
                     </div>
-                    <div className={`text-xl font-bold ${getSRRColor(dish.communityScore)}`} style={{ fontFamily: '"Courier New", monospace' }}>
+                    <div className={`text-base font-bold ${getSRRColor(dish.communityScore)}`} style={{ fontFamily: '"Courier New", monospace' }}>
                       {dish.communityScore?.toFixed(2)}
                     </div>
                   </div>
@@ -9162,9 +9254,9 @@ ${adminBugNote}`,
                       <button onClick={() => setShowLinkRestaurantModal(true)} className="w-full text-left text-sm py-3 px-3 bg-white hover:bg-blue-50 rounded-lg transition border border-blue-200 font-medium" style={{ fontFamily: '"Courier New", monospace' }}>Link Restaurants to Map</button>
                     </>)}
                     <button onClick={() => setShowGrantBadgeModal(true)} className="w-full text-left text-sm py-3 px-3 bg-white hover:bg-purple-50 rounded-lg transition border border-purple-200 font-medium" style={{ fontFamily: '"Courier New", monospace' }}>Grant Badge to User</button>
-                    <button onClick={() => setShowBugInbox(true)} className="w-full text-left text-sm py-3 px-3 bg-white hover:bg-orange-50 rounded-lg transition border border-orange-200 font-medium flex justify-between items-center" style={{ fontFamily: '"Courier New", monospace' }}>
+                    <button onClick={() => setShowAdminBugPanel(true)} className="w-full text-left text-sm py-3 px-3 bg-white hover:bg-orange-50 rounded-lg transition border border-orange-200 font-medium flex justify-between items-center" style={{ fontFamily: '"Courier New", monospace' }}>
                       Bug & Request Inbox
-                      {adminBugReports.filter(r => r.status === 'pending').length > 0 && <span className="bg-orange-400 text-white text-xs font-bold px-2 py-0.5 rounded-full">{adminBugReports.filter(r => r.status === 'pending').length} pending</span>}
+                      {bugReports.filter(r => r.status === 'pending').length > 0 && <span className="bg-orange-400 text-white text-xs font-bold px-2 py-0.5 rounded-full">{bugReports.filter(r => r.status === 'pending').length} pending</span>}
                     </button>
                     {userRole === 'admin' && (
                       <button onClick={() => setShowModeratorModal(true)} className="w-full text-left text-sm py-3 px-3 bg-white hover:bg-gray-50 rounded-lg transition border border-gray-200 font-medium" style={{ fontFamily: '"Courier New", monospace' }}>Manage Moderators</button>
@@ -9248,16 +9340,19 @@ ${adminBugNote}`,
         <>
           <>
               <div onClick={handleCloseSubmission} className={`fixed inset-0 z-[46] bg-black/40 ${isSubmissionClosing ? 'animate-fade-out' : 'animate-fade-in'}`} />
-              <div className={`fixed z-[47] bg-white shadow-xl flex flex-col ${isSubmissionClosing ? 'animate-slide-down-fade' : 'animate-slide-up-fade'}`}
+              {/* Mobile: bottom sheet. Desktop: centered floating */}
+              <div className={`fixed z-[47] bg-white shadow-xl flex flex-col ${isSubmissionClosing ? 'animate-slide-down-fade' : 'animate-slide-up-fade'}
+                md:top-[200px] md:left-1/2 md:-translate-x-1/2 md:rounded-2xl
+                bottom-0 left-0 right-0 rounded-t-2xl w-full md:w-auto`}
                 style={{
-                  top: '200px',
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  width: 'min(92vw, 600px)',
-                  borderRadius: '1rem',
-                  maxHeight: 'calc(100vh - 200px - 80px)',
+                  maxWidth: 'min(92vw, 600px)',
+                  maxHeight: 'calc(100vh - 80px)',
                   overflowY: 'auto',
-                }}>
+                  marginLeft: 'auto',
+                  marginRight: 'auto',
+                }}
+                onClick={e => e.stopPropagation()}
+              >
             <div className="sticky top-0 z-10 bg-white border-b px-3 py-2 flex justify-center items-center relative rounded-t-2xl flex-shrink-0">
               <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-8 h-1 bg-gray-300 rounded-full md:hidden" />
               <h2 className="text-sm font-bold text-center mt-1 md:mt-0 md:text-lg" style={{ fontFamily: '"Courier New", monospace' }}>hunter rater</h2>
@@ -9410,13 +9505,22 @@ ${adminBugNote}`,
                                 setDishCategory(cat);
                                 setCategoryLocked(true);
                               }
-                              const dishRestaurant = d.restaurantName || restaurant;
-                              const matchingRatings = allRatings
-                                .filter(r => (r.dish?.name || r.dish_name || '').toLowerCase() === d.name.toLowerCase()
-                                  && (r.dish?.restaurant_name || r.restaurantName || '').toLowerCase() === dishRestaurant.toLowerCase()
-                                  && r.price)
-                                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-                              if (matchingRatings.length > 0) setPrice(String(matchingRatings[0].price));
+                              if (d.subcategory) {
+                                setSubcategoryInput(d.subcategory.toLowerCase().trim());
+                                setDishSubcategory(d.subcategory.toLowerCase().trim());
+                              }
+                              // Autofill price from dish record
+                              if (d.price && d.price > 0) {
+                                setPrice(String(d.price));
+                              } else {
+                                const dishRestaurant = d.restaurantName || restaurant;
+                                const matchingRatings = allRatings
+                                  .filter(r => (r.dish?.name || r.dish_name || '').toLowerCase() === d.name.toLowerCase()
+                                    && (r.dish?.restaurant_name || r.restaurantName || '').toLowerCase() === dishRestaurant.toLowerCase()
+                                    && r.price)
+                                  .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                                if (matchingRatings.length > 0) setPrice(String(matchingRatings[0].price));
+                              }
                               setShowFoodSuggestions(false);
                             }}
                             className="px-2 py-1.5 hover:bg-[#33a29b]/10 cursor-pointer border-b border-gray-100 last:border-0"
@@ -9553,6 +9657,39 @@ ${adminBugNote}`,
                       </div>
                     )}
                   </div>
+
+                  {/* Subcategory field — shown when category is locked */}
+                  {categoryLocked && dishCategory && (
+                    <div className="relative">
+                      <label className="block text-[10px] font-semibold text-gray-700 mb-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
+                        subcategory <span className="text-gray-400 font-normal">(optional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={subcategoryInput}
+                        onChange={(e) => { setSubcategoryInput(e.target.value); setDishSubcategory(e.target.value.trim()); setShowSubcategorySuggestions(true); }}
+                        onFocus={() => setShowSubcategorySuggestions(true)}
+                        onBlur={() => setTimeout(() => setShowSubcategorySuggestions(false), 150)}
+                        placeholder={`e.g. philly cheesesteak`}
+                        className="w-full px-2 py-1 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
+                        style={{ fontFamily: '"Courier New", monospace' }}
+                      />
+                      {showSubcategorySuggestions && subcategoryInput && (() => {
+                        const existingSubs = [...new Set(allDishes.filter(d => (d.cuisine || '').toLowerCase() === dishCategory.toLowerCase() && d.subcategory).map(d => d.subcategory.toLowerCase()))].filter(s => s.includes(subcategoryInput.toLowerCase()));
+                        if (existingSubs.length === 0) return null;
+                        return (
+                          <div className="absolute z-50 w-full mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-lg" style={{ top: '100%' }}>
+                            {existingSubs.slice(0, 5).map(s => (
+                              <div key={s} onMouseDown={(e) => { e.preventDefault(); setSubcategoryInput(s); setDishSubcategory(s); setShowSubcategorySuggestions(false); }}
+                                className="px-2 py-1.5 hover:bg-[#33a29b]/10 cursor-pointer text-xs" style={{ fontFamily: '"Courier New", monospace' }}>
+                                {s}
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>price</label>
@@ -9780,13 +9917,20 @@ ${adminBugNote}`,
 
       {/* Dish Modal - Optimized Compact View with Score Breakdown */}
       {selectedDish && (() => {
-        const userRating = userRatings?.find(r => r.dish_id === selectedDish.id);
-        const tasteScore = userRating?.taste_score || selectedDish.taste_score || Math.round(selectedDish.srr * 0.85);
-        const portionScore = userRating?.portion_score || selectedDish.portion_score || Math.round(selectedDish.srr * 0.9);
+        const userRating = userRatings?.find(r => r.dish_id === selectedDish.id) || allRatings.find(r => r.dish_id === selectedDish.id && r.user_id === user?.id && !r.is_deleted);
+        // Community average scores (for Score Breakdown section)
+        const communityTaste = selectedDish.taste_score;
+        const communityPortion = selectedDish.portion_score;
         const { score: calculatedPriceScore, avgPrice } = calculatePriceScore(selectedDish.price, selectedDish.name, selectedDish.cuisine, allDishes);
-        const priceScore = calculatedPriceScore;
-        const overallSRR = selectedDish.srr || Math.round((tasteScore + portionScore + priceScore) / 3);
-        const scoreVal = typeof overallSRR === 'number' ? overallSRR : parseFloat(overallSRR);
+        // User's personal scores
+        const userTaste = userRating?.taste_score;
+        const userPortion = userRating?.portion_score;
+        const userPrice = userRating?.price_score;
+        const userOverall = userRating?.overall_score;
+        const userSRR = userOverall != null ? parseFloat(parseFloat(userOverall).toFixed(2))
+          : (userTaste != null ? parseFloat(((userTaste + (userPortion||0) + (userPrice||0)) / 3).toFixed(2)) : null);
+        const overallSRR = selectedDish.srr;
+        const scoreVal = overallSRR != null ? (typeof overallSRR === 'number' ? overallSRR : parseFloat(overallSRR)) : 50;
         const washColor = scoreVal >= 96 ? '#9333ea' : scoreVal >= 89 ? '#eab308' : scoreVal >= 81 ? '#9ca3af' : scoreVal >= 72 ? '#22c55e' : '#3b82f6';
         const washBg = scoreVal >= 96 ? 'rgba(147,51,234,0.07)' : scoreVal >= 89 ? 'rgba(234,179,8,0.07)' : scoreVal >= 81 ? 'rgba(156,163,175,0.09)' : scoreVal >= 72 ? 'rgba(34,197,94,0.07)' : 'rgba(59,130,246,0.07)';
         const othersWhoRated = allRatings.filter(r => r.dish_id === selectedDish.id && !r.is_deleted).map(r => {
@@ -9803,11 +9947,20 @@ ${adminBugNote}`,
         return (
         <>
           <div onClick={handleCloseDish} className={`fixed inset-0 bg-black/40 z-50 ${isDishModalClosing ? 'animate-fade-out' : 'animate-fade-in'}`} style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }} />
-          <div className="fixed inset-0 flex items-center justify-center z-50 p-4 pointer-events-none">
-            <div className={`bg-white rounded-2xl w-full pointer-events-auto flex flex-col ${isDishModalClosing ? 'animate-slide-down-fade-simple' : 'animate-slide-up-fade-simple'}`} style={{ maxWidth: '600px', maxHeight: '90vh' }}>
+          {/* Mobile: bottom sheet. Desktop: centered modal */}
+          <div className={`fixed z-50 bg-white w-full pointer-events-auto flex flex-col
+            md:inset-0 md:flex md:items-center md:justify-center md:p-4 md:pointer-events-none md:bg-transparent
+            bottom-0 left-0 right-0 rounded-t-2xl
+            ${isDishModalClosing ? 'animate-slide-down-fade-simple' : 'animate-slide-up-fade-simple'}`}
+            style={{ maxHeight: '92vh', overflowY: 'auto' }}
+            onClick={e => e.stopPropagation()}
+          >
+          <div className="md:bg-white md:rounded-2xl md:w-full md:flex md:flex-col" style={{ maxWidth: '600px', maxHeight: '90vh', width: '100%' }}>
 
               {/* HEADER with score wash */}
               <div className="relative rounded-t-2xl px-4 pt-5 pb-4 flex-shrink-0" style={{ background: washBg }}>
+                {/* Mobile drag handle */}
+                <div className="absolute top-2 left-1/2 -translate-x-1/2 w-8 h-1 bg-gray-300/60 rounded-full md:hidden" />
                 <div className="flex justify-between items-center mb-3">
                   <button onClick={(e) => { e.stopPropagation(); handleSaveItem(selectedDish, 'dish'); }} className="p-1.5 rounded-full hover:bg-white/60 transition">
                     <Bookmark size={18} className={isItemSaved(selectedDish.id, 'dish') ? 'fill-[#33a29b] text-[#33a29b]' : 'text-gray-400'} />
@@ -9857,15 +10010,15 @@ ${adminBugNote}`,
 
                 {/* Score Breakdown — taste | price | portion */}
                 <div>
-                  <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3" style={{ fontFamily: '"Courier New", monospace' }}>score breakdown</h3>
+                  <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3" style={{ fontFamily: '"Courier New", monospace' }}>average score breakdown</h3>
                   <div className="grid grid-cols-3 gap-3">
                     <div className="bg-orange-50 rounded-xl p-3 text-center border border-orange-100">
                       <div className="text-[10px] text-gray-400 mb-2" style={{ fontFamily: '"Courier New", monospace' }}>taste</div>
-                      <ScoreBar target={tasteScore} color="#ea580c" bgColor="rgba(234,88,12,0.15)" />
+                      <ScoreBar target={communityTaste || 0} color="#ea580c" bgColor="rgba(234,88,12,0.15)" />
                     </div>
                     <div className="bg-green-50 rounded-xl p-3 text-center border border-green-100">
                       <div className="text-[10px] text-gray-400 mb-2" style={{ fontFamily: '"Courier New", monospace' }}>price</div>
-                      <ScoreBar target={priceScore} color="#16a34a" bgColor="rgba(22,163,74,0.15)" />
+                      <ScoreBar target={calculatedPriceScore} color="#16a34a" bgColor="rgba(22,163,74,0.15)" />
                       <div className="text-[10px] text-gray-400 mt-2 leading-tight" style={{ fontFamily: '"Courier New", monospace' }}>
                         <span className="font-bold text-gray-600">${selectedDish.price.toFixed(2)}</span>
                         <span className="text-gray-300"> vs </span>
@@ -9875,7 +10028,7 @@ ${adminBugNote}`,
                     </div>
                     <div className="bg-blue-50 rounded-xl p-3 text-center border border-blue-100">
                       <div className="text-[10px] text-gray-400 mb-2" style={{ fontFamily: '"Courier New", monospace' }}>portion</div>
-                      <ScoreBar target={portionScore} color="#2563eb" bgColor="rgba(37,99,235,0.15)" />
+                      <ScoreBar target={communityPortion || 0} color="#2563eb" bgColor="rgba(37,99,235,0.15)" />
                     </div>
                   </div>
                 </div>
@@ -9887,10 +10040,10 @@ ${adminBugNote}`,
                     <div className="flex items-center gap-4">
                       <div className="flex-1">
                         <div className="flex justify-between text-[10px] text-gray-400 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>
-                          <span>you</span><span>{userRating ? parseFloat(overallSRR.toFixed ? overallSRR.toFixed(1) : overallSRR) : '—'}</span>
+                          <span>you</span><span>{userSRR != null ? userSRR.toFixed(1) : '—'}</span>
                         </div>
                         <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                          {userRating && <div className="h-full rounded-full" style={{ width: overallSRR + '%', background: washColor }} />}
+                          {userSRR != null && <div className="h-full rounded-full" style={{ width: Math.min(userSRR, 100) + '%', background: washColor }} />}
                         </div>
                       </div>
                       <div className="flex-1">
@@ -9898,7 +10051,7 @@ ${adminBugNote}`,
                           <span>community</span><span>{communityAvg.toFixed(1)}</span>
                         </div>
                         <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                          <div className="h-full bg-gray-400 rounded-full" style={{ width: communityAvg + '%' }} />
+                          <div className="h-full bg-gray-400 rounded-full" style={{ width: Math.min(communityAvg, 100) + '%' }} />
                         </div>
                       </div>
                     </div>
@@ -9908,20 +10061,52 @@ ${adminBugNote}`,
                 {/* Others who rated */}
                 {othersWhoRated.length > 0 && (
                   <div>
-                    <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3" style={{ fontFamily: '"Courier New", monospace' }}>who rated this</h3>
-                    <div className="flex gap-4 flex-wrap">
-                      {othersWhoRated.map(r => (
-                        <button key={r.id} onClick={(e) => { 
-                          e.stopPropagation(); 
-                          const u = allUsers.find(u => u.id === r.user_id) || { id: r.user_id, username: r.username, ratingsCount: 0 };
-                          setSelectedExploreUser({ ...u, isFollowing: userFollows.some(f => f.following_id === r.user_id) }); 
-                        }} className="flex flex-col items-center gap-1 hover:opacity-75 transition">
-                          <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-sm font-bold shadow-sm">{(r.username || '?')[0].toUpperCase()}</div>
-                          <span className="text-[10px] max-w-[52px] truncate" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(r.user_id) || { color: '#9ca3af' }) }}>@{r.username}</span>
-                          {r.srr != null && <span className={`text-xs font-bold ${getSRRColor(r.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{r.srr.toFixed(1)}</span>}
-
-                        </button>
-                      ))}
+                    <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2" style={{ fontFamily: '"Courier New", monospace' }}>who rated this</h3>
+                    <div className="space-y-1.5">
+                      {othersWhoRated.map(r => {
+                        const t = r.taste_score != null ? parseFloat(r.taste_score).toFixed(1) : null;
+                        const pr = r.price_score != null ? parseFloat(r.price_score).toFixed(1) : null;
+                        const po = r.portion_score != null ? parseFloat(r.portion_score).toFixed(1) : null;
+                        const glowS = r.srr != null ? (() => {
+                          if (r.srr >= 96) return { color: '#9333ea', shadow: '0 0 6px 1px rgba(147,51,234,0.3)' };
+                          if (r.srr >= 89) return { color: '#eab308', shadow: '0 0 6px 1px rgba(234,179,8,0.3)' };
+                          if (r.srr >= 81) return { color: '#9ca3af', shadow: '0 0 6px 1px rgba(156,163,175,0.3)' };
+                          if (r.srr >= 72) return { color: '#22c55e', shadow: '0 0 6px 1px rgba(34,197,94,0.3)' };
+                          return { color: '#3b82f6', shadow: '0 0 6px 1px rgba(59,130,246,0.3)' };
+                        })() : null;
+                        return (
+                          <button key={r.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const u = allUsers.find(u => u.id === r.user_id) || { id: r.user_id, username: r.username, ratingsCount: 0 };
+                              setSelectedExploreUser({ ...u, isFollowing: userFollows.some(f => f.following_id === r.user_id) });
+                            }}
+                            className="w-full flex items-center gap-3 py-2 px-2 rounded-lg hover:bg-gray-100 transition border-b border-gray-100 last:border-0 text-left"
+                          >
+                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                              {(r.username || '?')[0].toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <span className="text-xs font-bold truncate block" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(r.user_id) || { color: '#374151' }) }}>@{r.username}</span>
+                              {r.comment && <span className="text-[10px] text-gray-400 italic truncate block" style={{ fontFamily: '"Courier New", monospace' }}>"{r.comment}"</span>}
+                            </div>
+                            <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
+                              {(t || pr || po) && (
+                                <div className="flex items-center gap-1.5">
+                                  {t && <span className="text-[9px] font-bold" style={{ color: '#f97316', fontFamily: '"Courier New", monospace' }}>{t}</span>}
+                                  {pr && <span className="text-[9px] font-bold" style={{ color: '#22c55e', fontFamily: '"Courier New", monospace' }}>{pr}</span>}
+                                  {po && <span className="text-[9px] font-bold" style={{ color: '#3b82f6', fontFamily: '"Courier New", monospace' }}>{po}</span>}
+                                </div>
+                              )}
+                              {r.srr != null && glowS && (
+                                <span style={{ fontFamily: '"Courier New", monospace', fontWeight: 'bold', fontSize: '0.9rem', color: glowS.color, textShadow: glowS.shadow }}>
+                                  {r.srr.toFixed(1)}
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -9952,7 +10137,7 @@ ${adminBugNote}`,
                     <Image size={14} />photos ({selectedDish.photos || 0})
                   </button>
                   <button onClick={(e) => { e.stopPropagation(); if (dishModalView !== 'comments') { setDishModalView('comments'); fetchDishComments(selectedDish.id); } else setDishModalView('scores'); }} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs transition border ${dishModalView === 'comments' ? 'bg-[#33a29b]/10 border-[#33a29b]/30 text-[#33a29b]' : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'}`} style={{ fontFamily: '"Courier New", monospace' }}>
-                    <MessageSquare size={14} />comments ({dishComments.filter(c => allRatings.some(r => r.id === c.rating_id && r.dish_id === selectedDish?.id)).length || selectedDish.comments || 0})
+                    <MessageSquare size={14} />comments ({dishComments.length > 0 ? dishComments.filter(c => allRatings.some(r => r.id === c.rating_id && r.dish_id === selectedDish?.id)).length : (selectedDish.comments || 0)})
                   </button>
                 </div>
 
@@ -9988,32 +10173,64 @@ ${adminBugNote}`,
                 {/* Comments inline */}
                 {dishModalView === 'comments' && (() => {
                   const dishRatings = allRatings.filter(r => r.dish_id === selectedDish.id && !r.is_deleted);
+                  // Flatten ALL comments from all ratings into one chronological feed
+                  const allDishComments = dishRatings.flatMap(rating => {
+                    const ratingUsername = rating.username || (user && rating.user_id === user.id ? (user.user_metadata?.username || user.email?.split('@')[0]) : 'user');
+                    const comments = ratingComments[rating.id]?.comments || [];
+                    return comments.map(c => ({ ...c, ratingUsername, ratingUserId: rating.user_id }));
+                  }).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
                   return (
-                    <div className="space-y-3">
-                      {dishCommentsLoading ? <LoadingSpinner /> : dishRatings.length === 0 ? <EmptyState icon={MessageSquare} title="no ratings yet" message="Rate this dish to start the conversation!" /> : (
-                        <>
-                          {dishRatings.map(rating => {
-                            const ratingUsername = rating.username || (user && rating.user_id === user.id ? (user.user_metadata?.username || user.email?.split('@')[0]) : 'user');
-                            const ratingUserId = rating.user_id;
-                            const computedSrr = rating.overall_score ? parseFloat(rating.overall_score.toFixed(2)) : rating.taste_score != null ? parseFloat(((rating.taste_score + rating.portion_score + rating.price_score) / 3).toFixed(2)) : null;
-                            const isExpanded = expandedComments.has(rating.id);
-                            const commentsForRating = ratingComments[rating.id]?.comments?.filter(c => !c.parent_id) || [];
-                            return (
-                              <div key={rating.id} className="bg-gray-50 rounded-xl overflow-hidden">
-                                <div className="flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-100 transition" onClick={() => handleToggleComments(rating.id)}>
-                                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">{(ratingUsername || '?')[0].toUpperCase()}</div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2"><span className="text-sm font-bold" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(ratingUserId) || {}) }}>@{ratingUsername}</span>{computedSrr != null && <span className={`text-sm font-bold ${getSRRColor(computedSrr)}`} style={{ fontFamily: '"Courier New", monospace' }}>({computedSrr.toFixed(2)})</span>}</div>
-                                    {rating.comment && <p className="text-xs text-gray-500 italic truncate" style={{ fontFamily: '"Courier New", monospace' }}>"{rating.comment}"</p>}
-                                  </div>
-                                  <div className="flex items-center gap-2 flex-shrink-0"><span className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>{commentsForRating.length > 0 ? `${commentsForRating.length} comment${commentsForRating.length !== 1 ? 's' : ''}` : 'no comments'}</span><MessageSquare size={14} className={isExpanded ? 'text-[#33a29b]' : 'text-gray-300'} /></div>
-                                </div>
-                                {isExpanded && renderCommentThread(rating.id, rating.comment, ratingUsername, 'bg-gray-50')}
+                    <div className="space-y-1">
+                      {dishCommentsLoading ? <LoadingSpinner /> : dishRatings.length === 0 ? (
+                        <EmptyState icon={MessageSquare} title="no ratings yet" message="Rate this dish to start the conversation!" />
+                      ) : allDishComments.length === 0 ? (
+                        <div className="text-center py-6 text-gray-300 text-xs" style={{ fontFamily: '"Courier New", monospace' }}>no comments yet — be the first!</div>
+                      ) : (
+                        allDishComments.map(c => {
+                          const isMe = c.user_id === user?.id || c.ratingUserId === user?.id;
+                          const commentUser = allUsers.find(u => u.id === c.user_id) || { username: c.ratingUsername };
+                          const displayName = commentUser.username || c.ratingUsername || 'user';
+                          return (
+                            <div key={c.id} className={`flex gap-2 items-start ${isMe ? 'flex-row-reverse' : ''}`}>
+                              <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0 mt-0.5">
+                                {(displayName || '?')[0].toUpperCase()}
                               </div>
-                            );
-                          })}
-                        </>
+                              <div className={`max-w-[75%] ${isMe ? 'items-end' : 'items-start'} flex flex-col`}>
+                                {!isMe && <span className="text-[9px] text-gray-400 mb-0.5 ml-1" style={{ fontFamily: '"Courier New", monospace' }}>@{displayName}</span>}
+                                <div className={`px-3 py-1.5 rounded-2xl text-xs ${isMe ? 'bg-[#33a29b] text-white rounded-tr-sm' : 'bg-gray-100 text-gray-800 rounded-tl-sm'}`} style={{ fontFamily: '"Courier New", monospace' }}>
+                                  {c.content || c.text || c.comment}
+                                </div>
+                                <span className="text-[8px] text-gray-300 mt-0.5 mx-1" style={{ fontFamily: '"Courier New", monospace' }}>
+                                  {c.created_at ? new Date(c.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })
                       )}
+                      {/* Add comment input */}
+                      {user && dishRatings.length > 0 && (() => {
+                        const firstRating = dishRatings[0];
+                        return (
+                          <div className="flex gap-2 items-center pt-2 border-t border-gray-100 mt-2">
+                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
+                              {(user?.user_metadata?.username || user?.email || '?')[0].toUpperCase()}
+                            </div>
+                            <input
+                              className="flex-1 text-xs border border-gray-200 rounded-full px-3 py-1.5 focus:outline-none focus:border-[#33a29b]"
+                              style={{ fontFamily: '"Courier New", monospace' }}
+                              placeholder="add a comment..."
+                              value={newCommentText || ''}
+                              onChange={e => setNewCommentText(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter' && newCommentText?.trim()) { setCommentInputs(prev => ({ ...prev, [firstRating.id]: newCommentText.trim() })); setTimeout(() => { handleSubmitComment(firstRating.id, null); setNewCommentText(''); }, 0); } }}
+                            />
+                            <button
+                              onClick={() => { if (newCommentText?.trim()) { setCommentInputs(prev => ({ ...prev, [firstRating.id]: newCommentText.trim() })); setTimeout(() => { handleSubmitComment(firstRating.id, null); setNewCommentText(''); }, 0); } }}
+                              className="text-[10px] bg-[#33a29b] text-white px-2.5 py-1.5 rounded-full hover:bg-[#2a8a84] transition font-bold"
+                            >→</button>
+                          </div>
+                        );
+                      })()}
                     </div>
                   );
                 })()}
