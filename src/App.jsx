@@ -3683,19 +3683,13 @@ const HuntersFindsApp = () => {
     }
   }, [user]);
   
-  // Load comments when dish modal comments tab is opened
+  // Load comments and photos whenever a dish is opened
   React.useEffect(() => {
-    if (selectedDish && dishModalView === 'comments') {
+    if (selectedDish) {
       fetchDishComments(selectedDish.id);
-    }
-  }, [selectedDish, dishModalView]);
-
-  // Phase 5: Load photos when PHOTOS tab is opened
-  React.useEffect(() => {
-    if (selectedDish && dishModalView === 'photos') {
       fetchDishPhotos(selectedDish.id);
     }
-  }, [selectedDish, dishModalView]);
+  }, [selectedDish?.id]);
   
   // Fetch user lists
   React.useEffect(() => {
@@ -10139,106 +10133,87 @@ ${adminBugNote}`,
                   </div>
                 </div>
 
-                {/* Photos & Comments links */}
-                <div className="flex gap-3 pb-2">
-                  <button onClick={(e) => { e.stopPropagation(); setDishModalView(dishModalView === 'photos' ? 'scores' : 'photos'); }} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs transition border ${dishModalView === 'photos' ? 'bg-[#33a29b]/10 border-[#33a29b]/30 text-[#33a29b]' : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'}`} style={{ fontFamily: '"Courier New", monospace' }}>
-                    <Image size={14} />photos ({selectedDish.photos || 0})
-                  </button>
-                  <button onClick={(e) => { e.stopPropagation(); if (dishModalView !== 'comments') { setDishModalView('comments'); fetchDishComments(selectedDish.id); } else setDishModalView('scores'); }} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs transition border ${dishModalView === 'comments' ? 'bg-[#33a29b]/10 border-[#33a29b]/30 text-[#33a29b]' : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'}`} style={{ fontFamily: '"Courier New", monospace' }}>
-                    <MessageSquare size={14} />comments ({dishComments.length > 0 ? dishComments.filter(c => allRatings.some(r => r.id === c.rating_id && r.dish_id === selectedDish?.id)).length : (selectedDish.comments || 0)})
-                  </button>
+                {/* Photos section — always visible */}
+                <div className="space-y-2 pt-1">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-[10px] font-bold text-gray-400 tracking-widest" style={{ fontFamily: '"Courier New", monospace' }}>PHOTOS</h3>
+                    <label className="px-2.5 py-1 bg-[#33a29b] text-white text-[10px] rounded-lg font-semibold hover:bg-[#2a8a84] transition cursor-pointer" style={{ fontFamily: '"Courier New", monospace' }}>
+                      <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { const file = e.target.files[0]; if (file && selectedDish) handlePhotoUpload(file, selectedDish.id); }} />
+                      {uploadingPhoto ? 'uploading...' : '+ add photo'}
+                    </label>
+                  </div>
+                  {loadingPhotos ? (
+                    <div className="text-center py-6"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#33a29b] mx-auto"></div></div>
+                  ) : selectedDishPhotos.length > 0 ? (
+                    <div className="space-y-3">
+                      <div className="relative bg-gray-100 rounded-lg overflow-hidden">
+                        <img src={selectedDishPhotos[currentPhotoIndex]?.url} alt="Dish" className="w-full h-56 object-cover" />
+                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3">
+                          <div className="flex items-center justify-between text-white">
+                            <div className="flex items-center gap-2"><div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">{selectedDishPhotos[currentPhotoIndex]?.username?.charAt(0).toUpperCase()}</div><span className="text-xs font-semibold" style={{ fontFamily: '"Courier New", monospace' }}>@{selectedDishPhotos[currentPhotoIndex]?.username}</span></div>
+                            <button onClick={() => handlePhotoLike(selectedDishPhotos[currentPhotoIndex]?.id)} className="flex items-center gap-1 px-2 py-1 bg-white/20 rounded-full hover:bg-white/30 transition"><Heart size={14} className={selectedDishPhotos[currentPhotoIndex]?.user_liked ? 'fill-red-500 text-red-500' : ''} /><span className="text-xs font-bold">{selectedDishPhotos[currentPhotoIndex]?.likes_count || 0}</span></button>
+                          </div>
+                        </div>
+                        {selectedDishPhotos.length > 1 && (<><button onClick={() => setCurrentPhotoIndex(i => (i - 1 + selectedDishPhotos.length) % selectedDishPhotos.length)} className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 rounded-full flex items-center justify-center hover:bg-white transition shadow-lg">←</button><button onClick={() => setCurrentPhotoIndex(i => (i + 1) % selectedDishPhotos.length)} className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 rounded-full flex items-center justify-center hover:bg-white transition shadow-lg">→</button></>)}
+                        <div className="absolute top-2 right-2 px-2 py-1 bg-black/50 text-white text-xs rounded-full font-semibold">{currentPhotoIndex + 1} / {selectedDishPhotos.length}</div>
+                      </div>
+                      {selectedDishPhotos.length > 1 && <div className="flex gap-2 overflow-x-auto pb-2">{selectedDishPhotos.map((photo, idx) => <button key={photo.id} onClick={() => setCurrentPhotoIndex(idx)} className={`flex-shrink-0 w-14 h-14 rounded overflow-hidden border-2 transition ${idx === currentPhotoIndex ? 'border-[#33a29b]' : 'border-transparent'}`}><img src={photo.url} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" /></button>)}</div>}
+                    </div>
+                  ) : (
+                    <div className="border-2 border-dashed border-gray-200 rounded-xl py-6 flex flex-col items-center gap-1.5 text-gray-300">
+                      <Image size={22} />
+                      <span className="text-xs" style={{ fontFamily: '"Courier New", monospace' }}>no photos yet — be the first!</span>
+                    </div>
+                  )}
                 </div>
 
-                {/* Photos inline */}
-                {dishModalView === 'photos' && (
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center">
-                      <h3 className="text-xs font-bold text-gray-600" style={{ fontFamily: '"Courier New", monospace' }}>PHOTO GALLERY</h3>
-                      <label className="px-3 py-1 bg-[#33a29b] text-white text-xs rounded-lg font-semibold hover:bg-[#2a8a84] transition cursor-pointer">
-                        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { const file = e.target.files[0]; if (file && selectedDish) handlePhotoUpload(file, selectedDish.id); }} />
-                        {uploadingPhoto ? 'uploading...' : '+ add photo'}
-                      </label>
-                    </div>
-                    {loadingPhotos ? <div className="text-center py-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#33a29b] mx-auto"></div></div> : selectedDishPhotos.length > 0 ? (
-                      <div className="space-y-3">
-                        <div className="relative bg-gray-100 rounded-lg overflow-hidden">
-                          <img src={selectedDishPhotos[currentPhotoIndex]?.url} alt="Dish" className="w-full h-64 object-cover" />
-                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3">
-                            <div className="flex items-center justify-between text-white">
-                              <div className="flex items-center gap-2"><div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">{selectedDishPhotos[currentPhotoIndex]?.username?.charAt(0).toUpperCase()}</div><span className="text-xs font-semibold" style={{ fontFamily: '"Courier New", monospace' }}>@{selectedDishPhotos[currentPhotoIndex]?.username}</span></div>
-                              <button onClick={() => handlePhotoLike(selectedDishPhotos[currentPhotoIndex]?.id)} className="flex items-center gap-1 px-2 py-1 bg-white/20 rounded-full hover:bg-white/30 transition"><Heart size={14} className={selectedDishPhotos[currentPhotoIndex]?.user_liked ? 'fill-red-500 text-red-500' : ''} /><span className="text-xs font-bold">{selectedDishPhotos[currentPhotoIndex]?.likes_count || 0}</span></button>
-                            </div>
-                          </div>
-                          {selectedDishPhotos.length > 1 && (<><button onClick={() => setCurrentPhotoIndex(i => (i - 1 + selectedDishPhotos.length) % selectedDishPhotos.length)} className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 rounded-full flex items-center justify-center hover:bg-white transition shadow-lg">←</button><button onClick={() => setCurrentPhotoIndex(i => (i + 1) % selectedDishPhotos.length)} className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/80 rounded-full flex items-center justify-center hover:bg-white transition shadow-lg">→</button></>)}
-                          <div className="absolute top-2 right-2 px-2 py-1 bg-black/50 text-white text-xs rounded-full font-semibold">{currentPhotoIndex + 1} / {selectedDishPhotos.length}</div>
-                        </div>
-                        {selectedDishPhotos.length > 1 && <div className="flex gap-2 overflow-x-auto pb-2">{selectedDishPhotos.map((photo, idx) => <button key={photo.id} onClick={() => setCurrentPhotoIndex(idx)} className={`flex-shrink-0 w-16 h-16 rounded overflow-hidden border-2 transition ${idx === currentPhotoIndex ? 'border-[#33a29b]' : 'border-transparent'}`}><img src={photo.url} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" /></button>)}</div>}
-                      </div>
-                    ) : <EmptyState icon={Image} title="no photos yet" message="Be the first to add a photo!" actionText="add photo" onAction={() => document.querySelector('input[type="file"][accept="image/*"]')?.click()} />}
-                  </div>
-                )}
-
-                {/* Comments inline */}
-                {dishModalView === 'comments' && (() => {
+                {/* Comments section — always visible */}
+                {(() => {
                   const dishRatings = allRatings.filter(r => r.dish_id === selectedDish.id && !r.is_deleted);
-                  // Flatten ALL comments from all ratings into one chronological feed
+                  const timeAgo = (dateStr) => {
+                    if (!dateStr) return '';
+                    const s = Math.floor((Date.now() - new Date(dateStr)) / 1000);
+                    if (s < 60) return 'just now';
+                    const m = Math.floor(s / 60); if (m < 60) return `${m}m ago`;
+                    const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+                    const d = Math.floor(h / 24); if (d < 7) return `${d}d ago`;
+                    const w = Math.floor(d / 7); if (w < 5) return `${w}w ago`;
+                    return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                  };
                   const allDishComments = dishRatings.flatMap(rating => {
-                    const ratingUsername = rating.username || (user && rating.user_id === user.id ? (user.user_metadata?.username || user.email?.split('@')[0]) : 'user');
-                    const comments = ratingComments[rating.id]?.comments || [];
-                    return comments.map(c => ({ ...c, ratingUsername, ratingUserId: rating.user_id }));
+                    const comments = ratingComments[rating.id]?.comments || dishComments.filter(c => c.rating_id === rating.id) || [];
+                    return comments;
                   }).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
                   return (
-                    <div className="space-y-1">
-                      {dishCommentsLoading ? <LoadingSpinner /> : dishRatings.length === 0 ? (
-                        <EmptyState icon={MessageSquare} title="no ratings yet" message="Rate this dish to start the conversation!" />
-                      ) : allDishComments.length === 0 ? (
-                        <div className="text-center py-6 text-gray-300 text-xs" style={{ fontFamily: '"Courier New", monospace' }}>no comments yet — be the first!</div>
+                    <div className="space-y-1 pt-2">
+                      <h3 className="text-[10px] font-bold text-gray-400 tracking-widest mb-2" style={{ fontFamily: '"Courier New", monospace' }}>COMMENTS</h3>
+                      {dishCommentsLoading ? <div className="py-4 flex justify-center"><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#33a29b]"></div></div>
+                      : allDishComments.length === 0 ? (
+                        <div className="text-center py-4 text-gray-300 text-xs" style={{ fontFamily: '"Courier New", monospace' }}>no comments yet — be the first!</div>
                       ) : (
-                        allDishComments.map(c => {
-                          const isMe = c.user_id === user?.id || c.ratingUserId === user?.id;
-                          const commentUser = allUsers.find(u => u.id === c.user_id) || { username: c.ratingUsername };
-                          const displayName = commentUser.username || c.ratingUsername || 'user';
-                          return (
-                            <div key={c.id} className={`flex gap-2 items-start ${isMe ? 'flex-row-reverse' : ''}`}>
-                              <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0 mt-0.5">
-                                {(displayName || '?')[0].toUpperCase()}
-                              </div>
-                              <div className={`max-w-[75%] ${isMe ? 'items-end' : 'items-start'} flex flex-col`}>
-                                {!isMe && <span className="text-[9px] text-gray-400 mb-0.5 ml-1" style={{ fontFamily: '"Courier New", monospace' }}>@{displayName}</span>}
-                                <div className={`px-3 py-1.5 rounded-2xl text-xs ${isMe ? 'bg-[#33a29b] text-white rounded-tr-sm' : 'bg-gray-100 text-gray-800 rounded-tl-sm'}`} style={{ fontFamily: '"Courier New", monospace' }}>
-                                  {c.content || c.text || c.comment}
+                        <div className="space-y-3">
+                          {allDishComments.map(c => {
+                            const commentUser = allUsers.find(u => u.id === c.user_id);
+                            const displayName = commentUser?.username || c.username || (user && c.user_id === user.id ? (user.user_metadata?.username || user.email?.split('@')[0]) : 'user');
+                            const nameStyle = getUsernameStyle(c.user_id) || {};
+                            const initial = (displayName || '?')[0].toUpperCase();
+                            return (
+                              <div key={c.id} className="flex gap-2.5 items-start">
+                                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0 mt-0.5">
+                                  {initial}
                                 </div>
-                                <span className="text-[8px] text-gray-300 mt-0.5 mx-1" style={{ fontFamily: '"Courier New", monospace' }}>
-                                  {c.created_at ? new Date(c.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
-                                </span>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-baseline gap-2 flex-wrap">
+                                    <span className="text-[11px] font-bold" style={{ fontFamily: '"Courier New", monospace', ...nameStyle }}>@{displayName}</span>
+                                    <span className="text-[9px] text-gray-300" style={{ fontFamily: '"Courier New", monospace' }}>{timeAgo(c.created_at)}</span>
+                                  </div>
+                                  <p className="text-xs text-gray-800 mt-0.5 break-words" style={{ fontFamily: '"Courier New", monospace' }}>{c.content || c.text}</p>
+                                </div>
                               </div>
-                            </div>
-                          );
-                        })
+                            );
+                          })}
+                        </div>
                       )}
-                      {/* Add comment input */}
-                      {user && dishRatings.length > 0 && (() => {
-                        const firstRating = dishRatings[0];
-                        return (
-                          <div className="flex gap-2 items-center pt-2 border-t border-gray-100 mt-2">
-                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
-                              {(user?.user_metadata?.username || user?.email || '?')[0].toUpperCase()}
-                            </div>
-                            <input
-                              className="flex-1 text-xs border border-gray-200 rounded-full px-3 py-1.5 focus:outline-none focus:border-[#33a29b]"
-                              style={{ fontFamily: '"Courier New", monospace' }}
-                              placeholder="add a comment..."
-                              value={newCommentText || ''}
-                              onChange={e => setNewCommentText(e.target.value)}
-                              onKeyDown={e => { if (e.key === 'Enter' && newCommentText?.trim()) { setCommentInputs(prev => ({ ...prev, [firstRating.id]: newCommentText.trim() })); setTimeout(() => { handleSubmitComment(firstRating.id, null); setNewCommentText(''); }, 0); } }}
-                            />
-                            <button
-                              onClick={() => { if (newCommentText?.trim()) { setCommentInputs(prev => ({ ...prev, [firstRating.id]: newCommentText.trim() })); setTimeout(() => { handleSubmitComment(firstRating.id, null); setNewCommentText(''); }, 0); } }}
-                              className="text-[10px] bg-[#33a29b] text-white px-2.5 py-1.5 rounded-full hover:bg-[#2a8a84] transition font-bold"
-                            >→</button>
-                          </div>
-                        );
-                      })()}
                     </div>
                   );
                 })()}
@@ -10246,7 +10221,33 @@ ${adminBugNote}`,
               </div>
 
               {/* FLOATING BOTTOM BUTTON */}
-              <div className="flex-shrink-0 px-4 py-3 border-t bg-white rounded-b-2xl">
+              <div className="flex-shrink-0 px-4 pt-2 pb-3 border-t bg-white rounded-b-2xl space-y-2">
+                {/* Comment input — always visible */}
+                {user && (() => {
+                  const dishRatings = allRatings.filter(r => r.dish_id === selectedDish.id && !r.is_deleted);
+                  const firstRating = dishRatings[0];
+                  if (!firstRating) return null;
+                  const myUsername = user?.user_metadata?.username || user?.email?.split('@')[0] || '?';
+                  return (
+                    <div className="flex gap-2 items-center">
+                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
+                        {myUsername[0].toUpperCase()}
+                      </div>
+                      <input
+                        className="flex-1 text-xs border border-gray-200 rounded-full px-3 py-2 focus:outline-none focus:border-[#33a29b]"
+                        style={{ fontFamily: '"Courier New", monospace' }}
+                        placeholder="add a comment..."
+                        value={newCommentText || ''}
+                        onChange={e => setNewCommentText(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter' && newCommentText?.trim()) { setCommentInputs(prev => ({ ...prev, [firstRating.id]: newCommentText.trim() })); setTimeout(() => { handleSubmitComment(firstRating.id, null); setNewCommentText(''); fetchDishComments(selectedDish.id); }, 50); } }}
+                      />
+                      <button
+                        onClick={() => { if (newCommentText?.trim()) { setCommentInputs(prev => ({ ...prev, [firstRating.id]: newCommentText.trim() })); setTimeout(() => { handleSubmitComment(firstRating.id, null); setNewCommentText(''); fetchDishComments(selectedDish.id); }, 50); } }}
+                        className="w-8 h-8 bg-[#33a29b] text-white rounded-full hover:bg-[#2a8a84] transition font-bold flex items-center justify-center text-sm flex-shrink-0"
+                      >→</button>
+                    </div>
+                  );
+                })()}
                 <div className="flex gap-2">
                   <button
                     onClick={() => { setRestaurant(selectedDish.restaurantName); setDishName(selectedDish.name); setIsSubmissionModalOpen(true); handleCloseDish(); }}
@@ -10255,10 +10256,7 @@ ${adminBugNote}`,
                   >{(userHasRatedDish && !!activeUserRatings.find(r => r.dish_id === selectedDish.id)) ? 'edit your rating' : 'rate this dish'}</button>
                   {user && (
                     <button
-                      onClick={() => {
-                        setDmShareDish(selectedDish);
-                        setShowDmShareModal(true);
-                      }}
+                      onClick={() => { setDmShareDish(selectedDish); setShowDmShareModal(true); }}
                       className="px-4 py-3 rounded-xl bg-gray-100 text-gray-600 hover:bg-gray-200 transition border border-gray-200 flex items-center justify-center gap-1.5"
                       style={{ fontFamily: '"Courier New", monospace' }}
                       title="share dish"
