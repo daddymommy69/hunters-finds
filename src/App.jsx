@@ -848,6 +848,9 @@ const HuntersFindsApp = () => {
   const [allUsers, setAllUsers] = useState([]);
   const [allUsersLoading, setAllUsersLoading] = useState(false);
   const [selectedExploreUser, setSelectedExploreUser] = useState(null);
+  const [exploreUserHistory, setExploreUserHistory] = useState([]);
+  const [exploreUserFollowersList, setExploreUserFollowersList] = useState(null);
+  const openExploreUser = (u) => { setSelectedExploreUser(u); setExploreUserHistory([]); setExploreUserFollowersList(null); };
   const [followingIds, setFollowingIds] = useState(new Set());
 
   React.useEffect(() => {
@@ -4650,7 +4653,7 @@ const HuntersFindsApp = () => {
           </button>
           ${restaurant.latitude && restaurant.longitude ? `
           <div style="display:flex;gap:6px;margin-top:6px;">
-            <a href="https://www.google.com/maps/search/?api=1&query=${restaurant.latitude},${restaurant.longitude}" target="_blank" rel="noopener noreferrer"
+            <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(restaurant.name + (restaurant.address ? ' ' + restaurant.address : ''))}" target="_blank" rel="noopener noreferrer"
               style="flex:1;padding:7px;background:#fff;color:#4285F4;border:1.5px solid #4285F4;border-radius:6px;cursor:pointer;font-weight:bold;font-size:11px;text-align:center;text-decoration:none;display:block;">
               Google Maps
             </a>
@@ -7747,7 +7750,7 @@ ${adminBugNote}`,
                       <div
                         key={u.id}
                         className="bg-white rounded-xl p-3 shadow-sm flex items-center gap-3 cursor-pointer hover:shadow-md transition"
-                        onClick={() => setSelectedExploreUser(u)}
+                        onClick={() => openExploreUser(u)}
                       >
                         {/* Avatar */}
                         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
@@ -8369,10 +8372,10 @@ ${adminBugNote}`,
                       <button onClick={() => setSelectedDmThread(null)} className="text-gray-400 hover:text-gray-700 transition mr-1">
                         <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
                       </button>
-                      <div className="cursor-pointer" onClick={() => { if (otherUserObj) setSelectedExploreUser({ ...otherUserObj, isFollowing: userFollows.some(f => f.following_id === otherUserObj.id) }); }}>
+                      <div className="cursor-pointer" onClick={() => { if (otherUserObj) openExploreUser({ ...otherUserObj, isFollowing: userFollows.some(f => f.following_id === otherUserObj.id) }); }}>
                         <DmAvatar name={selectedDmThread.otherName} size={9} photo={otherUserObj?.avatar_url} />
                       </div>
-                      <div className="flex-1 cursor-pointer" onClick={() => { if (otherUserObj) setSelectedExploreUser({ ...otherUserObj, isFollowing: userFollows.some(f => f.following_id === otherUserObj.id) }); }}>
+                      <div className="flex-1 cursor-pointer" onClick={() => { if (otherUserObj) openExploreUser({ ...otherUserObj, isFollowing: userFollows.some(f => f.following_id === otherUserObj.id) }); }}>
                         <span className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace' }}>@{selectedDmThread.otherName}</span>
                       </div>
                     </div>
@@ -8396,7 +8399,7 @@ ${adminBugNote}`,
                                   {!isMe && (
                                     <div style={{ width: 28, flexShrink: 0 }}>
                                       {showAvatar && (
-                                        <div className="cursor-pointer" onClick={() => { if (otherUserObj) setSelectedExploreUser({ ...otherUserObj, isFollowing: userFollows.some(f => f.following_id === otherUserObj.id) }); }}>
+                                        <div className="cursor-pointer" onClick={() => { if (otherUserObj) openExploreUser({ ...otherUserObj, isFollowing: userFollows.some(f => f.following_id === otherUserObj.id) }); }}>
                                           <DmAvatar name={selectedDmThread.otherName} size={7} photo={otherUserObj?.avatar_url} />
                                         </div>
                                       )}
@@ -9625,6 +9628,7 @@ ${adminBugNote}`,
                         }}
                         onFocus={() => { setShowCategorySuggestions(true); setCategoryShowAll(false); setCategoryConfirmNew(null); }}
                         onBlur={() => setTimeout(() => {
+                          if (addingNewSubcategory) return;
                           setShowCategorySuggestions(false);
                           setHoveredCategory(null);
                           if (categoryInput.trim() && !categoryLocked) {
@@ -10256,7 +10260,7 @@ ${adminBugNote}`,
                             onClick={(e) => {
                               e.stopPropagation();
                               const u = allUsers.find(u => u.id === r.user_id) || { id: r.user_id, username: r.username, ratingsCount: 0 };
-                              setSelectedExploreUser({ ...u, isFollowing: userFollows.some(f => f.following_id === r.user_id) });
+                              openExploreUser({ ...u, isFollowing: userFollows.some(f => f.following_id === r.user_id) });
                             }}
                             className="w-full flex items-center gap-3 py-2 px-2 rounded-lg hover:bg-gray-100 transition border-b border-gray-100 last:border-0 text-left"
                           >
@@ -11582,7 +11586,7 @@ ${adminBugNote}`,
                         const role = m.role || 'member';
                         return (
                           <div key={i} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition cursor-pointer"
-                            onClick={() => { setShowGroupMemberList(false); setSelectedExploreUser({ ...u, isFollowing: userFollows.some(f => f.following_id === u.id) }); }}>
+                            onClick={() => { setShowGroupMemberList(false); openExploreUser({ ...u, isFollowing: userFollows.some(f => f.following_id === u.id) }); }}>
                             <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
                               {uname[0]?.toUpperCase()}
                             </div>
@@ -11972,7 +11976,7 @@ ${adminBugNote}`,
                     userFollowers.map(u => (
                       <button
                         key={u.id}
-                        onClick={() => { setShowFollowersModal(false); setSelectedExploreUser({ ...u, isFollowing: userFollows.some(f => f.id === u.id) }); }}
+                        onClick={() => { setShowFollowersModal(false); openExploreUser({ ...u, isFollowing: userFollows.some(f => f.id === u.id) }); }}
                         className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition text-left"
                       >
                         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
@@ -11994,7 +11998,7 @@ ${adminBugNote}`,
                     userFollows.map(u => (
                       <button
                         key={u.id}
-                        onClick={() => { setShowFollowersModal(false); setSelectedExploreUser({ ...u, isFollowing: true }); }}
+                        onClick={() => { setShowFollowersModal(false); openExploreUser({ ...u, isFollowing: true }); }}
                         className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition text-left"
                       >
                         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
@@ -12030,38 +12034,98 @@ ${adminBugNote}`,
 
         return (
           <>
-            <div onClick={() => setSelectedExploreUser(null)} className="fixed inset-0 bg-black/40 z-[60]" />
+            <div onClick={() => { setSelectedExploreUser(null); setExploreUserHistory([]); setExploreUserFollowersList(null); }} className="fixed inset-0 bg-black/40 z-[60]" style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }} />
             <div className="fixed z-[61] bg-white rounded-2xl shadow-xl flex flex-col"
-              style={{ top: '10%', left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 500px)', maxHeight: '80vh' }}>
+              style={{ top: '6%', left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 520px)', maxHeight: '86vh' }}>
+
+              {/* Header */}
               <div className="sticky top-0 bg-white border-b px-4 py-3 flex items-center justify-between rounded-t-2xl flex-shrink-0">
-                <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
-                  <h2 className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(u.id) || {}) }}>
-                    @{u.username || u.email?.split('@')[0]}
-                  </h2>
-                  <div className="flex items-center gap-1">
-                    {getDisplayBadges(theirBadges, viewingUserFeatured[u.id] || []).map(b => <BadgeIcon key={b.badge_id} badgeId={b.badge_id} size={18} />)}
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  {exploreUserHistory.length > 0 && (
+                    <button onClick={() => {
+                      setExploreUserHistory(h => {
+                        const prev = h[h.length - 1];
+                        if (prev) setSelectedExploreUser(prev);
+                        return h.slice(0, -1);
+                      });
+                      setExploreUserFollowersList(null);
+                    }} className="p-1 rounded-full hover:bg-gray-100 transition text-gray-500 flex-shrink-0">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+                    </button>
+                  )}
+                  <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+                    <h2 className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(u.id) || {}) }}>
+                      @{u.username || u.email?.split('@')[0]}
+                    </h2>
+                    <div className="flex items-center gap-1">
+                      {getDisplayBadges(theirBadges, viewingUserFeatured[u.id] || []).map(b => <BadgeIcon key={b.badge_id} badgeId={b.badge_id} size={18} />)}
+                    </div>
                   </div>
                 </div>
-                <button onClick={() => setSelectedExploreUser(null)}><X size={20} /></button>
+                <button onClick={() => { setSelectedExploreUser(null); setExploreUserHistory([]); setExploreUserFollowersList(null); }}><X size={20} /></button>
               </div>
+
               <div className="overflow-y-auto p-4 space-y-4">
-                {/* Stats row */}
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="bg-gray-50 rounded-lg p-2">
-                    <div className="text-lg font-bold" style={{ fontFamily: '"Courier New", monospace' }}>{theirRatings.length}</div>
-                    <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>ratings</div>
+                {/* Avatar + stats row */}
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white font-bold text-xl flex-shrink-0">
+                    {(u.username || u.email || '?')[0].toUpperCase()}
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-2">
-                    <div className={`text-lg font-bold ${getSRRColor(avgScore)}`} style={{ fontFamily: '"Courier New", monospace' }}>{avgScore.toFixed(1)}</div>
-                    <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>avg score</div>
-                  </div>
-                  <div className="bg-gray-50 rounded-lg p-2">
-                    <div className="text-lg font-bold truncate" style={{ fontFamily: '"Courier New", monospace' }}>{favCategory || '—'}</div>
-                    <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>fav category</div>
+                  <div className="flex gap-4 flex-1 text-center">
+                    <div className="flex-1">
+                      <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{theirRatings.length}</div>
+                      <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>ratings</div>
+                    </div>
+                    <button className="flex-1" onClick={async () => {
+                      const { data } = await supabase.from('follows').select('follower_id').eq('following_id', u.id);
+                      const ids = (data || []).map(f => f.follower_id);
+                      setExploreUserFollowersList({ type: 'followers', users: allUsers.filter(au => ids.includes(au.id)) });
+                    }}>
+                      <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{u.followers_count || u.friends || 0}</div>
+                      <div className="text-[10px] text-[#33a29b] underline" style={{ fontFamily: '"Courier New", monospace' }}>followers</div>
+                    </button>
+                    <button className="flex-1" onClick={async () => {
+                      const { data } = await supabase.from('follows').select('following_id').eq('follower_id', u.id);
+                      const ids = (data || []).map(f => f.following_id);
+                      setExploreUserFollowersList({ type: 'following', users: allUsers.filter(au => ids.includes(au.id)) });
+                    }}>
+                      <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{u.following_count || 0}</div>
+                      <div className="text-[10px] text-[#33a29b] underline" style={{ fontFamily: '"Courier New", monospace' }}>following</div>
+                    </button>
+                    <div className="flex-1">
+                      <div className={`font-bold text-base ${getSRRColor(avgScore)}`} style={{ fontFamily: '"Courier New", monospace' }}>{avgScore.toFixed(1)}</div>
+                      <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>avg score</div>
+                    </div>
                   </div>
                 </div>
 
-
+                {/* Followers/following mini-list */}
+                {exploreUserFollowersList && (
+                  <div className="border border-gray-200 rounded-xl p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wide" style={{ fontFamily: '"Courier New", monospace' }}>{exploreUserFollowersList.type}</span>
+                      <button onClick={() => setExploreUserFollowersList(null)} className="text-gray-400 hover:text-gray-600"><X size={14} /></button>
+                    </div>
+                    {exploreUserFollowersList.users.length === 0 ? (
+                      <p className="text-xs text-gray-400 italic" style={{ fontFamily: '"Courier New", monospace' }}>none yet</p>
+                    ) : (
+                      <div className="space-y-1 max-h-40 overflow-y-auto">
+                        {exploreUserFollowersList.users.map(fu => (
+                          <button key={fu.id} onClick={() => {
+                            setExploreUserHistory(h => [...h, u]);
+                            setSelectedExploreUser({ ...fu, isFollowing: userFollows.some(f => f.following_id === fu.id) });
+                            setExploreUserFollowersList(null);
+                          }} className="w-full flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-gray-50 transition text-left">
+                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
+                              {(fu.username || '?')[0].toUpperCase()}
+                            </div>
+                            <span className="text-xs font-semibold" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(fu.id) || { color: '#374151' }) }}>@{fu.username || fu.email?.split('@')[0]}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Overlap */}
                 {(u.dishOverlap > 0 || u.restaurantOverlap > 0) && (
@@ -12070,25 +12134,49 @@ ${adminBugNote}`,
                   </div>
                 )}
 
-                {/* Top dishes */}
+                {/* Top dishes — upgraded with T/P/Po + glow */}
                 <div>
                   <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2" style={{ fontFamily: '"Courier New", monospace' }}>top dishes</h3>
                   {topDishes.length === 0 ? (
                     <p className="text-xs text-gray-400 italic" style={{ fontFamily: '"Courier New", monospace' }}>no ratings yet</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {topDishes.map((r, idx) => (
-                        <div key={r.id} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
-                          <span className="text-xs text-gray-400 w-5" style={{ fontFamily: '"Courier New", monospace' }}>#{idx + 1}</span>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-bold truncate" style={{ fontFamily: '"Courier New", monospace' }}>{r.dish?.name || r.dish_name}</div>
-                            <div className="text-[10px] text-gray-500 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{r.dish?.restaurant_name || r.restaurant_name}</div>
-                          </div>
-                          <div className={`text-sm font-bold ${getSRRColor(r.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{r.srr?.toFixed(2)}</div>
+                  ) : topDishes.map((r, idx) => {
+                    const dishObj = allDishes.find(d => d.id === r.dish_id);
+                    const score = getScore(r);
+                    const t = r.taste_score != null ? parseFloat(r.taste_score).toFixed(1) : null;
+                    const pr = r.price_score != null ? parseFloat(r.price_score).toFixed(1) : null;
+                    const po = r.portion_score != null ? parseFloat(r.portion_score).toFixed(1) : null;
+                    const glowStyle = score > 0 ? (() => {
+                      if (score >= 96) return { color: '#9333ea', shadow: '0 0 8px 1px rgba(147,51,234,0.35)' };
+                      if (score >= 89) return { color: '#eab308', shadow: '0 0 8px 1px rgba(234,179,8,0.35)' };
+                      if (score >= 81) return { color: '#9ca3af', shadow: '0 0 8px 1px rgba(156,163,175,0.35)' };
+                      if (score >= 72) return { color: '#22c55e', shadow: '0 0 8px 1px rgba(34,197,94,0.35)' };
+                      return { color: '#3b82f6', shadow: '0 0 8px 1px rgba(59,130,246,0.35)' };
+                    })() : null;
+                    return (
+                      <div key={r.id} onClick={() => { if (dishObj) setSelectedDish(dishObj); }}
+                        className="flex items-center gap-3 py-2.5 px-2 rounded-lg cursor-pointer hover:bg-gray-100 transition border-b border-gray-100 last:border-0">
+                        <span className="text-xs text-gray-400 w-5 flex-shrink-0" style={{ fontFamily: '"Courier New", monospace' }}>#{idx + 1}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}>{r.dish?.name || r.dish_name}</div>
+                          <div className="text-[11px] text-gray-400 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{r.dish?.restaurant_name || r.restaurant_name}</div>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                          {(t || pr || po) && (
+                            <div className="flex items-center gap-2">
+                              {t && <span className="text-[10px] font-bold" style={{ color: '#f97316', fontFamily: '"Courier New", monospace' }}>{t}</span>}
+                              {pr && <span className="text-[10px] font-bold" style={{ color: '#22c55e', fontFamily: '"Courier New", monospace' }}>{pr}</span>}
+                              {po && <span className="text-[10px] font-bold" style={{ color: '#3b82f6', fontFamily: '"Courier New", monospace' }}>{po}</span>}
+                            </div>
+                          )}
+                          {score > 0 && glowStyle && (
+                            <div style={{ fontFamily: '"Courier New", monospace', fontWeight: 'bold', fontSize: '1.05rem', color: glowStyle.color, textShadow: glowStyle.shadow }}>
+                              {score.toFixed(2)}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {/* Follow + Message buttons */}
@@ -12105,9 +12193,9 @@ ${adminBugNote}`,
                     >
                       {u.isFollowing ? 'unfollow' : 'follow'}
                     </button>
-                    {u.id !== user.id && (
+                    {u.id !== user?.id && (
                       <button
-                        onClick={() => { const uname = u.username || u.email?.split('@')[0] || 'user'; handleStartDm(u.id, uname); setSelectedExploreUser(null); setYouView('dms'); }}
+                        onClick={() => { const uname = u.username || u.email?.split('@')[0] || 'user'; handleStartDm(u.id, uname); setSelectedExploreUser(null); setExploreUserHistory([]); setYouView('dms'); }}
                         className="flex-1 py-2 rounded-lg text-sm font-bold transition bg-gray-100 text-gray-700 hover:bg-gray-200"
                         style={{ fontFamily: '"Courier New", monospace' }}
                       >message</button>
