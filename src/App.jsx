@@ -880,6 +880,8 @@ const HuntersFindsApp = () => {
   const [isSubmissionClosing, setIsSubmissionClosing] = useState(false);
   const [isDishModalClosing, setIsDishModalClosing] = useState(false);
   const [dishModalOverflowOpen, setDishModalOverflowOpen] = useState(false);
+  const [dishRaterSort, setDishRaterSort] = useState('score_desc'); // score_desc | score_asc | date_asc | date_desc
+  const [dishHeaderPhotoIdx, setDishHeaderPhotoIdx] = useState(0);
   const [isNewListModalClosing, setIsNewListModalClosing] = useState(false);
   const [isNewGroupModalClosing, setIsNewGroupModalClosing] = useState(false);
   const [selectedRestaurant, setSelectedRestaurant] = useState(null);
@@ -904,8 +906,23 @@ const HuntersFindsApp = () => {
   const [savedItems, setSavedItems] = useState([]);
   const [userLists, setUserLists] = useState([]);
   const [selectedUser, setSelectedUserRaw] = useState(null);
-  const setSelectedUser = (u) => { setSelectedUserRaw(u); setProfileModalTab('stats'); };
+  const [userModalHistory, setUserModalHistory] = useState([]); // back stack
+  const setSelectedUser = (u) => { 
+    setSelectedUserRaw(prev => {
+      if (prev) setUserModalHistory(h => [...h, prev]);
+      return u;
+    });
+    setProfileModalTab('stats'); 
+  };
+  const goBackUserModal = () => {
+    setUserModalHistory(h => {
+      const prev = h[h.length - 1];
+      if (prev) { setSelectedUserRaw(prev); setProfileModalTab('stats'); }
+      return h.slice(0, -1);
+    });
+  };
   const [isUserModalClosing, setIsUserModalClosing] = useState(false);
+  const [userModalFollowersList, setUserModalFollowersList] = useState(null); // { type: 'followers'|'following', users: [] }
   const [modalStack, setModalStack] = useState([]);
   const [restaurant, setRestaurant] = useState('');
   const [dishName, setDishName] = useState('');
@@ -915,6 +932,9 @@ const HuntersFindsApp = () => {
   const [dishSubcategory, setDishSubcategory] = useState('');
   const [subcategoryInput, setSubcategoryInput] = useState('');
   const [showSubcategorySuggestions, setShowSubcategorySuggestions] = useState(false);
+  const [hoveredCategory, setHoveredCategory] = useState(null); // for two-panel subcategory picker
+  const [addingNewSubcategory, setAddingNewSubcategory] = useState(false);
+  const [newSubcategoryText, setNewSubcategoryText] = useState('');
   const [showDishTooltip, setShowDishTooltip] = useState(false);
   const [showCategoryTooltip, setShowCategoryTooltip] = useState(false);
   const [showFoodSuggestions, setShowFoodSuggestions] = useState(false);
@@ -3688,8 +3708,18 @@ const HuntersFindsApp = () => {
     if (selectedDish) {
       fetchDishComments(selectedDish.id);
       fetchDishPhotos(selectedDish.id);
+      setDishHeaderPhotoIdx(0);
     }
   }, [selectedDish?.id]);
+
+  // Cycle header photo every 30s
+  React.useEffect(() => {
+    if (!selectedDish || selectedDishPhotos.length < 2) return;
+    const timer = setInterval(() => {
+      setDishHeaderPhotoIdx(i => (i + 1) % selectedDishPhotos.length);
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [selectedDish?.id, selectedDishPhotos.length]);
   
   // Fetch user lists
   React.useEffect(() => {
@@ -4618,6 +4648,18 @@ const HuntersFindsApp = () => {
           >
             ${!restaurant.avgSRR ? 'Rate a Dish' : 'View Details'}
           </button>
+          ${restaurant.latitude && restaurant.longitude ? `
+          <div style="display:flex;gap:6px;margin-top:6px;">
+            <a href="https://www.google.com/maps/search/?api=1&query=${restaurant.latitude},${restaurant.longitude}" target="_blank" rel="noopener noreferrer"
+              style="flex:1;padding:7px;background:#fff;color:#4285F4;border:1.5px solid #4285F4;border-radius:6px;cursor:pointer;font-weight:bold;font-size:11px;text-align:center;text-decoration:none;display:block;">
+              Google Maps
+            </a>
+            <a href="https://maps.apple.com/?ll=${restaurant.latitude},${restaurant.longitude}&q=${encodeURIComponent(restaurant.name)}" target="_blank" rel="noopener noreferrer"
+              style="flex:1;padding:7px;background:#fff;color:#555;border:1.5px solid #ccc;border-radius:6px;cursor:pointer;font-weight:bold;font-size:11px;text-align:center;text-decoration:none;display:block;">
+              Apple Maps
+            </a>
+          </div>
+          ` : ''}
         </div>
       `;
       
@@ -5951,6 +5993,8 @@ ${adminBugNote}`,
     setIsUserModalClosing(true);
     setTimeout(() => {
       setSelectedUser(null);
+      setUserModalHistory([]);
+      setUserModalFollowersList(null);
       setIsUserModalClosing(false);
     }, 300);
   };
@@ -9463,7 +9507,7 @@ ${adminBugNote}`,
 
                   <div className="relative">
                     <div className="flex items-center gap-1 mb-0.5 relative">
-                      <label className="text-[10px] font-semibold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>dish</label>
+                      <label className="text-[10px] font-semibold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>dish name</label>
                       <div className="relative flex-shrink-0">
                         <div
                           className="w-4 h-4 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-[9px] font-bold cursor-help hover:bg-[#33a29b] hover:text-white transition"
@@ -9539,7 +9583,8 @@ ${adminBugNote}`,
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
-                  <div className="relative">
+                  {/* Category + inline subcategory two-panel */}
+                  <div className="relative col-span-2">
                     <div className="flex items-center gap-1 mb-0.5 relative">
                       <label className="text-[10px] font-semibold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>category</label>
                       <div className="relative flex-shrink-0">
@@ -9556,6 +9601,12 @@ ${adminBugNote}`,
                           </div>
                         )}
                       </div>
+                      {/* Show selected value */}
+                      {categoryLocked && dishCategory && (
+                        <span className="ml-1 text-[10px] text-[#33a29b] font-semibold" style={{ fontFamily: '"Courier New", monospace' }}>
+                          {dishCategory}{dishSubcategory ? ` • ${dishSubcategory}` : ''}
+                        </span>
+                      )}
                     </div>
 
                     <div className="relative">
@@ -9566,15 +9617,16 @@ ${adminBugNote}`,
                           const val = e.target.value.toLowerCase();
                           setCategoryInput(val);
                           setCategoryLocked(false);
-                          setDishCategory(val); // allow typed value to count for submit
+                          setDishCategory(val);
                           setShowCategorySuggestions(true);
                           setCategoryShowAll(false);
                           setCategoryConfirmNew(null);
+                          setHoveredCategory(null);
                         }}
                         onFocus={() => { setShowCategorySuggestions(true); setCategoryShowAll(false); setCategoryConfirmNew(null); }}
                         onBlur={() => setTimeout(() => {
                           setShowCategorySuggestions(false);
-                          // Auto-lock on blur if something was typed
+                          setHoveredCategory(null);
                           if (categoryInput.trim() && !categoryLocked) {
                             setCategoryLocked(true);
                             setDishCategory(categoryInput.trim());
@@ -9593,13 +9645,15 @@ ${adminBugNote}`,
                           if ((e.key === 'Backspace' || e.key === 'Delete') && categoryLocked) {
                             setCategoryLocked(false);
                             setDishCategory('');
+                            setDishSubcategory('');
+                            setSubcategoryInput('');
                             setShowCategorySuggestions(true);
                           }
                         }}
                       />
                       {categoryLocked && (
                         <button
-                          onClick={() => { setCategoryLocked(false); setCategoryInput(''); setDishCategory(''); setShowCategorySuggestions(true); }}
+                          onClick={() => { setCategoryLocked(false); setCategoryInput(''); setDishCategory(''); setDishSubcategory(''); setSubcategoryInput(''); setShowCategorySuggestions(true); }}
                           className="absolute right-2 top-1.5 text-gray-400 hover:text-gray-600"
                         >
                           <X size={12} />
@@ -9607,91 +9661,166 @@ ${adminBugNote}`,
                       )}
                     </div>
 
+                    {/* Two-panel dropdown: categories left, subcategories right */}
                     {showCategorySuggestions && !categoryLocked && (
-                      <div ref={categoryDropdownRef} className="absolute z-10 w-full mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-lg">
-                        {visibleCategories.length === 0 && !categoryInput && (
-                          <div className="px-2 py-2 text-[10px] text-gray-400 italic" style={{ fontFamily: '"Courier New", monospace' }}>no categories yet</div>
-                        )}
-                        {visibleCategories.map(({ cat, count }) => (
-                          <div
-                            key={cat}
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              setCategoryInput(cat);
-                              setDishCategory(cat);
-                              setCategoryLocked(true);
-                              setShowCategorySuggestions(false);
-                              setCategoryShowAll(false);
-                            }}
-                            onTouchEnd={(e) => {
-                              e.preventDefault();
-                              setCategoryInput(cat);
-                              setDishCategory(cat);
-                              setCategoryLocked(true);
-                              setShowCategorySuggestions(false);
-                              setCategoryShowAll(false);
-                            }}
-                            className="px-2 py-1.5 hover:bg-[#33a29b]/10 cursor-pointer border-b border-gray-100 flex justify-between items-center"
-                          >
-                            <span className="text-xs font-medium text-gray-800" style={{ fontFamily: '"Courier New", monospace' }}>{cat}</span>
-                            <span className="text-[10px] text-gray-400 ml-2 flex-shrink-0" style={{ fontFamily: '"Courier New", monospace' }}>{count} {count === 1 ? 'dish' : 'dishes'}</span>
-                          </div>
-                        ))}
+                      <div className="absolute z-20 mt-1 flex bg-white border-2 border-gray-200 rounded-lg shadow-lg" style={{ minWidth: '100%', left: 0 }}
+                        onMouseLeave={() => setHoveredCategory(null)}>
+                        {/* Left panel: categories */}
+                        <div className="flex-1 border-r border-gray-100 overflow-y-auto" style={{ maxHeight: '200px', minWidth: '130px' }}>
+                          {visibleCategories.length === 0 && !categoryInput && (
+                            <div className="px-2 py-2 text-[10px] text-gray-400 italic" style={{ fontFamily: '"Courier New", monospace' }}>no categories yet</div>
+                          )}
+                          {visibleCategories.map(({ cat, count }) => (
+                            <div
+                              key={cat}
+                              onMouseEnter={() => setHoveredCategory(cat)}
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                setCategoryInput(cat);
+                                setDishCategory(cat);
+                                setCategoryLocked(true);
+                                setShowCategorySuggestions(false);
+                                setCategoryShowAll(false);
+                                setHoveredCategory(null);
+                              }}
+                              onTouchEnd={(e) => {
+                                e.preventDefault();
+                                // On mobile: first tap highlights, second tap selects
+                                if (hoveredCategory === cat) {
+                                  setCategoryInput(cat);
+                                  setDishCategory(cat);
+                                  setCategoryLocked(true);
+                                  setShowCategorySuggestions(false);
+                                  setHoveredCategory(null);
+                                } else {
+                                  setHoveredCategory(cat);
+                                }
+                              }}
+                              className={`px-2 py-1.5 cursor-pointer border-b border-gray-100 flex justify-between items-center ${hoveredCategory === cat ? 'bg-[#33a29b]/10' : 'hover:bg-[#33a29b]/5'}`}
+                            >
+                              <span className="text-xs font-medium text-gray-800" style={{ fontFamily: '"Courier New", monospace' }}>{cat}</span>
+                              <span className="text-[9px] text-gray-300 ml-1 flex-shrink-0">▶</span>
+                            </div>
+                          ))}
+                          {hasMoreCategories && (
+                            <button
+                              onMouseDown={(e) => { e.preventDefault(); setCategoryShowAll(v => !v); }}
+                              className="w-full px-2 py-1.5 text-[10px] text-[#33a29b] font-semibold hover:bg-gray-50 border-b border-gray-100 text-left"
+                              style={{ fontFamily: '"Courier New", monospace' }}
+                            >
+                              {categoryShowAll ? '▲ less' : `▼ more`}
+                            </button>
+                          )}
+                          {categoryInput && !categorySuggestions.some(({ cat }) => cat === categoryInput.trim()) && (
+                            <div className="px-2 py-1.5 text-[10px] text-gray-400 italic" style={{ fontFamily: '"Courier New", monospace' }}>
+                              enter to use "{categoryInput.trim()}"
+                            </div>
+                          )}
+                        </div>
 
-                        {/* Show more / collapse */}
-                        {hasMoreCategories && (
-                          <button
-                            onMouseDown={(e) => { e.preventDefault(); setCategoryShowAll(v => !v); }}
-                            onTouchEnd={(e) => { e.preventDefault(); setCategoryShowAll(v => !v); }}
-                            className="w-full px-2 py-1.5 text-[10px] text-[#33a29b] font-semibold hover:bg-gray-50 border-b border-gray-100 text-left"
-                            style={{ fontFamily: '"Courier New", monospace' }}
-                          >
-                            {categoryShowAll ? '▲ show less' : `▼ find more (${categorySuggestions.length - CATEGORY_INITIAL_SHOW} more)`}
-                          </button>
-                        )}
+                        {/* Right panel: subcategories for hovered category — desktop only */}
+                        {hoveredCategory && (() => {
+                          const subs = [...new Set(allDishes.filter(d => (d.cuisine || '').toLowerCase() === hoveredCategory.toLowerCase() && d.subcategory).map(d => d.subcategory.toLowerCase()))].sort();
+                          return (
+                            <div className="flex-1 overflow-y-auto hidden md:block" style={{ maxHeight: '200px', minWidth: '130px' }}>
+                              {subs.length === 0 ? (
+                                <div>
+                                  <div className="px-2 py-1.5 text-[10px] text-gray-400 italic border-b border-gray-100" style={{ fontFamily: '"Courier New", monospace' }}>no subcategories</div>
+                                  {!addingNewSubcategory ? (
+                                    <button
+                                      onMouseDown={(e) => { e.preventDefault(); setAddingNewSubcategory(true); setNewSubcategoryText(''); }}
+                                      className="w-full px-2 py-1.5 text-[10px] text-[#33a29b] font-semibold hover:bg-[#33a29b]/10 text-left"
+                                      style={{ fontFamily: '"Courier New", monospace' }}
+                                    >+ add new</button>
+                                  ) : (
+                                    <div className="px-2 py-1.5">
+                                      <input autoFocus type="text" value={newSubcategoryText}
+                                        onChange={e => setNewSubcategoryText(e.target.value.toLowerCase())}
+                                        onKeyDown={e => { if (e.key === 'Enter' && newSubcategoryText.trim()) { setCategoryInput(hoveredCategory); setDishCategory(hoveredCategory); setCategoryLocked(true); setDishSubcategory(newSubcategoryText.trim()); setSubcategoryInput(newSubcategoryText.trim()); setShowCategorySuggestions(false); setAddingNewSubcategory(false); setHoveredCategory(null); } if (e.key === 'Escape') { setAddingNewSubcategory(false); } }}
+                                        placeholder="type + enter"
+                                        className="w-full px-1.5 py-1 text-[10px] border border-[#33a29b] rounded focus:outline-none"
+                                        style={{ fontFamily: '"Courier New", monospace' }}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <div>
+                                  {subs.map(s => (
+                                    <div key={s}
+                                      onMouseDown={(e) => { e.preventDefault(); setCategoryInput(hoveredCategory); setDishCategory(hoveredCategory); setCategoryLocked(true); setDishSubcategory(s); setSubcategoryInput(s); setShowCategorySuggestions(false); setHoveredCategory(null); }}
+                                      className="px-2 py-1.5 hover:bg-[#33a29b]/10 cursor-pointer border-b border-gray-100 text-xs text-gray-800"
+                                      style={{ fontFamily: '"Courier New", monospace' }}
+                                    >{s}</div>
+                                  ))}
+                                  {!addingNewSubcategory ? (
+                                    <button
+                                      onMouseDown={(e) => { e.preventDefault(); setAddingNewSubcategory(true); setNewSubcategoryText(''); }}
+                                      className="w-full px-2 py-1.5 text-[10px] text-[#33a29b] font-semibold hover:bg-[#33a29b]/10 text-left border-t border-gray-100"
+                                      style={{ fontFamily: '"Courier New", monospace' }}
+                                    >+ add new</button>
+                                  ) : (
+                                    <div className="px-2 py-1.5 border-t border-gray-100">
+                                      <input autoFocus type="text" value={newSubcategoryText}
+                                        onChange={e => setNewSubcategoryText(e.target.value.toLowerCase())}
+                                        onKeyDown={e => { if (e.key === 'Enter' && newSubcategoryText.trim()) { setCategoryInput(hoveredCategory); setDishCategory(hoveredCategory); setCategoryLocked(true); setDishSubcategory(newSubcategoryText.trim()); setSubcategoryInput(newSubcategoryText.trim()); setShowCategorySuggestions(false); setAddingNewSubcategory(false); setHoveredCategory(null); } if (e.key === 'Escape') { setAddingNewSubcategory(false); } }}
+                                        placeholder="type + enter"
+                                        className="w-full px-1.5 py-1 text-[10px] border border-[#33a29b] rounded focus:outline-none"
+                                        style={{ fontFamily: '"Courier New", monospace' }}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
 
-                        {/* Typed value not in list — accepted as-is, no confirm needed */}
-                        {categoryInput && !categorySuggestions.some(({ cat }) => cat === categoryInput.trim()) && (
-                          <div className="px-2 py-1.5 text-[10px] text-gray-400 italic" style={{ fontFamily: '"Courier New", monospace' }}>
-                            press enter or keep typing — "{categoryInput.trim()}" will be used
-                          </div>
-                        )}
+                    {/* Mobile: subcategory dropdown shown below category when locked */}
+                    {categoryLocked && dishCategory && (
+                      <div className="mt-1.5 md:hidden">
+                        {(() => {
+                          const subs = [...new Set(allDishes.filter(d => (d.cuisine || '').toLowerCase() === dishCategory.toLowerCase() && d.subcategory).map(d => d.subcategory.toLowerCase()))].sort();
+                          return (
+                            <div className="relative border border-gray-200 rounded-lg bg-white">
+                              <div className="text-[9px] text-gray-400 px-2 pt-1.5" style={{ fontFamily: '"Courier New", monospace' }}>subcategory (optional)</div>
+                              {subs.length > 0 && (
+                                <div className="flex flex-wrap gap-1 px-2 pb-1.5">
+                                  {subs.map(s => (
+                                    <button key={s}
+                                      onClick={() => { setDishSubcategory(dishSubcategory === s ? '' : s); setSubcategoryInput(dishSubcategory === s ? '' : s); }}
+                                      className={`px-2 py-0.5 rounded-full text-[10px] font-semibold transition ${dishSubcategory === s ? 'bg-[#33a29b] text-white' : 'bg-gray-100 text-gray-600'}`}
+                                      style={{ fontFamily: '"Courier New", monospace' }}
+                                    >{s}</button>
+                                  ))}
+                                </div>
+                              )}
+                              {!addingNewSubcategory ? (
+                                <button onClick={() => { setAddingNewSubcategory(true); setNewSubcategoryText(''); }}
+                                  className="w-full text-left px-2 py-1.5 text-[10px] text-[#33a29b] font-semibold border-t border-gray-100"
+                                  style={{ fontFamily: '"Courier New", monospace' }}>+ add new</button>
+                              ) : (
+                                <div className="px-2 py-1.5 border-t border-gray-100 flex gap-1">
+                                  <input type="text" value={newSubcategoryText}
+                                    autoFocus
+                                    onChange={e => setNewSubcategoryText(e.target.value.toLowerCase())}
+                                    onKeyDown={e => { if (e.key === 'Enter' && newSubcategoryText.trim()) { setDishSubcategory(newSubcategoryText.trim()); setSubcategoryInput(newSubcategoryText.trim()); setAddingNewSubcategory(false); } }}
+                                    placeholder="type name..."
+                                    className="flex-1 px-1.5 py-1 text-[10px] border border-[#33a29b] rounded focus:outline-none"
+                                    style={{ fontFamily: '"Courier New", monospace' }}
+                                  />
+                                  <button onClick={() => { if (newSubcategoryText.trim()) { setDishSubcategory(newSubcategoryText.trim()); setSubcategoryInput(newSubcategoryText.trim()); setAddingNewSubcategory(false); } }}
+                                    className="px-2 py-1 bg-[#33a29b] text-white text-[10px] rounded font-bold">✓</button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>
-
-                  {/* Subcategory field — shown when category is locked */}
-                  {categoryLocked && dishCategory && (
-                    <div className="relative">
-                      <label className="block text-[10px] font-semibold text-gray-700 mb-0.5" style={{ fontFamily: '"Courier New", monospace' }}>
-                        subcategory <span className="text-gray-400 font-normal">(optional)</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={subcategoryInput}
-                        onChange={(e) => { setSubcategoryInput(e.target.value); setDishSubcategory(e.target.value.trim()); setShowSubcategorySuggestions(true); }}
-                        onFocus={() => setShowSubcategorySuggestions(true)}
-                        onBlur={() => setTimeout(() => setShowSubcategorySuggestions(false), 150)}
-                        placeholder={`e.g. philly cheesesteak`}
-                        className="w-full px-2 py-1 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
-                        style={{ fontFamily: '"Courier New", monospace' }}
-                      />
-                      {showSubcategorySuggestions && subcategoryInput && (() => {
-                        const existingSubs = [...new Set(allDishes.filter(d => (d.cuisine || '').toLowerCase() === dishCategory.toLowerCase() && d.subcategory).map(d => d.subcategory.toLowerCase()))].filter(s => s.includes(subcategoryInput.toLowerCase()));
-                        if (existingSubs.length === 0) return null;
-                        return (
-                          <div className="absolute z-50 w-full mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-lg" style={{ top: '100%' }}>
-                            {existingSubs.slice(0, 5).map(s => (
-                              <div key={s} onMouseDown={(e) => { e.preventDefault(); setSubcategoryInput(s); setDishSubcategory(s); setShowSubcategorySuggestions(false); }}
-                                className="px-2 py-1.5 hover:bg-[#33a29b]/10 cursor-pointer text-xs" style={{ fontFamily: '"Courier New", monospace' }}>
-                                {s}
-                              </div>
-                            ))}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  )}
 
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>price</label>
@@ -9941,6 +10070,24 @@ ${adminBugNote}`,
           return { ...r, username: u?.username || r.username || 'user', srr };
         });
         const communityAvg = othersWhoRated.length > 0 ? othersWhoRated.reduce((sum, r) => sum + (r.srr || 0), 0) / othersWhoRated.length : null;
+        // Min/max for taste and portion
+        const tasteVals = othersWhoRated.map(r => r.taste_score).filter(v => v != null);
+        const portionVals = othersWhoRated.map(r => r.portion_score).filter(v => v != null);
+        const minTaste = tasteVals.length > 0 ? Math.min(...tasteVals) : null;
+        const maxTaste = tasteVals.length > 0 ? Math.max(...tasteVals) : null;
+        const minPortion = portionVals.length > 0 ? Math.min(...portionVals) : null;
+        const maxPortion = portionVals.length > 0 ? Math.max(...portionVals) : null;
+        // Sorted raters
+        const sortedRaters = [...othersWhoRated].sort((a, b) => {
+          if (dishRaterSort === 'score_desc') return (b.srr || 0) - (a.srr || 0);
+          if (dishRaterSort === 'score_asc') return (a.srr || 0) - (b.srr || 0);
+          if (dishRaterSort === 'date_asc') return new Date(a.created_at) - new Date(b.created_at);
+          if (dishRaterSort === 'date_desc') return new Date(b.created_at) - new Date(a.created_at);
+          return 0;
+        });
+        // Header background photo (sorted by likes)
+        const headerPhotos = [...selectedDishPhotos].sort((a, b) => (b.likes_count || 0) - (a.likes_count || 0));
+        const headerPhoto = headerPhotos[dishHeaderPhotoIdx % Math.max(headerPhotos.length, 1)] || null;
         const dishRestaurant = allRestaurants.find(r => r.name === selectedDish.restaurantName);
         const address = dishRestaurant?.address || dishRestaurant?.location?.address || dishRestaurant?.googleData?.vicinity || dishRestaurant?.google_data?.vicinity || '';
         const overflowOpen = dishModalOverflowOpen;
@@ -9959,8 +10106,16 @@ ${adminBugNote}`,
           >
           <div className="md:bg-white md:rounded-2xl md:w-full md:flex md:flex-col md:pointer-events-auto" style={{ maxWidth: '600px', maxHeight: '90vh', width: '100%' }}>
 
-              {/* HEADER with score wash */}
-              <div className="relative rounded-t-2xl px-4 pt-5 pb-4 flex-shrink-0" style={{ background: washBg }}>
+              {/* HEADER with score wash or photo bg */}
+              <div className="relative rounded-t-2xl px-4 pt-5 pb-4 flex-shrink-0 overflow-hidden" style={headerPhoto ? {} : { background: washBg }}>
+                {/* Photo background */}
+                {headerPhoto && (
+                  <>
+                    <div className="absolute inset-0 z-0" style={{ backgroundImage: `url(${headerPhoto.url})`, backgroundSize: 'cover', backgroundPosition: 'center', filter: 'blur(3px) brightness(0.45)', transform: 'scale(1.05)' }} />
+                    <div className="absolute inset-0 z-0" style={{ background: `${washBg.replace(')', ', 0.55)')}` }} />
+                  </>
+                )}
+                <div className="relative z-10">
                 {/* Mobile drag handle */}
                 <div className="absolute top-2 left-1/2 -translate-x-1/2 w-8 h-1 bg-gray-300/60 rounded-full md:hidden" />
                 <div className="flex justify-between items-center mb-3">
@@ -9993,19 +10148,20 @@ ${adminBugNote}`,
                   <div className="w-20 h-20 rounded-full flex items-center justify-center shadow-lg mb-2 border-4 border-white" style={{ background: washColor }}>
                     <DishScoreCounter target={overallSRR} color="white" />
                   </div>
-                  <div className="text-[10px] text-gray-400 uppercase tracking-widest" style={{ fontFamily: '"Courier New", monospace' }}>overall score</div>
+                  <div className={`text-[10px] uppercase tracking-widest ${headerPhoto ? 'text-white/70' : 'text-gray-400'}`} style={{ fontFamily: '"Courier New", monospace' }}>overall score</div>
                 </div>
 
                 {/* Dish name */}
-                <h2 className="text-xl font-bold text-center mb-1" style={{ fontFamily: '"Courier New", monospace' }}>{selectedDish.name}</h2>
+                <h2 className={`text-xl font-bold text-center mb-1 ${headerPhoto ? 'text-white' : ''}`} style={{ fontFamily: '"Courier New", monospace' }}>{selectedDish.name}</h2>
 
                 {/* Restaurant tappable + address */}
                 <div className="text-center">
-                  <button onClick={(e) => { e.stopPropagation(); if (dishRestaurant) { setSelectedRestaurant(dishRestaurant); handleCloseDish(); } }} className="text-sm font-semibold text-[#33a29b] hover:underline" style={{ fontFamily: '"Courier New", monospace' }}>{selectedDish.restaurantName}</button>
-                  {address && <p className="text-xs text-gray-400 mt-0.5 break-words px-2" style={{ fontFamily: '"Courier New", monospace' }}>{address}</p>}
-                  <p className="text-xs text-gray-400 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>${selectedDish.price.toFixed(2)} · {selectedDish.numRatings} rating{selectedDish.numRatings !== 1 ? 's' : ''}</p>
+                  <button onClick={(e) => { e.stopPropagation(); if (dishRestaurant) { setSelectedRestaurant(dishRestaurant); handleCloseDish(); } }} className={`text-sm font-semibold hover:underline ${headerPhoto ? 'text-[#7ee8e2]' : 'text-[#33a29b]'}`} style={{ fontFamily: '"Courier New", monospace' }}>{selectedDish.restaurantName}</button>
+                  {address && <p className={`text-xs mt-0.5 break-words px-2 ${headerPhoto ? 'text-white/60' : 'text-gray-400'}`} style={{ fontFamily: '"Courier New", monospace' }}>{address}</p>}
+                  <p className={`text-xs mt-0.5 ${headerPhoto ? 'text-white/60' : 'text-gray-400'}`} style={{ fontFamily: '"Courier New", monospace' }}>${selectedDish.price.toFixed(2)} · {selectedDish.numRatings} rating{selectedDish.numRatings !== 1 ? 's' : ''}</p>
                 </div>
-              </div>
+              </div>{/* end z-10 */}
+              </div>{/* end header */}
 
               {/* SCROLLABLE BODY */}
               <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
@@ -10017,6 +10173,11 @@ ${adminBugNote}`,
                     <div className="bg-orange-50 rounded-xl p-3 text-center border border-orange-100">
                       <div className="text-[10px] text-gray-400 mb-2" style={{ fontFamily: '"Courier New", monospace' }}>taste</div>
                       <ScoreBar target={communityTaste || 0} color="#ea580c" bgColor="rgba(234,88,12,0.15)" />
+                      {minTaste != null && maxTaste != null && (
+                        <div className="text-[9px] text-gray-400 mt-1.5 leading-tight" style={{ fontFamily: '"Courier New", monospace' }}>
+                          <span>{minTaste.toFixed(0)}↔{maxTaste.toFixed(0)}</span>
+                        </div>
+                      )}
                     </div>
                     <div className="bg-green-50 rounded-xl p-3 text-center border border-green-100">
                       <div className="text-[10px] text-gray-400 mb-2" style={{ fontFamily: '"Courier New", monospace' }}>price</div>
@@ -10031,6 +10192,11 @@ ${adminBugNote}`,
                     <div className="bg-blue-50 rounded-xl p-3 text-center border border-blue-100">
                       <div className="text-[10px] text-gray-400 mb-2" style={{ fontFamily: '"Courier New", monospace' }}>portion</div>
                       <ScoreBar target={communityPortion || 0} color="#2563eb" bgColor="rgba(37,99,235,0.15)" />
+                      {minPortion != null && maxPortion != null && (
+                        <div className="text-[9px] text-gray-400 mt-1.5 leading-tight" style={{ fontFamily: '"Courier New", monospace' }}>
+                          <span>{minPortion.toFixed(0)}↔{maxPortion.toFixed(0)}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -10063,9 +10229,18 @@ ${adminBugNote}`,
                 {/* Others who rated */}
                 {othersWhoRated.length > 0 && (
                   <div>
-                    <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2" style={{ fontFamily: '"Courier New", monospace' }}>who rated this</h3>
+                    <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                      <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest" style={{ fontFamily: '"Courier New", monospace' }}>who rated this</h3>
+                      <div className="flex gap-1 flex-wrap">
+                        {[['score_desc','↑ score'],['score_asc','↓ score'],['date_asc','earliest'],['date_desc','latest']].map(([val, label]) => (
+                          <button key={val} onClick={(e) => { e.stopPropagation(); setDishRaterSort(val); }}
+                            className={`px-2 py-0.5 rounded-full text-[9px] font-bold transition border ${dishRaterSort === val ? 'bg-gray-700 text-white border-gray-700' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}
+                            style={{ fontFamily: '"Courier New", monospace' }}>{label}</button>
+                        ))}
+                      </div>
+                    </div>
                     <div className="space-y-1.5">
-                      {othersWhoRated.map(r => {
+                      {sortedRaters.map(r => {
                         const t = r.taste_score != null ? parseFloat(r.taste_score).toFixed(1) : null;
                         const pr = r.price_score != null ? parseFloat(r.price_score).toFixed(1) : null;
                         const po = r.portion_score != null ? parseFloat(r.portion_score).toFixed(1) : null;
@@ -10318,10 +10493,17 @@ ${adminBugNote}`,
                 
                 {/* Header */}
                 <div className="sticky top-0 bg-white border-b px-4 py-3 flex justify-between items-center rounded-t-2xl flex-shrink-0">
-                  <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
-                    <h2 className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>@{u.username || u.email?.split('@')[0]}</h2>
-                    <div className="flex items-center gap-1">
-                      {getDisplayBadges(theirBadges, viewingUserFeatured[u.id] || []).map(b => <BadgeIcon key={b.badge_id} badgeId={b.badge_id} size={18} />)}
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    {userModalHistory.length > 0 && (
+                      <button onClick={goBackUserModal} className="p-1 rounded-full hover:bg-gray-100 transition text-gray-500 flex-shrink-0">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+                      </button>
+                    )}
+                    <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+                      <h2 className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(u.id) || {}) }}>@{u.username || u.email?.split('@')[0]}</h2>
+                      <div className="flex items-center gap-1">
+                        {getDisplayBadges(theirBadges, viewingUserFeatured[u.id] || []).map(b => <BadgeIcon key={b.badge_id} badgeId={b.badge_id} size={18} />)}
+                      </div>
                     </div>
                   </div>
                   <button onClick={handleCloseUser}><X size={20} /></button>
@@ -10338,16 +10520,55 @@ ${adminBugNote}`,
                         <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{theirRatings.length}</div>
                         <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>ratings</div>
                       </div>
-                      <div className="flex-1">
-                        <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{u.friends || u.ratingsCount || 0}</div>
-                        <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>followers</div>
-                      </div>
+                      <button className="flex-1" onClick={async () => {
+                        const { data } = await supabase.from('follows').select('follower_id').eq('following_id', u.id);
+                        const followerIds = (data || []).map(f => f.follower_id);
+                        const followerUsers = allUsers.filter(au => followerIds.includes(au.id));
+                        setUserModalFollowersList({ type: 'followers', users: followerUsers });
+                      }}>
+                        <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{u.followers_count || u.friends || 0}</div>
+                        <div className="text-[10px] text-[#33a29b] underline" style={{ fontFamily: '"Courier New", monospace' }}>followers</div>
+                      </button>
+                      <button className="flex-1" onClick={async () => {
+                        const { data } = await supabase.from('follows').select('following_id').eq('follower_id', u.id);
+                        const followingIds = (data || []).map(f => f.following_id);
+                        const followingUsers = allUsers.filter(au => followingIds.includes(au.id));
+                        setUserModalFollowersList({ type: 'following', users: followingUsers });
+                      }}>
+                        <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{u.following_count || 0}</div>
+                        <div className="text-[10px] text-[#33a29b] underline" style={{ fontFamily: '"Courier New", monospace' }}>following</div>
+                      </button>
                       <div className="flex-1">
                         <div className={`font-bold text-base ${getSRRColor(avgScore)}`} style={{ fontFamily: '"Courier New", monospace' }}>{avgScore.toFixed(1)}</div>
                         <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>avg score</div>
                       </div>
                     </div>
                   </div>
+
+                  {/* Followers/following mini-list */}
+                  {userModalFollowersList && (
+                    <div className="border border-gray-200 rounded-xl p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wide" style={{ fontFamily: '"Courier New", monospace' }}>{userModalFollowersList.type}</span>
+                        <button onClick={() => setUserModalFollowersList(null)} className="text-gray-400 hover:text-gray-600"><X size={14} /></button>
+                      </div>
+                      {userModalFollowersList.users.length === 0 ? (
+                        <p className="text-xs text-gray-400 italic" style={{ fontFamily: '"Courier New", monospace' }}>none yet</p>
+                      ) : (
+                        <div className="space-y-1 max-h-40 overflow-y-auto">
+                          {userModalFollowersList.users.map(fu => (
+                            <button key={fu.id} onClick={() => { setUserModalFollowersList(null); setSelectedUser(fu); }}
+                              className="w-full flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-gray-50 transition text-left">
+                              <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
+                                {(fu.username || '?')[0].toUpperCase()}
+                              </div>
+                              <span className="text-xs font-semibold" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(fu.id) || { color: '#374151' }) }}>@{fu.username || fu.email?.split('@')[0]}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Overlap badge */}
                   {dishOverlap > 0 && (
@@ -10396,17 +10617,44 @@ ${adminBugNote}`,
                       <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide" style={{ fontFamily: '"Courier New", monospace' }}>top dishes</h3>
                       {topDishes.length === 0 ? (
                         <p className="text-xs text-gray-400 italic" style={{ fontFamily: '"Courier New", monospace' }}>no ratings yet</p>
-                      ) : topDishes.map((r, idx) => (
-                        <div key={r.id} onClick={() => { const d = allDishes.find(d => d.id === r.dish_id); if (d) { handleCloseUser(); setSelectedDish(d); }}}
-                          className="flex items-center gap-2 bg-gray-50 rounded-xl p-2 cursor-pointer hover:bg-gray-100 transition">
-                          <span className="text-xs text-gray-400 w-5" style={{ fontFamily: '"Courier New", monospace' }}>#{idx + 1}</span>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-bold truncate" style={{ fontFamily: '"Courier New", monospace' }}>{r.dish?.name || r.dish_name}</div>
-                            <div className="text-[10px] text-gray-500 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{r.dish?.restaurant_name || r.restaurant_name}</div>
+                      ) : topDishes.map((r, idx) => {
+                        const dishObj = allDishes.find(d => d.id === r.dish_id);
+                        const score = r.srr || getScore(r);
+                        const t = r.taste_score != null ? parseFloat(r.taste_score).toFixed(1) : null;
+                        const pr = r.price_score != null ? parseFloat(r.price_score).toFixed(1) : null;
+                        const po = r.portion_score != null ? parseFloat(r.portion_score).toFixed(1) : null;
+                        const glowStyle = score != null ? (() => {
+                          if (score >= 96) return { color: '#9333ea', shadow: '0 0 8px 1px rgba(147,51,234,0.35)' };
+                          if (score >= 89) return { color: '#eab308', shadow: '0 0 8px 1px rgba(234,179,8,0.35)' };
+                          if (score >= 81) return { color: '#9ca3af', shadow: '0 0 8px 1px rgba(156,163,175,0.35)' };
+                          if (score >= 72) return { color: '#22c55e', shadow: '0 0 8px 1px rgba(34,197,94,0.35)' };
+                          return { color: '#3b82f6', shadow: '0 0 8px 1px rgba(59,130,246,0.35)' };
+                        })() : null;
+                        return (
+                          <div key={r.id} onClick={() => { if (dishObj) setSelectedDish(dishObj); }}
+                            className="flex items-center gap-3 py-2.5 px-2 rounded-lg cursor-pointer hover:bg-gray-100 transition border-b border-gray-100 last:border-0">
+                            <span className="text-xs text-gray-400 w-5 flex-shrink-0" style={{ fontFamily: '"Courier New", monospace' }}>#{idx + 1}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}>{r.dish?.name || r.dish_name}</div>
+                              <div className="text-[11px] text-gray-400 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{r.dish?.restaurant_name || r.restaurant_name}</div>
+                            </div>
+                            <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                              {(t || pr || po) && (
+                                <div className="flex items-center gap-2">
+                                  {t && <span className="text-[10px] font-bold" style={{ color: '#f97316', fontFamily: '"Courier New", monospace' }}>{t}</span>}
+                                  {pr && <span className="text-[10px] font-bold" style={{ color: '#22c55e', fontFamily: '"Courier New", monospace' }}>{pr}</span>}
+                                  {po && <span className="text-[10px] font-bold" style={{ color: '#3b82f6', fontFamily: '"Courier New", monospace' }}>{po}</span>}
+                                </div>
+                              )}
+                              {score != null && glowStyle && (
+                                <div style={{ fontFamily: '"Courier New", monospace', fontWeight: 'bold', fontSize: '1.05rem', color: glowStyle.color, textShadow: glowStyle.shadow }}>
+                                  {score.toFixed(2)}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                          <div className={`text-sm font-bold ${getSRRColor(r.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{r.srr?.toFixed(2)}</div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
 
