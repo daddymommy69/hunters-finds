@@ -492,6 +492,8 @@ const HuntersFindsApp = () => {
   const [tagsLoading, setTagsLoading] = useState(false);
   const [selectedTagFilters, setSelectedTagFilters] = useState([]);
   const [expandedTagCategories, setExpandedTagCategories] = useState([]); // Track which categories are expanded
+  const [showOtherFilters, setShowOtherFilters] = useState(false);
+  const [activeOtherCategory, setActiveOtherCategory] = useState(null);
   const [isAddTagsModalOpen, setIsAddTagsModalOpen] = useState(false);
   const [tagModalItem, setTagModalItem] = useState(null); // {id, type, name}
   
@@ -1313,16 +1315,27 @@ const HuntersFindsApp = () => {
   // EDIT RATING HANDLER
   const handleEditRating = (rating) => {
     console.log('Editing rating:', rating);
+    const cat = rating.dish?.cuisine_type || rating.cuisine_type || '';
+    const sub = rating.dish?.subcategory || rating.subcategory || '';
     setEditingRating(rating);
-    setEditDishName(rating.dish?.name || rating.dish_name || '');
-    setEditRestaurant(rating.restaurant_name || '');
-    setEditTaste(rating.taste_score || 50);
-    setEditPortion(rating.portion_score || 50);
-    setEditPriceValue(rating.price_value_score || 50);
-    setEditPrice(rating.price?.toString() || '');
-    setEditComment(rating.comment || '');
-    setShowEditModal(true);
+    setRestaurant(rating.restaurant_name || '');
+    setRestaurantLocked(true);
+    setDishName(rating.dish?.name || rating.dish_name || '');
+    setDishCategory(cat);
+    setCategoryInput(cat);
+    setDishSubcategory(sub);
+    setSubcategoryInput(sub);
+    setCategoryLocked(!!(cat));
+    setHoveredCategory(cat || null);
+    setPrice(rating.price?.toString() || '');
+    setTasteScore(rating.taste_score || 50);
+    setPortionScore(rating.portion_score || 50);
+    setPriceScore(rating.price_value_score || rating.price_score || 50);
+    setComment(rating.comment || '');
+    setSelectedGooglePlace(null);
+    setIsSubmissionModalOpen(true);
   };
+
   
   // SAVE EDITED RATING
   const saveEditedRating = async () => {
@@ -1331,91 +1344,69 @@ const HuntersFindsApp = () => {
     try {
       console.log('Saving edited rating (complex mode)...');
       console.log('Original rating:', editingRating);
-      console.log('New values:', {
-        dishName: editDishName,
-        restaurant: editRestaurant,
-        taste: editTaste,
-        portion: editPortion,
-        priceValue: editPriceValue,
-        price: editPrice,
-        comment: editComment
-      });
-      
       // Step 1: Check if dish name or restaurant changed
-      const dishNameChanged = editDishName !== (editingRating.dish?.name || editingRating.dish_name);
-      const restaurantChanged = editRestaurant !== editingRating.restaurantName;
-      const priceChanged = parseFloat(editPrice) !== editingRating.price;
+      const dishNameChanged = dishName !== (editingRating.dish?.name || editingRating.dish_name);
+      const restaurantChanged = restaurant !== editingRating.restaurant_name;
+      const priceChanged = parseFloat(price) !== editingRating.price;
       
       let dishId = editingRating.dish_id || editingRating.id;
       
-      // Step 2: If dish name, restaurant, or price changed, update or create dish
+      // Step 2: If dish name, restaurant, or price changed, update dish
       if (dishNameChanged || restaurantChanged || priceChanged) {
-        console.log('Dish/Restaurant/Price changed, updating dishes table...');
-        
-        // Find the restaurant ID - use raw DB restaurants, not computed allRestaurants
-        // This ensures we can find restaurants even if they have no active ratings
-        const targetRestaurant = restaurants.find(r => 
-          r.name.toLowerCase() === editRestaurant.toLowerCase()
+        const targetRestaurant = restaurants.find(r =>
+          r.name.toLowerCase() === restaurant.toLowerCase()
         );
         const restaurantId = targetRestaurant?.id;
+        if (!restaurantId) throw new Error(`Restaurant "${restaurant}" not found in database.`);
         
-        if (!restaurantId) {
-          console.error('Restaurant not found in DB. Available:', restaurants.map(r => r.name));
-          console.error('Looking for:', editRestaurant);
-          throw new Error(`Restaurant "${editRestaurant}" not found in database.`);
-        }
-        
-        // Update the dish
         const { error: dishError } = await supabase
           .from('dishes')
           .update({
-            name: editDishName,
+            name: dishName,
             restaurant_id: restaurantId,
-            price: parseFloat(editPrice) || null
+            price: parseFloat(price) || null,
+            cuisine_type: dishCategory || null,
+            subcategory: dishSubcategory || null
           })
           .eq('id', dishId);
-        
-        if (dishError) {
-          console.error('Error updating dish:', dishError);
-          throw dishError;
-        }
-        
-        console.log('Dish updated successfully!');
+        if (dishError) throw dishError;
       }
       
-      // Step 3: Update the rating (scores and comment only)
+      // Step 3: Update the rating
       const { error: ratingError } = await supabase
         .from('ratings')
         .update({
-          taste_score: editTaste,
-          portion_score: editPortion,
-          price_score: editPriceValue,
-          comment: editComment,
+          taste_score: tasteScore,
+          portion_score: portionScore,
+          price_score: priceScore,
+          overall_score: parseFloat(((tasteScore + portionScore + priceScore) / 3).toFixed(2)),
+          comment: comment || null,
           edited_at: new Date().toISOString(),
           edit_count: (editingRating.edit_count || 0) + 1
         })
         .eq('id', editingRating.id);
-      
-      if (ratingError) {
-        console.error('Error updating rating:', ratingError);
-        throw ratingError;
-      }
+      if (ratingError) throw ratingError;
       
       console.log('Rating updated successfully!');
       
-      // Close modal
-      setShowEditModal(false);
+      // Close modal and clear edit state
+      setIsSubmissionModalOpen(false);
+      setIsSubmissionClosing(false);
       setEditingRating(null);
+      resetRatingModal();
       
-      // Show success
       setErrorModal({
         show: true,
         title: 'Rating Updated',
         message: 'Your changes have been saved!'
       });
       
-      // Immediately update allRatings state
-      setAllRatings(prev => prev.map(r => r.id === editingRating?.id ? { ...r, taste_score: editTaste, portion_score: editPortion, price_score: editPriceValue, overall_score: (editTaste + editPortion + editPriceValue) / 3, comment: editComment } : r));
+      setAllRatings(prev => prev.map(r => r.id === editingRating?.id ? {
+        ...r,
+        taste_score: tasteScore, portion_score: portionScore, price_score: priceScore,
+        overall_score: parseFloat(((tasteScore + portionScore + priceScore) / 3).toFixed(2)),
+        comment: comment || null
+      } : r));
       // Refetch all data to sync
       if (refetchData) refetchData();
       
@@ -4824,6 +4815,29 @@ const HuntersFindsApp = () => {
     return { rank, total: allDishesWithNew.length, topRanked, aboveItem, belowItem };
   };
 
+
+  const resetRatingModal = () => {
+    setRestaurant('');
+    setDishName('');
+    setDishCategory('');
+    setCategoryInput('');
+    setDishSubcategory('');
+    setSubcategoryInput('');
+    setHoveredCategory(null);
+    setAddingNewSubcategory(false);
+    setNewSubcategoryText('');
+    setCategoryLocked(false);
+    setCategoryShowAll(false);
+    setCategoryConfirmNew(null);
+    setShowCategorySuggestions(false);
+    setPrice('');
+    setTasteScore(50);
+    setPortionScore(50);
+    setPriceScore(50);
+    setComment('');
+    setRestaurantLocked(false);
+    setSelectedGooglePlace(null);
+  };
   const handleSubmit = async () => {
     // Check if user is logged in
     if (!user) {
@@ -5167,11 +5181,11 @@ const HuntersFindsApp = () => {
     setTimeout(() => {
       setIsSubmissionModalOpen(false);
       setIsSubmissionClosing(false);
-      // Reset Google Places selection
       setSelectedGooglePlace(null);
       setShowRestaurantSearch(false);
       setRestaurantSearchResults([]);
-    }, 300); // Match animation duration
+      setEditingRating(null); // clear edit mode
+    }, 300);
   };
 
   const handleCloseDish = () => {
@@ -7082,265 +7096,172 @@ ${adminBugNote}`,
             {/* Filter Panel */}
             {showFilters && (rankingView === 'dishes' || rankingView === 'restaurants') && (
               <div className="bg-gray-50 border-b px-4 py-3">
-                <div className="max-w-4xl mx-auto space-y-3">
-                  {/* Cuisine Filter */}
-                  <div>
-                    <label className="block text-xs font-semibold mb-1.5 text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>
-                      cuisine
-                    </label>
-                    <div className="flex gap-2 overflow-x-auto pb-1" style={{ WebkitOverflowScrolling: "touch" }}>
+                <div className="max-w-4xl mx-auto">
+                  {/* Row 1: Cuisine + Min Rating + Other pills */}
+                  <div className="flex flex-wrap gap-2 items-start">
+                    {/* Cuisine dropdown */}
+                    <div className="relative">
                       <button
-                        onClick={() => setSelectedCuisine('all')}
-                        className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
-                          selectedCuisine === 'all'
-                            ? 'bg-[#33a29b] text-white'
-                            : 'bg-white text-gray-700 hover:bg-gray-100'
-                        }`}
+                        onClick={() => { setShowOtherFilters(false); setActiveOtherCategory(prev => prev === 'cuisine' ? null : 'cuisine'); }}
+                        className={`px-3 py-1.5 rounded-full text-xs font-semibold transition flex items-center gap-1 ${selectedCuisine !== 'all' ? 'bg-[#33a29b] text-white' : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'}`}
                         style={{ fontFamily: '"Courier New", monospace' }}
                       >
-                        all
+                        cuisine {selectedCuisine !== 'all' && `(${selectedCuisine})`}
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                       </button>
-                      {availableCuisines.map(cuisine => (
-                        <button
-                          key={cuisine}
-                          onClick={() => { setSelectedCuisine(cuisine); setSelectedSubcategory('all'); }}
-                          className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
-                            selectedCuisine === cuisine
-                              ? 'bg-[#33a29b] text-white'
-                              : 'bg-white text-gray-700 hover:bg-gray-100'
-                          }`}
-                          style={{ fontFamily: '"Courier New", monospace' }}
-                        >
-                          {cuisine}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Subcategory Filter - shown when a cuisine is selected */}
-                  {selectedCuisine !== 'all' && rankingView === 'dishes' && (() => {
-                    const subs = [...new Set(allDishes.filter(d => (d.cuisine || '').toLowerCase() === selectedCuisine.toLowerCase() && d.subcategory).map(d => d.subcategory.toLowerCase()))].sort();
-                    if (subs.length === 0) return null;
-                    return (
-                      <div>
-                        <label className="block text-xs font-semibold mb-1.5 text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>
-                          subcategory
-                        </label>
-                        <div className="flex flex-wrap gap-2">
-                          <button onClick={() => setSelectedSubcategory('all')} className={`px-3 py-1 rounded-full text-xs font-semibold transition ${selectedSubcategory === 'all' ? 'bg-gray-700 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'}`} style={{ fontFamily: '"Courier New", monospace' }}>all</button>
-                          {subs.map(sub => (
-                            <button key={sub} onClick={() => setSelectedSubcategory(sub)} className={`px-3 py-1 rounded-full text-xs font-semibold transition ${selectedSubcategory === sub ? 'bg-gray-700 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'}`} style={{ fontFamily: '"Courier New", monospace' }}>{sub}</button>
+                      {activeOtherCategory === 'cuisine' && (
+                        <div className="absolute top-full left-0 mt-1 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-2 min-w-[160px]">
+                          <button onClick={() => { setSelectedCuisine('all'); setSelectedSubcategory('all'); }} className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-semibold transition mb-0.5 ${selectedCuisine === 'all' ? 'bg-[#33a29b] text-white' : 'hover:bg-gray-100 text-gray-700'}`} style={{ fontFamily: '"Courier New", monospace' }}>all</button>
+                          {availableCuisines.map(cuisine => (
+                            <button key={cuisine} onClick={() => { setSelectedCuisine(cuisine); setSelectedSubcategory('all'); }} className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-semibold transition mb-0.5 ${selectedCuisine === cuisine ? 'bg-[#33a29b] text-white' : 'hover:bg-gray-100 text-gray-700'}`} style={{ fontFamily: '"Courier New", monospace' }}>{cuisine}</button>
                           ))}
                         </div>
-                      </div>
-                    );
-                  })()}
-                  
-                  {/* Price Range Filter - only for dishes */}
-                  {rankingView === 'dishes' && (
-                    <div>
-                      <label className="block text-xs font-semibold mb-1.5 text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>
-                        price range
-                      </label>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => setSelectedPriceRange('all')}
-                          className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
-                            selectedPriceRange === 'all'
-                              ? 'bg-[#33a29b] text-white'
-                              : 'bg-white text-gray-700 hover:bg-gray-100'
-                          }`}
-                          style={{ fontFamily: '"Courier New", monospace' }}
-                        >
-                          all
-                        </button>
-                        <button
-                          onClick={() => setSelectedPriceRange('low')}
-                          className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
-                            selectedPriceRange === 'low'
-                              ? 'bg-[#33a29b] text-white'
-                              : 'bg-white text-gray-700 hover:bg-gray-100'
-                          }`}
-                          style={{ fontFamily: '"Courier New", monospace' }}
-                        >
-                          $ (under $10)
-                        </button>
-                        <button
-                          onClick={() => setSelectedPriceRange('medium')}
-                          className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
-                            selectedPriceRange === 'medium'
-                              ? 'bg-[#33a29b] text-white'
-                              : 'bg-white text-gray-700 hover:bg-gray-100'
-                          }`}
-                          style={{ fontFamily: '"Courier New", monospace' }}
-                        >
-                          $$ ($10-$20)
-                        </button>
-                        <button
-                          onClick={() => setSelectedPriceRange('high')}
-                          className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
-                            selectedPriceRange === 'high'
-                              ? 'bg-[#33a29b] text-white'
-                              : 'bg-white text-gray-700 hover:bg-gray-100'
-                          }`}
-                          style={{ fontFamily: '"Courier New", monospace' }}
-                        >
-                          $$$ ($20+)
-                        </button>
-                      </div>
+                      )}
                     </div>
-                  )}
-                  
-                  {/* Rating Filter */}
-                  <div>
-                    <label className="block text-xs font-semibold mb-1.5 text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>
-                      minimum rating
-                    </label>
-                    <div className="flex gap-2">
+
+                    {/* Subcategory dropdown — only when cuisine selected */}
+                    {selectedCuisine !== 'all' && rankingView === 'dishes' && (() => {
+                      const subs = [...new Set(allDishes.filter(d => (d.cuisine || '').toLowerCase() === selectedCuisine.toLowerCase() && d.subcategory).map(d => d.subcategory.toLowerCase()))].sort();
+                      if (subs.length === 0) return null;
+                      return (
+                        <div className="relative">
+                          <button
+                            onClick={() => setActiveOtherCategory(prev => prev === 'subcategory' ? null : 'subcategory')}
+                            className={`px-3 py-1.5 rounded-full text-xs font-semibold transition flex items-center gap-1 ${selectedSubcategory !== 'all' ? 'bg-gray-700 text-white' : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'}`}
+                            style={{ fontFamily: '"Courier New", monospace' }}
+                          >
+                            sub {selectedSubcategory !== 'all' && `(${selectedSubcategory})`}
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                          </button>
+                          {activeOtherCategory === 'subcategory' && (
+                            <div className="absolute top-full left-0 mt-1 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-2 min-w-[140px]">
+                              <button onClick={() => setSelectedSubcategory('all')} className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-semibold transition mb-0.5 ${selectedSubcategory === 'all' ? 'bg-gray-700 text-white' : 'hover:bg-gray-100 text-gray-700'}`} style={{ fontFamily: '"Courier New", monospace' }}>all</button>
+                              {subs.map(sub => (
+                                <button key={sub} onClick={() => setSelectedSubcategory(sub)} className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-semibold transition mb-0.5 ${selectedSubcategory === sub ? 'bg-gray-700 text-white' : 'hover:bg-gray-100 text-gray-700'}`} style={{ fontFamily: '"Courier New", monospace' }}>{sub}</button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Min rating dropdown */}
+                    {rankingView === 'dishes' && (
+                      <div className="relative">
+                        <button
+                          onClick={() => { setShowOtherFilters(false); setActiveOtherCategory(prev => prev === 'rating' ? null : 'rating'); }}
+                          className={`px-3 py-1.5 rounded-full text-xs font-semibold transition flex items-center gap-1 ${selectedRating !== 'all' ? 'bg-[#33a29b] text-white' : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'}`}
+                          style={{ fontFamily: '"Courier New", monospace' }}
+                        >
+                          min score {selectedRating !== 'all' && `(${selectedRating}+)`}
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                        </button>
+                        {activeOtherCategory === 'rating' && (
+                          <div className="absolute top-full left-0 mt-1 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-2 min-w-[120px]">
+                            {[['all','all'], ['70','70+'], ['80','80+'], ['90','90+']].map(([val, label]) => (
+                              <button key={val} onClick={() => setSelectedRating(val)} className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-semibold transition mb-0.5 ${selectedRating === val ? 'bg-[#33a29b] text-white' : 'hover:bg-gray-100 text-gray-700'}`} style={{ fontFamily: '"Courier New", monospace' }}>{label}</button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Price range dropdown — dishes only */}
+                    {rankingView === 'dishes' && (
+                      <div className="relative">
+                        <button
+                          onClick={() => { setShowOtherFilters(false); setActiveOtherCategory(prev => prev === 'price' ? null : 'price'); }}
+                          className={`px-3 py-1.5 rounded-full text-xs font-semibold transition flex items-center gap-1 ${selectedPriceRange !== 'all' ? 'bg-[#33a29b] text-white' : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'}`}
+                          style={{ fontFamily: '"Courier New", monospace' }}
+                        >
+                          price {selectedPriceRange !== 'all' && `(${selectedPriceRange})`}
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                        </button>
+                        {activeOtherCategory === 'price' && (
+                          <div className="absolute top-full left-0 mt-1 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-2 min-w-[140px]">
+                            {[['all','all'],['low','$ under $10'],['medium','$$ $10-$20'],['high','$$$ $20+']].map(([val, label]) => (
+                              <button key={val} onClick={() => setSelectedPriceRange(val)} className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-semibold transition mb-0.5 ${selectedPriceRange === val ? 'bg-[#33a29b] text-white' : 'hover:bg-gray-100 text-gray-700'}`} style={{ fontFamily: '"Courier New", monospace' }}>{label}</button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Other (tag categories) pill */}
+                    <div className="relative">
                       <button
-                        onClick={() => setSelectedRating('all')}
-                        className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
-                          selectedRating === 'all'
-                            ? 'bg-[#33a29b] text-white'
-                            : 'bg-white text-gray-700 hover:bg-gray-100'
-                        }`}
+                        onClick={() => { setActiveOtherCategory(null); setShowOtherFilters(v => !v); }}
+                        className={`px-3 py-1.5 rounded-full text-xs font-semibold transition flex items-center gap-1 ${selectedTagFilters.length > 0 ? 'bg-[#33a29b] text-white' : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'}`}
                         style={{ fontFamily: '"Courier New", monospace' }}
                       >
-                        all
+                        other {selectedTagFilters.length > 0 && `(${selectedTagFilters.length})`}
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                       </button>
-                      <button
-                        onClick={() => setSelectedRating('90')}
-                        className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
-                          selectedRating === '90'
-                            ? 'bg-[#33a29b] text-white'
-                            : 'bg-white text-gray-700 hover:bg-gray-100'
-                        }`}
-                        style={{ fontFamily: '"Courier New", monospace' }}
-                      >
-                        90+
-                      </button>
-                      <button
-                        onClick={() => setSelectedRating('80')}
-                        className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
-                          selectedRating === '80'
-                            ? 'bg-[#33a29b] text-white'
-                            : 'bg-white text-gray-700 hover:bg-gray-100'
-                        }`}
-                        style={{ fontFamily: '"Courier New", monospace' }}
-                      >
-                        80+
-                      </button>
-                      <button
-                        onClick={() => setSelectedRating('70')}
-                        className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
-                          selectedRating === '70'
-                            ? 'bg-[#33a29b] text-white'
-                            : 'bg-white text-gray-700 hover:bg-gray-100'
-                        }`}
-                        style={{ fontFamily: '"Courier New", monospace' }}
-                      >
-                        70+
-                      </button>
-                    </div>
-                  </div>
-                  
-                  {/* Clear Filters Button */}
-                  {(selectedCuisine !== 'all' || selectedPriceRange !== 'all' || selectedRating !== 'all' || selectedTagFilters.length > 0) && (
-                    <button
-                      onClick={() => {
-                        setSelectedCuisine('all');
-                        setSelectedPriceRange('all');
-                        setSelectedRating('all');
-                        setSelectedTagFilters([]);
-                      }}
-                      className="text-xs text-gray-600 hover:text-[#33a29b] font-semibold transition"
-                      style={{ fontFamily: '"Courier New", monospace' }}
-                    >
-                      clear all filters
-                    </button>
-                  )}
-                  
-                  {/* Tag Categories - Collapsible */}
-                  <div className="mt-3">
-                    <div className="flex flex-wrap gap-2">
-                      {['dietary', 'experience', 'meal_time', 'practical', 'special'].map(category => {
-                        const isExpanded = expandedTagCategories.includes(category);
-                        const categoryTags = allTags.filter(t => t.category === category);
-                        const selectedCount = categoryTags.filter(t => selectedTagFilters.includes(t.id)).length;
-                        
-                        const categoryLabels = {
-                          dietary: '🥗 Dietary',
-                          experience: '✨ Experience',
-                          meal_time: '🍽️ Meal Time',
-                          practical: '🔧 Practical',
-                          special: '⭐ Special'
-                        };
-                        
-                        return (
-                          <div key={category} className="w-full">
-                            <button
-                              onClick={() => {
-                                setExpandedTagCategories(prev =>
-                                  prev.includes(category)
-                                    ? prev.filter(c => c !== category)
-                                    : [...prev, category]
-                                );
-                              }}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-                                selectedCount > 0
-                                  ? 'bg-[#33a29b] text-white'
-                                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                              }`}
-                              style={{ fontFamily: '"Courier New", monospace' }}
-                            >
-                              {categoryLabels[category]} {selectedCount > 0 && `(${selectedCount})`}
-                            </button>
-                            
-                            {isExpanded && (
-                              <div className="mt-2 ml-4 flex flex-wrap gap-1.5">
-                                {categoryTags.map(tag => (
+                      {showOtherFilters && (
+                        <div className="absolute top-full left-0 mt-1 z-30 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden flex" style={{ minWidth: '280px' }}>
+                          {/* Left: category list */}
+                          <div className="border-r border-gray-100 py-1" style={{ minWidth: '130px' }}>
+                            {[
+                              { key: 'dietary', label: '🥗 Dietary' },
+                              { key: 'experience', label: '✨ Experience' },
+                              { key: 'meal_time', label: '🍽️ Meal Time' },
+                              { key: 'practical', label: '🔧 Practical' },
+                              { key: 'special', label: '⭐ Special' },
+                            ].map(({ key, label }) => {
+                              const catTags = allTags.filter(t => t.category === key);
+                              const selCount = catTags.filter(t => selectedTagFilters.includes(t.id)).length;
+                              return (
+                                <button
+                                  key={key}
+                                  onClick={() => setExpandedTagCategories(prev => prev.includes(key) ? prev.filter(c => c !== key) : [...prev, key])}
+                                  className={`w-full text-left px-3 py-2 text-xs font-semibold transition flex justify-between items-center ${expandedTagCategories.includes(key) ? 'bg-[#33a29b]/10 text-[#33a29b]' : 'hover:bg-gray-50 text-gray-700'}`}
+                                  style={{ fontFamily: '"Courier New", monospace' }}
+                                >
+                                  <span>{label}</span>
+                                  {selCount > 0 && <span className="bg-[#33a29b] text-white text-[9px] px-1.5 py-0.5 rounded-full">{selCount}</span>}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {/* Right: tag options for selected category */}
+                          {expandedTagCategories.length > 0 && (() => {
+                            const activeCat = expandedTagCategories[expandedTagCategories.length - 1];
+                            const catTags = allTags.filter(t => t.category === activeCat);
+                            return (
+                              <div className="py-1 overflow-y-auto" style={{ maxHeight: '200px', minWidth: '150px' }}>
+                                {catTags.map(tag => (
                                   <button
                                     key={tag.id}
-                                    onClick={() => {
-                                      setSelectedTagFilters(prev =>
-                                        prev.includes(tag.id)
-                                          ? prev.filter(id => id !== tag.id)
-                                          : [...prev, tag.id]
-                                      );
-                                    }}
-                                    className={`px-2 py-1 rounded text-xs transition ${
-                                      selectedTagFilters.includes(tag.id)
-                                        ? 'bg-[#33a29b] text-white'
-                                        : 'bg-white border border-gray-200 text-gray-700 hover:border-[#33a29b]'
-                                    }`}
+                                    onClick={() => setSelectedTagFilters(prev => prev.includes(tag.id) ? prev.filter(id => id !== tag.id) : [...prev, tag.id])}
+                                    className={`w-full text-left px-3 py-1.5 text-xs transition flex items-center gap-2 ${selectedTagFilters.includes(tag.id) ? 'bg-[#33a29b]/10 text-[#33a29b] font-semibold' : 'hover:bg-gray-50 text-gray-700'}`}
                                     style={{ fontFamily: '"Courier New", monospace' }}
                                   >
+                                    {selectedTagFilters.includes(tag.id) && <span className="text-[#33a29b]">✓</span>}
                                     {tag.name}
                                   </button>
                                 ))}
                               </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                            );
+                          })()}
+                        </div>
+                      )}
                     </div>
-                    
-                    {selectedTagFilters.length > 0 && (
+
+                    {/* Clear all */}
+                    {(selectedCuisine !== 'all' || selectedPriceRange !== 'all' || selectedRating !== 'all' || selectedTagFilters.length > 0) && (
                       <button
-                        onClick={() => {
-                          setSelectedTagFilters([]);
-                          setExpandedTagCategories([]);
-                        }}
-                        className="mt-2 text-xs text-gray-600 hover:text-[#33a29b] font-semibold transition"
+                        onClick={() => { setSelectedCuisine('all'); setSelectedPriceRange('all'); setSelectedRating('all'); setSelectedTagFilters([]); setExpandedTagCategories([]); }}
+                        className="px-3 py-1.5 text-xs text-gray-500 hover:text-red-500 font-semibold transition"
                         style={{ fontFamily: '"Courier New", monospace' }}
                       >
-                        clear all tags
+                        clear all
                       </button>
                     )}
                   </div>
                 </div>
               </div>
             )}
+
 
             <div className="max-w-4xl mx-auto p-4">
               {rankingView === 'dishes' && (
@@ -9346,7 +9267,7 @@ ${adminBugNote}`,
               return (
                 <div
                   key={tab.id}
-                  onClick={() => setIsSubmissionModalOpen(true)}
+                  onClick={() => { resetRatingModal(); setIsSubmissionModalOpen(true); }}
                   className="flex flex-col items-center justify-center relative flex-1 py-2 cursor-pointer group"
                 >
                   <div className="relative">
@@ -9394,8 +9315,8 @@ ${adminBugNote}`,
               <div onClick={handleCloseSubmission} className={`fixed inset-0 z-[46] bg-black/40 ${isSubmissionClosing ? 'animate-fade-out' : 'animate-fade-in'}`} />
               {/* Mobile: bottom sheet. Desktop: centered floating */}
               <div className={`fixed z-[47] bg-white shadow-xl flex flex-col ${isSubmissionClosing ? 'animate-slide-down-fade' : 'animate-slide-up-fade'}
-                md:top-[200px] md:left-1/2 md:-translate-x-1/2 md:rounded-2xl md:w-[min(92vw,600px)]
-                bottom-0 left-0 right-0 rounded-t-2xl w-full`}
+                md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl md:w-[min(92vw,600px)]
+                bottom-0 left-1/2 -translate-x-1/2 rounded-t-2xl w-[min(92vw,600px)]`}
                 style={{
                   maxHeight: 'calc(100vh - 80px)',
                   overflowY: 'auto',
@@ -9604,29 +9525,34 @@ ${adminBugNote}`,
                           </div>
                         )}
                       </div>
-                      {/* Show selected value */}
-                      {categoryLocked && dishCategory && (
-                        <span className="ml-1 text-[10px] text-[#33a29b] font-semibold" style={{ fontFamily: '"Courier New", monospace' }}>
-                          {dishCategory}{dishSubcategory ? ` • ${dishSubcategory}` : ''}
-                        </span>
-                      )}
+                
                     </div>
 
                     <div className="relative">
                       <input
                         type="text"
-                        value={categoryInput}
+                        value={categoryLocked ? (dishSubcategory ? `${dishCategory} • ${dishSubcategory}` : dishCategory) : categoryInput}
                         onChange={(e) => {
+                          if (categoryLocked) return; // handled via backspace
                           const val = e.target.value.toLowerCase();
                           setCategoryInput(val);
-                          setCategoryLocked(false);
                           setDishCategory(val);
                           setShowCategorySuggestions(true);
                           setCategoryShowAll(false);
                           setCategoryConfirmNew(null);
                           setHoveredCategory(null);
                         }}
-                        onFocus={() => { setShowCategorySuggestions(true); setCategoryShowAll(false); setCategoryConfirmNew(null); }}
+                        onFocus={() => {
+                          if (categoryLocked) {
+                            // Re-open picker with current category pre-highlighted
+                            setHoveredCategory(dishCategory);
+                            setShowCategorySuggestions(true);
+                          } else {
+                            setShowCategorySuggestions(true);
+                            setCategoryShowAll(false);
+                            setCategoryConfirmNew(null);
+                          }
+                        }}
                         onBlur={() => setTimeout(() => {
                           if (addingNewSubcategory) return;
                           setShowCategorySuggestions(false);
@@ -9637,21 +9563,36 @@ ${adminBugNote}`,
                           }
                         }, 300)}
                         placeholder="start typing or pick below..."
-                        className={`w-full px-2 py-1.5 text-xs border-2 rounded-lg focus:outline-none ${categoryLocked ? 'border-[#33a29b] bg-[#33a29b]/5' : 'border-gray-200 focus:border-[#33a29b]'}`}
+                        className={`w-full px-2 py-1.5 text-xs border-2 border-gray-200 focus:border-[#33a29b] rounded-lg focus:outline-none ${categoryLocked ? 'text-[#33a29b] font-semibold' : ''}`}
                         style={{ fontFamily: '"Courier New", monospace' }}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter' && categoryInput.trim()) {
+                          if (e.key === 'Enter' && !categoryLocked && categoryInput.trim()) {
                             e.preventDefault();
                             setCategoryLocked(true);
                             setDishCategory(categoryInput.trim());
-                            setShowCategorySuggestions(false);
+                            setShowCategorySuggestions(true); // show subcategory panel
+                            setHoveredCategory(categoryInput.trim());
                           }
                           if ((e.key === 'Backspace' || e.key === 'Delete') && categoryLocked) {
-                            setCategoryLocked(false);
-                            setDishCategory('');
-                            setDishSubcategory('');
-                            setSubcategoryInput('');
-                            setShowCategorySuggestions(true);
+                            e.preventDefault();
+                            if (dishSubcategory) {
+                              // First backspace: clear subcategory only
+                              setDishSubcategory('');
+                              setSubcategoryInput('');
+                            } else {
+                              // Second backspace: unlock category
+                              setCategoryLocked(false);
+                              setDishCategory('');
+                              setCategoryInput('');
+                              setDishSubcategory('');
+                              setSubcategoryInput('');
+                              setShowCategorySuggestions(true);
+                            }
+                          }
+                          if (e.key === 'Tab' && categoryInput.trim() && !categoryLocked) {
+                            setCategoryLocked(true);
+                            setDishCategory(categoryInput.trim());
+                            setHoveredCategory(categoryInput.trim());
                           }
                         }}
                       />
@@ -9666,7 +9607,7 @@ ${adminBugNote}`,
                     </div>
 
                     {/* Two-panel dropdown: categories left, subcategories right */}
-                    {showCategorySuggestions && !categoryLocked && (
+                    {showCategorySuggestions && (
                       <div className="absolute z-20 mt-1 flex bg-white border-2 border-gray-200 rounded-lg shadow-lg" style={{ minWidth: '100%', left: 0 }}
                         onMouseLeave={() => setHoveredCategory(null)}>
                         {/* Left panel: categories */}
@@ -10030,7 +9971,7 @@ ${adminBugNote}`,
                 </div>
 
                 <button 
-                  onClick={handleSubmit} 
+                  onClick={editingRating ? saveEditedRating : handleSubmit} 
                   disabled={!restaurant || !dishName || !dishCategory || !price} 
                   className="w-full py-3 rounded-lg font-bold text-base transition-all shadow-lg relative overflow-hidden
                     disabled:bg-gray-400 disabled:text-gray-600 disabled:cursor-not-allowed disabled:shadow-none
@@ -10070,8 +10011,14 @@ ${adminBugNote}`,
         const washBg = scoreVal >= 96 ? 'rgba(147,51,234,0.07)' : scoreVal >= 89 ? 'rgba(234,179,8,0.07)' : scoreVal >= 81 ? 'rgba(156,163,175,0.09)' : scoreVal >= 72 ? 'rgba(34,197,94,0.07)' : 'rgba(59,130,246,0.07)';
         const othersWhoRated = allRatings.filter(r => r.dish_id === selectedDish.id && !r.is_deleted).map(r => {
           const u = allUsers.find(u => u.id === r.user_id);
-          const srr = r.overall_score != null ? parseFloat(parseFloat(r.overall_score).toFixed(1)) : r.taste_score != null ? parseFloat(((r.taste_score + r.portion_score + r.price_score) / 3).toFixed(1)) : null;
-          return { ...r, username: u?.username || r.username || 'user', srr };
+          // Dynamically recalculate price score based on current dish avg price
+          const ratingDish = allDishes.find(d => d.id === r.dish_id);
+          const dynamicPriceScore = ratingDish?.price != null
+            ? calculatePriceScore(ratingDish.price, selectedDish.name, selectedDish.cuisine, allDishes).score
+            : r.price_score;
+          const recalcSrr = r.taste_score != null ? parseFloat(((r.taste_score + (dynamicPriceScore ?? r.price_score) + r.portion_score) / 3).toFixed(1)) : null;
+          const srr = recalcSrr;
+          return { ...r, price_score: dynamicPriceScore ?? r.price_score, username: u?.username || r.username || 'user', srr };
         });
         const communityAvg = othersWhoRated.length > 0 ? othersWhoRated.reduce((sum, r) => sum + (r.srr || 0), 0) / othersWhoRated.length : null;
         // Min/max for taste and portion
