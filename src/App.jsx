@@ -841,6 +841,7 @@ const HuntersFindsApp = () => {
   const [includeNearby, setIncludeNearby] = useState(false);
   const [showMapFindNearby, setShowMapFindNearby] = useState(true);
   const [dishReturnToUser, setDishReturnToUser] = useState(null); // { type: 'selected'|'explore', user: object }
+  const [mapReturnRestaurant, setMapReturnRestaurant] = useState(null); // restaurant to reopen popup after closing dish
   
   const [isSubmissionModalOpen, setIsSubmissionModalOpen] = useState(false);
   const [exploreView, setExploreView] = useState(() => {
@@ -4610,7 +4611,7 @@ const HuntersFindsApp = () => {
                     const rScore = r.overall_score ? parseFloat(r.overall_score).toFixed(1) : null;
                     return '<div style="display:flex;align-items:center;gap:6px;padding:1px 0;"><span style="font-size:9px;color:' + nameColor + ';font-weight:bold;">@' + rName + '</span>' + (rScore ? '<span style="font-size:9px;font-weight:bold;color:#374151;">' + rScore + '</span>' : '') + '</div>';
                   }).join('');
-                  return '<div style="padding: 4px 0; border-bottom: 1px solid #f0f0f0;"><div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="event.stopPropagation();window.openDishFromMap(\'' + dish.id + '\')">' +
+                  return '<div style="padding: 4px 0; border-bottom: 1px solid #f0f0f0;"><div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="event.stopPropagation();window.openDishFromMap(\'' + dish.id + '\',\'' + restaurant.id + '\')">' +
                     '<span style="font-size:11px;font-weight:bold;">' + badge + dish.name + '</span>' +
                     '<span style="font-weight:bold;color:' + scoreColor + ';font-size:12px;">' + scoreStr + '</span></div>' +
                     (ratersHtml ? '<div style="margin-top:2px;">' + ratersHtml + '</div>' : '') +
@@ -4679,10 +4680,11 @@ const HuntersFindsApp = () => {
         setTimeout(() => { restaurantModalJustOpenedRef.current = false; }, 600);
       }
     };
-    window.openDishFromMap = (dishId) => {
+    window.openDishFromMap = (dishId, restaurantId) => {
       const dish = allDishes.find(d => d.id === dishId);
       if (dish) {
         if (window._mapInstance) window._mapInstance.closePopup();
+        if (restaurantId) setMapReturnRestaurant(restaurantId);
         setSelectedDish(dish);
       }
     };
@@ -5202,6 +5204,13 @@ const HuntersFindsApp = () => {
         if (dishReturnToUser.type === 'selected') setSelectedUser(dishReturnToUser.user);
         else setSelectedExploreUser(dishReturnToUser.user);
         setDishReturnToUser(null);
+      }
+      if (mapReturnRestaurant) {
+        const restId = mapReturnRestaurant;
+        setMapReturnRestaurant(null);
+        setTimeout(() => {
+          if (window.openRestaurantFromMap) window.openRestaurantFromMap(restId);
+        }, 50);
       }
     }, 300);
   };
@@ -7211,33 +7220,46 @@ ${adminBugNote}`,
                   ) : (
                     <div className="space-y-2">
                       {getFilteredDishes().map((dish, idx) => {                        return (
-                          <div key={idx} className="bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition cursor-pointer stagger-item rankings-card" onClick={() => setSelectedDish(dish)}>
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 text-center text-lg font-bold text-gray-400 rank-num">#{idx + 1}</div>
-                              <div className="flex-1">
-                                <div className="font-semibold text-sm dish-name">{dish.name}</div>
-                                <div className="text-xs text-gray-500 dish-meta">{dish.restaurantName} • {dish.cuisine}{dish.subcategory ? ` • ${dish.subcategory}` : ''} • ${dish.price.toFixed(2)}</div>
+                          {(() => {
+                            const tierColor = dish.srr >= 96 ? '#9333ea' : dish.srr >= 89 ? '#eab308' : dish.srr >= 81 ? '#9ca3af' : dish.srr >= 72 ? '#22c55e' : dish.srr >= 57 ? '#3b82f6' : '#f59e0b';
+                            const tierEmoji = dish.srr >= 96 ? '💎' : dish.srr >= 89 ? '🥇' : dish.srr >= 81 ? '🏆' : dish.srr >= 72 ? '✅' : dish.srr >= 57 ? '🔵' : '⚠️';
+                            return (
+                              <div key={idx}
+                                className="bg-white rounded-lg shadow-sm hover:shadow-md transition cursor-pointer stagger-item rankings-card overflow-hidden"
+                                style={{ borderLeft: `3px solid ${tierColor}` }}
+                                onClick={() => setSelectedDish(dish)}>
+                                <div className="flex items-center gap-3 p-3">
+                                  <div className="w-7 text-center text-sm font-bold text-gray-400 rank-num flex-shrink-0">#{idx + 1}</div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="font-semibold text-sm dish-name truncate">{dish.name}</div>
+                                    <div className="text-[10px] text-gray-500 dish-meta truncate">{dish.restaurantName} • {dish.cuisine}{dish.subcategory ? ` • ${dish.subcategory}` : ''} • ${dish.price.toFixed(2)}</div>
+                                    {/* T/P/Po row */}
+                                    {(dish.taste_score != null || dish.portion_score != null) && (
+                                      <div className="flex items-center gap-2 mt-0.5">
+                                        {dish.taste_score != null && <span className="text-[9px] font-bold" style={{ color: '#f97316', fontFamily: '"Courier New", monospace' }}>T:{parseFloat(dish.taste_score).toFixed(0)}</span>}
+                                        {dish.price_score != null && <span className="text-[9px] font-bold" style={{ color: '#22c55e', fontFamily: '"Courier New", monospace' }}>P:{parseFloat(dish.price_score).toFixed(0)}</span>}
+                                        {dish.portion_score != null && <span className="text-[9px] font-bold" style={{ color: '#3b82f6', fontFamily: '"Courier New", monospace' }}>Po:{parseFloat(dish.portion_score).toFixed(0)}</span>}
+                                        {/* Tag dots */}
+                                        <div className="flex gap-1 ml-1">
+                                          {(dishTags[dish.id] || []).slice(0, 3).map(tag => {
+                                            const tagData = allTags.find(t => t.id === tag.tag_id);
+                                            if (!tagData) return null;
+                                            return <div key={tag.tag_id} className="w-3 h-3 rounded-full" style={{ backgroundColor: tagData.color }} title={tagData.name} />;
+                                          })}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                  {/* Score column */}
+                                  <div className="flex flex-col items-center flex-shrink-0 min-w-[52px]">
+                                    <div className="text-base mb-0.5">{tierEmoji}</div>
+                                    <div className={`text-xl font-bold score ${getSRRColor(dish.srr)} ${dish.srr >= 90 ? 'score-shine' : ''}`} style={{ fontFamily: '"Courier New", monospace' }}>{typeof dish.srr === "number" ? dish.srr.toFixed(2) : dish.srr}</div>
+                                    <div className="text-[9px] text-gray-400 text-center" style={{ fontFamily: '"Courier New", monospace' }}>{dish.numRatings} rating{dish.numRatings !== 1 ? 's' : ''}</div>
+                                  </div>
+                                </div>
                               </div>
-                              {/* Tag circles */}
-                              <div className="flex gap-1">
-                                {(dishTags[dish.id] || []).slice(0, 3).map(tag => {
-                                  const tagData = allTags.find(t => t.id === tag.tag_id);
-                                  if (!tagData) return null;
-                                  return (
-                                    <div
-                                      key={tag.tag_id}
-                                      className="w-4 h-4 rounded-full"
-                                      style={{ backgroundColor: tagData.color }}
-                                      title={tagData.name}
-                                    />
-                                  );
-                                })}
-                              </div>                              <div className={`text-2xl font-bold score ${getSRRColor(dish.srr)} ${dish.srr >= 90 ? 'score-shine' : ''}`}>{typeof dish.srr === "number" ? dish.srr.toFixed(2) : dish.srr}</div>
-                              <div className="text-[10px] text-gray-500 text-center mt-0.5 rating-count" style={{ fontFamily: '"Courier New", monospace' }}>
-                                {dish.numRatings} rating{dish.numRatings !== 1 ? 's' : ''}
-                              </div>
-                            </div>
-                          </div>
+                            );
+                          })()}
                         );
                       })}
                     </div>
@@ -9295,8 +9317,8 @@ ${adminBugNote}`,
                       style={{ fontFamily: '"Courier New", monospace' }}
                     />
                     {selectedGooglePlace && (
-                      <div className="absolute right-2 top-7 bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-[10px] font-bold">
-                        📍 Linked
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-[10px] font-bold flex items-center gap-0.5">
+                        📍 linked
                       </div>
                     )}
                     
@@ -9533,7 +9555,7 @@ ${adminBugNote}`,
                       {categoryLocked && (
                         <button
                           onClick={() => { setCategoryLocked(false); setCategoryInput(''); setDishCategory(''); setDishSubcategory(''); setSubcategoryInput(''); setShowCategorySuggestions(true); }}
-                          className="absolute right-2 top-1.5 text-gray-400 hover:text-gray-600"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 flex items-center justify-center"
                         >
                           <X size={12} />
                         </button>
@@ -9703,15 +9725,15 @@ ${adminBugNote}`,
 
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1" style={{ fontFamily: '"Courier New", monospace' }}>price</label>
-                    <div className="relative">
-                      <span className="absolute left-2 top-1 text-gray-500 text-xs" style={{ fontFamily: '"Courier New", monospace' }}>$</span>
+                    <div className="relative flex items-center border-2 border-gray-200 rounded-lg focus-within:border-[#33a29b] overflow-hidden">
+                      <span className="pl-2 text-gray-500 text-xs flex-shrink-0" style={{ fontFamily: '"Courier New", monospace' }}>$</span>
                       <input 
                         type="number" 
                         step="0.01" 
                         value={price} 
                         onChange={(e) => setPrice(e.target.value)} 
                         placeholder="0.00" 
-                        className="w-full pl-5 pr-2 py-1.5 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
+                        className="flex-1 pr-2 py-1.5 text-xs focus:outline-none bg-transparent"
                         style={{ fontFamily: '"Courier New", monospace' }}
                       />
                     </div>
@@ -9754,30 +9776,26 @@ ${adminBugNote}`,
                   </div>
 
                   {/* Price Value Display */}
-                  <div className="bg-green-50 border border-green-200 rounded-lg px-2 py-1.5 mb-2">
+                  <div className="mb-2">
                     <div className="flex justify-between items-center mb-0.5">
-                      <div>
-                        <label className="text-[10px] font-semibold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>price value (auto)</label>
-                        <p className="text-[9px] text-gray-400 leading-tight" style={{ fontFamily: '"Courier New", monospace' }}>based on your price vs avg for this dish</p>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-xs font-bold text-green-600" style={{ fontFamily: '"Courier New", monospace' }}>{priceScore}</span>
+                      <div className="flex items-center gap-1.5">
+                        <label className="text-[10px] font-semibold text-gray-700" style={{ fontFamily: '"Courier New", monospace' }}>price value</label>
+                        <span className="text-[9px] text-green-600 font-semibold bg-green-50 px-1 rounded" style={{ fontFamily: '"Courier New", monospace' }}>auto</span>
                         {price && dishName && dishCategory && (() => {
                           const priceNum = parseFloat(price);
                           if (!isNaN(priceNum) && priceNum > 0) {
                             const { avgPrice } = calculatePriceScore(priceNum, dishName, dishCategory, allDishes);
                             return (
-                              <div className="text-[9px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
+                              <span className="text-[9px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>
                                 ${priceNum.toFixed(2)} vs ${avgPrice.toFixed(2)} avg
-                              </div>
+                              </span>
                             );
                           }
                         })()}
                       </div>
+                      <span className="text-xs font-bold text-green-600" style={{ fontFamily: '"Courier New", monospace' }}>{priceScore}</span>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full" style={{ height: '4px' }}>
-                      <div className="bg-green-500 rounded-full transition-all" style={{ width: `${priceScore}%`, height: '4px' }}></div>
-                    </div>
+                    <div className="w-full rounded-full" style={{ height: '4px', background: `linear-gradient(to right, #22c55e 0%, #22c55e ${priceScore}%, #e5e7eb ${priceScore}%, #e5e7eb 100%)` }}></div>
                   </div>
 
                   {/* Portion Slider */}
@@ -10402,28 +10420,28 @@ ${adminBugNote}`,
                       {(u.username || u.email || '?')[0].toUpperCase()}
                     </div>
                     <div className="flex gap-4 flex-1 text-center">
-                      <div className="flex-1">
-                        <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{theirRatings.length}</div>
-                        <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>ratings</div>
-                      </div>
                       <button className="flex-1" onClick={async () => {
-                        const { data } = await supabase.from('follows').select('follower_id').eq('following_id', u.id);
+                        const { data } = await supabase.from('user_follows').select('follower_id').eq('following_id', u.id);
                         const followerIds = (data || []).map(f => f.follower_id);
                         const followerUsers = allUsers.filter(au => followerIds.includes(au.id));
                         setUserModalFollowersList({ type: 'followers', users: followerUsers });
                       }}>
                         <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{u.followers_count || u.friends || 0}</div>
-                        <div className="text-[10px] text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>followers</div>
+                        <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>followers</div>
                       </button>
                       <button className="flex-1" onClick={async () => {
-                        const { data } = await supabase.from('follows').select('following_id').eq('follower_id', u.id);
+                        const { data } = await supabase.from('user_follows').select('following_id').eq('follower_id', u.id);
                         const followingIds = (data || []).map(f => f.following_id);
                         const followingUsers = allUsers.filter(au => followingIds.includes(au.id));
                         setUserModalFollowersList({ type: 'following', users: followingUsers });
                       }}>
                         <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{u.following_count || 0}</div>
-                        <div className="text-[10px] text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>following</div>
+                        <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>following</div>
                       </button>
+                      <div className="flex-1">
+                        <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{theirRatings.length}</div>
+                        <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>ratings</div>
+                      </div>
                       <div className="flex-1">
                         <div className={`font-bold text-base ${getSRRColor(avgScore)}`} style={{ fontFamily: '"Courier New", monospace' }}>{avgScore.toFixed(1)}</div>
                         <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>avg score</div>
@@ -10595,9 +10613,8 @@ ${adminBugNote}`,
               pointerEvents: 'auto'
             }} 
           />
-          {/* Desktop: centered float */}
-          <div className="hidden md:flex fixed inset-0 items-center justify-center z-[61] p-4 pointer-events-none">
-            <div className={`bg-white rounded-xl max-w-lg w-full overflow-y-auto pointer-events-auto ${isRestaurantModalClosing ? 'animate-slide-down-fade-simple' : 'animate-slide-up-fade-simple'}`} style={{ maxHeight: '65vh' }}>
+          <div className="fixed inset-0 flex items-center justify-center z-60 p-4 pointer-events-none">
+            <div className={`bg-white rounded-xl max-w-lg w-full overflow-y-auto pointer-events-auto ${isRestaurantModalClosing ? 'animate-slide-down-fade-simple' : 'animate-slide-up-fade-simple'}`} style={{ maxHeight: '32vh' }}>
               {/* Compact Header */}
               <div className="sticky top-0 bg-white border-b px-3 py-2 flex justify-between items-center">
                 <div className="flex items-center gap-2 flex-1">
@@ -10861,57 +10878,6 @@ ${adminBugNote}`,
                     />
                   </div>
                 )}
-              </div>
-            </div>
-          </div>
-
-          {/* Mobile: bottom sheet */}
-          <div className={`md:hidden fixed bottom-0 left-0 right-0 z-[61] bg-white rounded-t-2xl flex flex-col pointer-events-auto ${isRestaurantModalClosing ? 'animate-slide-down-fade-simple' : 'animate-slide-up-fade-simple'}`} style={{ maxHeight: '75vh' }}>
-            <div className="sticky top-0 bg-white border-b px-4 py-3 flex-shrink-0 rounded-t-2xl">
-              <div className="w-8 h-1 bg-gray-300 rounded-full mx-auto mb-2" />
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-bold text-[#33a29b] truncate" style={{ fontFamily: '"Courier New", monospace' }}>{selectedRestaurant.name}</h2>
-                <button onClick={handleCloseRestaurant} className="text-gray-500 hover:text-gray-700 flex-shrink-0"><X size={18} /></button>
-              </div>
-              {selectedRestaurant.location?.address && (
-                <p className="text-[10px] text-gray-400 mt-0.5 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{selectedRestaurant.location.address}</p>
-              )}
-            </div>
-            <div className="overflow-y-auto flex-1 p-3 space-y-3">
-              {/* Score */}
-              {selectedRestaurant.avgSRR && (
-                <div className="bg-[#33a29b]/10 rounded-lg px-3 py-2 flex items-center justify-between border border-[#33a29b]/20">
-                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest" style={{ fontFamily: '"Courier New", monospace' }}>avg score</span>
-                  <span className={`text-xl font-bold ${getSRRColor(selectedRestaurant.avgSRR)}`} style={{ fontFamily: '"Courier New", monospace' }}>{selectedRestaurant.avgSRR}</span>
-                </div>
-              )}
-              {/* Rate button */}
-              <button
-                onClick={() => { setRestaurant(selectedRestaurant.name); setDishName(''); setIsSubmissionModalOpen(true); setSelectedRestaurant(null); }}
-                className="w-full py-2 bg-[#33a29b] text-white rounded-lg font-bold hover:bg-[#2a8a84] transition text-sm"
-                style={{ fontFamily: '"Courier New", monospace' }}
-              >rate a dish here</button>
-              {/* Top dishes */}
-              <div>
-                <h3 className="text-[9px] font-bold mb-2 text-gray-500 uppercase tracking-widest" style={{ fontFamily: '"Courier New", monospace' }}>top dishes</h3>
-                <div className="space-y-2">
-                  {selectedRestaurant.topDishes && selectedRestaurant.topDishes.length > 0 ? (
-                    selectedRestaurant.topDishes.slice(0, 8).map((dish, idx) => (
-                      <div key={idx} onClick={() => setSelectedDish(dish)}
-                        className="flex items-center justify-between rounded-lg p-2 bg-gray-50 hover:bg-gray-100 cursor-pointer transition border border-gray-100">
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-bold truncate" style={{ fontFamily: '"Courier New", monospace' }}>{dish.name}</div>
-                          <div className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>${dish.price?.toFixed(2)} · {dish.numRatings} rating{dish.numRatings !== 1 ? 's' : ''}</div>
-                        </div>
-                        {dish.srr != null && (
-                          <span className={`text-sm font-bold ml-2 flex-shrink-0 ${getSRRColor(dish.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{parseFloat(dish.srr).toFixed(1)}</span>
-                        )}
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-xs text-gray-400 italic" style={{ fontFamily: '"Courier New", monospace' }}>no dishes rated yet</p>
-                  )}
-                </div>
               </div>
             </div>
           </div>
@@ -12013,26 +11979,26 @@ ${adminBugNote}`,
                     {(u.username || u.email || '?')[0].toUpperCase()}
                   </div>
                   <div className="flex gap-4 flex-1 text-center">
-                    <div className="flex-1">
-                      <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{theirRatings.length}</div>
-                      <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>ratings</div>
-                    </div>
                     <button className="flex-1" onClick={async () => {
-                      const { data } = await supabase.from('follows').select('follower_id').eq('following_id', u.id);
+                      const { data } = await supabase.from('user_follows').select('follower_id').eq('following_id', u.id);
                       const ids = (data || []).map(f => f.follower_id);
                       setExploreUserFollowersList({ type: 'followers', users: allUsers.filter(au => ids.includes(au.id)) });
                     }}>
                       <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{u.followers_count || u.friends || 0}</div>
-                      <div className="text-[10px] text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>followers</div>
+                      <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>followers</div>
                     </button>
                     <button className="flex-1" onClick={async () => {
-                      const { data } = await supabase.from('follows').select('following_id').eq('follower_id', u.id);
+                      const { data } = await supabase.from('user_follows').select('following_id').eq('follower_id', u.id);
                       const ids = (data || []).map(f => f.following_id);
                       setExploreUserFollowersList({ type: 'following', users: allUsers.filter(au => ids.includes(au.id)) });
                     }}>
                       <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{u.following_count || 0}</div>
-                      <div className="text-[10px] text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>following</div>
+                      <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>following</div>
                     </button>
+                    <div className="flex-1">
+                      <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{theirRatings.length}</div>
+                      <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>ratings</div>
+                    </div>
                     <div className="flex-1">
                       <div className={`font-bold text-base ${getSRRColor(avgScore)}`} style={{ fontFamily: '"Courier New", monospace' }}>{avgScore.toFixed(1)}</div>
                       <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>avg score</div>
