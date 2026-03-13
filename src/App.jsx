@@ -840,6 +840,7 @@ const HuntersFindsApp = () => {
   const [showNearbyToggle, setShowNearbyToggle] = useState(false);
   const [includeNearby, setIncludeNearby] = useState(false);
   const [showMapFindNearby, setShowMapFindNearby] = useState(true);
+  const [dishReturnToUser, setDishReturnToUser] = useState(null); // { type: 'selected'|'explore', user: object }
   
   const [isSubmissionModalOpen, setIsSubmissionModalOpen] = useState(false);
   const [exploreView, setExploreView] = useState(() => {
@@ -975,6 +976,8 @@ const HuntersFindsApp = () => {
   const [mapFilterCuisine, setMapFilterCuisine] = useState('all');
   const [mapShowHighRatedOnly, setMapShowHighRatedOnly] = useState(false);
   const [showMapFilters, setShowMapFilters] = useState(false);
+  const [mapActiveFilter, setMapActiveFilter] = useState(null); // 'quality' | 'social' | 'other'
+  const [mapOtherCategory, setMapOtherCategory] = useState('popularity');
   const [mapFilters, setMapFilters] = useState({
     popularity: [],
     quality: [],
@@ -5195,6 +5198,11 @@ const HuntersFindsApp = () => {
       setIsDishModalClosing(false);
       setDishModalView('scores');
       setDishModalOverflowOpen(false);
+      if (dishReturnToUser) {
+        if (dishReturnToUser.type === 'selected') setSelectedUser(dishReturnToUser.user);
+        else setSelectedExploreUser(dishReturnToUser.user);
+        setDishReturnToUser(null);
+      }
     }, 300);
   };
 
@@ -6771,205 +6779,131 @@ ${adminBugNote}`,
                   style={{ zIndex: 0 }}
                 />
                 
-                {/* Find Nearby Button - Top Center */}
-                {showMapFindNearby && (
-                  <button
-                    onClick={async () => {
-                      if (!mapInstance) return;
-                      const center = mapInstance.getCenter();
-                      const location = { lat: center.lat, lng: center.lng };
-                      setShowMapFindNearby(false);
-                      const results = await searchGooglePlacesAPI('restaurants', location, { limit: 5 });
-                      if (results.length > 0) {
-                        const googleRestaurants = results.map(r => ({
-                          id: r.place_id,
-                          name: r.name,
-                          location: { lat: r.lat, lng: r.lng, address: r.address },
-                          avgSRR: null,
-                          cuisine: r.types?.join(', ') || '',
-                          isGooglePlace: true,
-                          googleData: r
-                        }));
-                        updateMapMarkers([...allRestaurants, ...googleRestaurants]);
-                      }
-                      setTimeout(() => setShowMapFindNearby(true), 10000);
-                    }}
-                    className="absolute top-4 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-[#33a29b] text-white rounded-lg font-bold hover:bg-[#2a8a84] transition shadow-lg z-10 text-xs map-find-nearby"
-                    style={{ fontFamily: '"Courier New", monospace' }}
-                  >
-                    Find Nearby Restaurants
-                  </button>
-                )}
-                
-                {/* Filters Panel */}
-                <div className="absolute top-20 right-4 z-10">
-                  <button
-                    onClick={() => setShowMapFilters(!showMapFilters)}
-                    className="bg-white rounded-lg shadow-lg px-4 py-2 text-sm font-bold hover:bg-gray-50 flex items-center gap-2"
-                    style={{ fontFamily: '"Courier New", monospace' }}
-                  >
-                    Filters
-                    <span className="text-xs">▾</span>
-                  </button>
-                  
-                  {showMapFilters && (
-                    <div className="absolute right-0 mt-2 bg-white rounded-lg shadow-xl p-4 w-72 max-h-96 overflow-y-auto" style={{ fontFamily: '"Courier New", monospace' }}>
-                      {/* Popularity */}
-                      <div className="mb-4">
-                        <h5 className="text-xs font-bold mb-2 text-gray-700">Popularity</h5>
-                        <label className="flex items-center gap-2 text-xs mb-1">
-                          <input type="checkbox" checked={mapFilters.popularity.includes('3+')} 
-                            onChange={(e) => {
-                              const val = '3+';
-                              setMapFilters(prev => ({
-                                ...prev,
-                                popularity: e.target.checked ? [...prev.popularity, val] : prev.popularity.filter(v => v !== val)
-                              }));
-                            }} />
-                          <span>3+ ratings</span>
-                        </label>
-                        <label className="flex items-center gap-2 text-xs mb-1">
-                          <input type="checkbox" checked={mapFilters.popularity.includes('5+')}
-                            onChange={(e) => {
-                              const val = '5+';
-                              setMapFilters(prev => ({
-                                ...prev,
-                                popularity: e.target.checked ? [...prev.popularity, val] : prev.popularity.filter(v => v !== val)
-                              }));
-                            }} />
-                          <span>5+ ratings</span>
-                        </label>
-                        <label className="flex items-center gap-2 text-xs">
-                          <input type="checkbox" checked={mapFilters.popularity.includes('10+')}
-                            onChange={(e) => {
-                              const val = '10+';
-                              setMapFilters(prev => ({
-                                ...prev,
-                                popularity: e.target.checked ? [...prev.popularity, val] : prev.popularity.filter(v => v !== val)
-                              }));
-                            }} />
-                          <span>10+ ratings</span>
-                        </label>
-                      </div>
-                      
-                      {/* Quality */}
-                      <div className="mb-4 border-t pt-3">
-                        <h5 className="text-xs font-bold mb-2 text-gray-700">Quality</h5>
-                        <label className="flex items-center gap-2 text-xs mb-1">
-                          <input type="checkbox" checked={mapFilters.quality.includes('80+')}
-                            onChange={(e) => {
-                              const val = '80+';
-                              setMapFilters(prev => ({
-                                ...prev,
-                                quality: e.target.checked ? [...prev.quality, val] : prev.quality.filter(v => v !== val)
-                              }));
-                            }} />
-                          <span>80+ score</span>
-                        </label>
-                        <label className="flex items-center gap-2 text-xs mb-1">
-                          <input type="checkbox" checked={mapFilters.quality.includes('90+')}
-                            onChange={(e) => {
-                              const val = '90+';
-                              setMapFilters(prev => ({
-                                ...prev,
-                                quality: e.target.checked ? [...prev.quality, val] : prev.quality.filter(v => v !== val)
-                              }));
-                            }} />
-                          <span>90+ score</span>
-                        </label>
-                        <label className="flex items-center gap-2 text-xs">
-                          <input type="checkbox" checked={mapFilters.quality.includes('top')}
-                            onChange={(e) => {
-                              const val = 'top';
-                              setMapFilters(prev => ({
-                                ...prev,
-                                quality: e.target.checked ? [...prev.quality, val] : prev.quality.filter(v => v !== val)
-                              }));
-                            }} />
-                          <span>Your top rated</span>
-                        </label>
-                      </div>
-                      
-                      {/* Social */}
-                      <div className="mb-4 border-t pt-3">
-                        <h5 className="text-xs font-bold mb-2 text-gray-700">Social</h5>
-                        <label className="flex items-center gap-2 text-xs mb-1">
-                          <input type="checkbox" checked={mapFilters.social.includes('you')}
-                            onChange={(e) => {
-                              const val = 'you';
-                              setMapFilters(prev => ({
-                                ...prev,
-                                social: e.target.checked ? [...prev.social, val] : prev.social.filter(v => v !== val)
-                              }));
-                            }} />
-                          <span>You rated</span>
-                        </label>
-                        <label className="flex items-center gap-2 text-xs mb-1">
-                          <input type="checkbox" checked={mapFilters.social.includes('friends')}
-                            onChange={(e) => {
-                              const val = 'friends';
-                              setMapFilters(prev => ({
-                                ...prev,
-                                social: e.target.checked ? [...prev.social, val] : prev.social.filter(v => v !== val)
-                              }));
-                            }} />
-                          <span>Friends rated</span>
-                        </label>
-                        <label className="flex items-center gap-2 text-xs">
-                          <input type="checkbox" checked={mapFilters.social.includes('groups')}
-                            onChange={(e) => {
-                              const val = 'groups';
-                              setMapFilters(prev => ({
-                                ...prev,
-                                social: e.target.checked ? [...prev.social, val] : prev.social.filter(v => v !== val)
-                              }));
-                            }} />
-                          <span>Group members rated</span>
-                        </label>
-                      </div>
-                      
-                      {/* Distance */}
-                      <div className="border-t pt-3">
-                        <h5 className="text-xs font-bold mb-2 text-gray-700">Distance</h5>
-                        <label className="flex items-center gap-2 text-xs mb-1">
-                          <input type="checkbox" checked={mapFilters.distance.includes('1mi')}
-                            onChange={(e) => {
-                              const val = '1mi';
-                              setMapFilters(prev => ({
-                                ...prev,
-                                distance: e.target.checked ? [...prev.distance, val] : prev.distance.filter(v => v !== val)
-                              }));
-                            }} />
-                          <span>Within 1 mile</span>
-                        </label>
-                        <label className="flex items-center gap-2 text-xs mb-1">
-                          <input type="checkbox" checked={mapFilters.distance.includes('5mi')}
-                            onChange={(e) => {
-                              const val = '5mi';
-                              setMapFilters(prev => ({
-                                ...prev,
-                                distance: e.target.checked ? [...prev.distance, val] : prev.distance.filter(v => v !== val)
-                              }));
-                            }} />
-                          <span>Within 5 miles</span>
-                        </label>
-                        <label className="flex items-center gap-2 text-xs">
-                          <input type="checkbox" checked={mapFilters.distance.includes('10mi')}
-                            onChange={(e) => {
-                              const val = '10mi';
-                              setMapFilters(prev => ({
-                                ...prev,
-                                distance: e.target.checked ? [...prev.distance, val] : prev.distance.filter(v => v !== val)
-                              }));
-                            }} />
-                          <span>Within 10 miles</span>
-                        </label>
-                      </div>
-                    </div>
+                {/* Close map filter on outside click */}
+                {mapActiveFilter && <div className="absolute inset-0 z-[15]" onClick={() => setMapActiveFilter(null)} />}
+                {/* Top bar: Find Nearby + Filter Pills */}
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                  {showMapFindNearby && (
+                    <button
+                      onClick={async () => {
+                        if (!mapInstance) return;
+                        const center = mapInstance.getCenter();
+                        const location = { lat: center.lat, lng: center.lng };
+                        setShowMapFindNearby(false);
+                        const results = await searchGooglePlacesAPI('restaurants', location, { limit: 5 });
+                        if (results.length > 0) {
+                          const googleRestaurants = results.map(r => ({
+                            id: r.place_id,
+                            name: r.name,
+                            location: { lat: r.lat, lng: r.lng, address: r.address },
+                            avgSRR: null,
+                            cuisine: r.types?.join(', ') || '',
+                            isGooglePlace: true,
+                            googleData: r
+                          }));
+                          updateMapMarkers([...allRestaurants, ...googleRestaurants]);
+                        }
+                        setTimeout(() => setShowMapFindNearby(true), 10000);
+                      }}
+                      className="px-3 py-1.5 bg-[#33a29b] text-white rounded-lg font-bold hover:bg-[#2a8a84] transition shadow-lg text-xs whitespace-nowrap map-find-nearby"
+                      style={{ fontFamily: '"Courier New", monospace' }}
+                    >
+                      find nearby
+                    </button>
                   )}
+
+                  {/* Filter pills */}
+                  {(['quality', 'social', 'other']).map(pill => {
+                    const isActive = mapActiveFilter === pill;
+                    const hasSelections = pill === 'quality' ? mapFilters.quality.length > 0
+                      : pill === 'social' ? mapFilters.social.length > 0
+                      : (mapFilters.popularity.length > 0 || mapFilters.distance.length > 0);
+                    return (
+                      <button key={pill}
+                        onClick={() => setMapActiveFilter(isActive ? null : pill)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-lg border ${
+                          isActive ? 'bg-[#33a29b] text-white border-[#33a29b]'
+                          : hasSelections ? 'bg-white text-[#33a29b] border-[#33a29b]'
+                          : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                        }`}
+                        style={{ fontFamily: '"Courier New", monospace' }}
+                      >
+                        {pill}{hasSelections && pill !== 'other' ? ` ✓` : ''}
+                      </button>
+                    );
+                  })}
                 </div>
-                
-                {/* Legend */}
+
+                {/* Filter dropdowns */}
+                {mapActiveFilter && (
+                  <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20 bg-white rounded-xl shadow-xl p-3 w-72"
+                    style={{ fontFamily: '"Courier New", monospace' }}
+                    onClick={e => e.stopPropagation()}
+                  >
+                    {mapActiveFilter === 'quality' && (
+                      <div>
+                        <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">quality</div>
+                        {[['80+', '80+ score'], ['90+', '90+ score'], ['top', 'your top rated']].map(([val, label]) => (
+                          <label key={val} className="flex items-center gap-2 text-xs py-1 cursor-pointer">
+                            <input type="checkbox" checked={mapFilters.quality.includes(val)}
+                              onChange={e => setMapFilters(prev => ({ ...prev, quality: e.target.checked ? [...prev.quality, val] : prev.quality.filter(v => v !== val) }))} />
+                            <span>{label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                    {mapActiveFilter === 'social' && (
+                      <div>
+                        <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">social</div>
+                        {[['you', 'you rated'], ['friends', 'friends rated'], ['groups', 'group members rated']].map(([val, label]) => (
+                          <label key={val} className="flex items-center gap-2 text-xs py-1 cursor-pointer">
+                            <input type="checkbox" checked={mapFilters.social.includes(val)}
+                              onChange={e => setMapFilters(prev => ({ ...prev, social: e.target.checked ? [...prev.social, val] : prev.social.filter(v => v !== val) }))} />
+                            <span>{label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                    {mapActiveFilter === 'other' && (
+                      <div className="flex gap-3">
+                        {/* Left: categories */}
+                        <div className="w-28 border-r border-gray-100 pr-2 space-y-1">
+                          {[['popularity', 'popularity'], ['distance', 'distance']].map(([cat, label]) => (
+                            <button key={cat}
+                              onClick={() => setMapOtherCategory(cat)}
+                              className={`w-full text-left px-2 py-1.5 rounded-lg text-xs font-semibold transition ${mapOtherCategory === cat ? 'bg-[#33a29b]/10 text-[#33a29b]' : 'text-gray-600 hover:bg-gray-50'}`}
+                            >{label}</button>
+                          ))}
+                        </div>
+                        {/* Right: options */}
+                        <div className="flex-1 space-y-1">
+                          {mapOtherCategory === 'popularity' && [['3+', '3+ ratings'], ['5+', '5+ ratings'], ['10+', '10+ ratings']].map(([val, label]) => (
+                            <label key={val} className="flex items-center gap-2 text-xs py-1 cursor-pointer">
+                              <input type="checkbox" checked={mapFilters.popularity.includes(val)}
+                                onChange={e => setMapFilters(prev => ({ ...prev, popularity: e.target.checked ? [...prev.popularity, val] : prev.popularity.filter(v => v !== val) }))} />
+                              <span>{label}</span>
+                            </label>
+                          ))}
+                          {mapOtherCategory === 'distance' && [['1mi', 'within 1 mile'], ['5mi', 'within 5 miles'], ['10mi', 'within 10 miles']].map(([val, label]) => (
+                            <label key={val} className="flex items-center gap-2 text-xs py-1 cursor-pointer">
+                              <input type="checkbox" checked={mapFilters.distance.includes(val)}
+                                onChange={e => setMapFilters(prev => ({ ...prev, distance: e.target.checked ? [...prev.distance, val] : prev.distance.filter(v => v !== val) }))} />
+                              <span>{label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {/* Clear all */}
+                    {(mapFilters.quality.length > 0 || mapFilters.social.length > 0 || mapFilters.popularity.length > 0 || mapFilters.distance.length > 0) && (
+                      <button onClick={() => { setMapFilters({ popularity: [], quality: [], recency: [], social: [], distance: [] }); }}
+                        className="mt-2 w-full text-center text-[10px] text-gray-400 hover:text-gray-600 border-t border-gray-100 pt-2"
+                      >clear all</button>
+                    )}
+                  </div>
+                )}
+
+                                {/* Legend */}
                 <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-lg p-2 z-10 map-legend" style={{ fontFamily: '"Courier New", monospace' }}>
                   <h4 className="text-xs font-bold mb-2">Legend</h4>
                   <div className="space-y-2 text-xs">
@@ -9313,10 +9247,10 @@ ${adminBugNote}`,
         <>
           <>
               <div onClick={handleCloseSubmission} className={`fixed inset-0 z-[46] bg-black/40 ${isSubmissionClosing ? 'animate-fade-out' : 'animate-fade-in'}`} />
-              {/* Mobile: bottom sheet. Desktop: centered floating */}
+              {/* Mobile: centered floating. Desktop: bottom sheet */}
               <div className={`fixed z-[47] bg-white shadow-xl flex flex-col ${isSubmissionClosing ? 'animate-slide-down-fade' : 'animate-slide-up-fade'}
-                md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl md:w-[min(92vw,600px)]
-                bottom-0 left-1/2 -translate-x-1/2 rounded-t-2xl w-[min(92vw,600px)]`}
+                top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-2xl w-[min(92vw,600px)]
+                md:top-auto md:translate-y-0 md:bottom-0 md:rounded-t-2xl md:rounded-b-none md:w-[min(92vw,600px)]`}
                 style={{
                   maxHeight: 'calc(100vh - 80px)',
                   overflowY: 'auto',
@@ -9324,8 +9258,8 @@ ${adminBugNote}`,
                 onClick={e => e.stopPropagation()}
               >
             <div className="sticky top-0 z-10 bg-white border-b px-3 py-2 flex justify-center items-center relative rounded-t-2xl flex-shrink-0">
-              <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-8 h-1 bg-gray-300 rounded-full md:hidden" />
-              <h2 className="text-sm font-bold text-center mt-1 md:mt-0 md:text-lg" style={{ fontFamily: '"Courier New", monospace' }}>hunter rater</h2>
+              <div className="hidden md:block absolute top-1.5 left-1/2 -translate-x-1/2 w-8 h-1 bg-gray-300 rounded-full" />
+              <h2 className="text-sm font-bold text-center mt-0 md:mt-1 md:text-lg" style={{ fontFamily: '"Courier New", monospace' }}>hunter rater</h2>
               <button onClick={handleCloseSubmission} className="absolute right-3"><X size={20} /></button>
             </div>
             <div className="overflow-y-auto pb-4 px-3 pt-2" style={{ WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}>
@@ -9730,7 +9664,7 @@ ${adminBugNote}`,
                           const subs = [...new Set(allDishes.filter(d => (d.cuisine || '').toLowerCase() === dishCategory.toLowerCase() && d.subcategory).map(d => d.subcategory.toLowerCase()))].sort();
                           return (
                             <div className="relative border border-gray-200 rounded-lg bg-white">
-                              <div className="text-[9px] text-gray-400 px-2 pt-1.5" style={{ fontFamily: '"Courier New", monospace' }}>subcategory (optional)</div>
+                              <div className="text-[11px] text-gray-500 font-bold px-2 pt-1.5" style={{ fontFamily: '"Courier New", monospace' }}>subcategory (optional)</div>
                               {subs.length > 0 && (
                                 <div className="flex flex-wrap gap-1 px-2 pb-1.5">
                                   {subs.map(s => (
@@ -10046,11 +9980,12 @@ ${adminBugNote}`,
 
         return (
         <>
-          <div onClick={handleCloseDish} className={`fixed inset-0 bg-black/40 z-50 ${isDishModalClosing ? 'animate-fade-out' : 'animate-fade-in'}`} style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }} />
+          <div onClick={handleCloseDish} className={`fixed inset-0 bg-black/40 ${dishReturnToUser ? 'z-[65]' : 'z-50'} ${isDishModalClosing ? 'animate-fade-out' : 'animate-fade-in'}`} style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }} />
           {/* Mobile: bottom sheet. Desktop: centered modal */}
-          <div className={`fixed z-50 bg-white w-full pointer-events-auto flex flex-col
+          <div className={`fixed bg-white w-full pointer-events-auto flex flex-col
             md:inset-0 md:flex md:items-center md:justify-center md:p-4 md:pointer-events-none md:bg-transparent
             bottom-0 left-0 right-0 rounded-t-2xl
+            ${dishReturnToUser ? 'z-[66]' : 'z-50'}
             ${isDishModalClosing ? 'animate-slide-down-fade-simple' : 'animate-slide-up-fade-simple'}`}
             style={{ maxHeight: '92vh', overflowY: 'auto' }}
             onClick={e => e.stopPropagation()}
@@ -10434,7 +10369,7 @@ ${adminBugNote}`,
         const favCat = cats.length > 0 ? Object.entries(cats.reduce((acc, c) => { acc[c] = (acc[c] || 0) + 1; return acc; }, {})).sort((a, b) => b[1] - a[1])[0][0] : null;
         const myDishIds = new Set(userRatings.map(r => r.dish_id));
         const dishOverlap = theirRatings.filter(r => myDishIds.has(r.dish_id)).length;
-        const isFollowingThem = userFollows.some(f => f.id === u.id) || (allUsers.find(au => au.id === u.id)?.isFollowing);
+        const isFollowingThem = userFollows.some(f => f.following_id === u.id) || (allUsers.find(au => au.id === u.id)?.isFollowing);
         const theirBadges = viewingUserBadges[u.id] || [];
         return (
           <>
@@ -10478,7 +10413,7 @@ ${adminBugNote}`,
                         setUserModalFollowersList({ type: 'followers', users: followerUsers });
                       }}>
                         <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{u.followers_count || u.friends || 0}</div>
-                        <div className="text-[10px] text-[#33a29b] underline" style={{ fontFamily: '"Courier New", monospace' }}>followers</div>
+                        <div className="text-[10px] text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>followers</div>
                       </button>
                       <button className="flex-1" onClick={async () => {
                         const { data } = await supabase.from('follows').select('following_id').eq('follower_id', u.id);
@@ -10487,7 +10422,7 @@ ${adminBugNote}`,
                         setUserModalFollowersList({ type: 'following', users: followingUsers });
                       }}>
                         <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{u.following_count || 0}</div>
-                        <div className="text-[10px] text-[#33a29b] underline" style={{ fontFamily: '"Courier New", monospace' }}>following</div>
+                        <div className="text-[10px] text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>following</div>
                       </button>
                       <div className="flex-1">
                         <div className={`font-bold text-base ${getSRRColor(avgScore)}`} style={{ fontFamily: '"Courier New", monospace' }}>{avgScore.toFixed(1)}</div>
@@ -10528,18 +10463,25 @@ ${adminBugNote}`,
                     </div>
                   )}
 
-                  {/* Follow button */}
+                  {/* Follow + Message buttons */}
                   {user && u.id !== user.id && (
-                    <button
-                      onClick={async () => {
-                        await handleFollowUser(u);
-                        setAllUsers(prev => prev.map(p => p.id === u.id ? { ...p, isFollowing: !p.isFollowing } : p));
-                      }}
-                      className={`w-full py-2 rounded-xl text-sm font-bold transition ${isFollowingThem ? 'bg-gray-200 text-gray-700 hover:bg-red-100 hover:text-red-600' : 'bg-[#33a29b] text-white hover:bg-[#2a8a84]'}`}
-                      style={{ fontFamily: '"Courier New", monospace' }}
-                    >
-                      {isFollowingThem ? 'following' : 'follow'}
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={async () => {
+                          await handleFollowUser(u);
+                          setAllUsers(prev => prev.map(p => p.id === u.id ? { ...p, isFollowing: !p.isFollowing } : p));
+                        }}
+                        className={`flex-1 py-2 rounded-xl text-sm font-bold transition ${isFollowingThem ? 'bg-gray-200 text-gray-700 hover:bg-red-100 hover:text-red-600' : 'bg-[#33a29b] text-white hover:bg-[#2a8a84]'}`}
+                        style={{ fontFamily: '"Courier New", monospace' }}
+                      >
+                        {isFollowingThem ? 'following' : 'follow'}
+                      </button>
+                      <button
+                        onClick={() => { const uname = u.username || u.email?.split('@')[0] || 'user'; handleStartDm(u.id, uname); setSelectedUser(null); setYouView('dms'); setActiveTab('you'); }}
+                        className="flex-1 py-2 rounded-xl text-sm font-bold transition bg-gray-100 text-gray-700 hover:bg-gray-200"
+                        style={{ fontFamily: '"Courier New", monospace' }}
+                      >message</button>
+                    </div>
                   )}
 
                   {/* Profile subtabs */}
@@ -10582,7 +10524,7 @@ ${adminBugNote}`,
                           return { color: '#3b82f6', shadow: '0 0 8px 1px rgba(59,130,246,0.35)' };
                         })() : null;
                         return (
-                          <div key={r.id} onClick={() => { if (dishObj) setSelectedDish(dishObj); }}
+                          <div key={r.id} onClick={() => { if (dishObj) { setDishReturnToUser({ type: 'selected', user: u }); setSelectedUser(null); setSelectedDish(dishObj); } }}
                             className="flex items-center gap-3 py-2.5 px-2 rounded-lg cursor-pointer hover:bg-gray-100 transition border-b border-gray-100 last:border-0">
                             <span className="text-xs text-gray-400 w-5 flex-shrink-0" style={{ fontFamily: '"Courier New", monospace' }}>#{idx + 1}</span>
                             <div className="flex-1 min-w-0">
@@ -10615,7 +10557,7 @@ ${adminBugNote}`,
                       {theirRatings.length === 0 ? (
                         <p className="text-xs text-gray-400 italic text-center py-4" style={{ fontFamily: '"Courier New", monospace' }}>no activity yet</p>
                       ) : [...theirRatings].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 20).map(r => (
-                        <div key={r.id} onClick={() => { const d = allDishes.find(d => d.id === r.dish_id); if (d) { handleCloseUser(); setSelectedDish(d); }}}
+                        <div key={r.id} onClick={() => { const d = allDishes.find(d => d.id === r.dish_id); if (d) { setDishReturnToUser({ type: 'selected', user: u }); setSelectedUser(null); setSelectedDish(d); }}}
                           className="flex items-center gap-2 bg-gray-50 rounded-xl p-2 cursor-pointer hover:bg-gray-100 transition">
                           <div className="flex-1 min-w-0">
                             <div className="text-xs font-bold truncate" style={{ fontFamily: '"Courier New", monospace' }}>{r.dish?.name || r.dish_name}</div>
@@ -10653,8 +10595,9 @@ ${adminBugNote}`,
               pointerEvents: 'auto'
             }} 
           />
-          <div className={`fixed inset-0 flex items-center justify-center z-60 p-4 pointer-events-none`}>
-            <div className={`bg-white rounded-xl max-w-lg w-full overflow-y-auto pointer-events-auto ${isRestaurantModalClosing ? 'animate-slide-down-fade-simple' : 'animate-slide-up-fade-simple'}`} style={{ maxHeight: '32vh' }}>
+          {/* Desktop: centered float */}
+          <div className="hidden md:flex fixed inset-0 items-center justify-center z-[61] p-4 pointer-events-none">
+            <div className={`bg-white rounded-xl max-w-lg w-full overflow-y-auto pointer-events-auto ${isRestaurantModalClosing ? 'animate-slide-down-fade-simple' : 'animate-slide-up-fade-simple'}`} style={{ maxHeight: '65vh' }}>
               {/* Compact Header */}
               <div className="sticky top-0 bg-white border-b px-3 py-2 flex justify-between items-center">
                 <div className="flex items-center gap-2 flex-1">
@@ -10918,6 +10861,57 @@ ${adminBugNote}`,
                     />
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+
+          {/* Mobile: bottom sheet */}
+          <div className={`md:hidden fixed bottom-0 left-0 right-0 z-[61] bg-white rounded-t-2xl flex flex-col pointer-events-auto ${isRestaurantModalClosing ? 'animate-slide-down-fade-simple' : 'animate-slide-up-fade-simple'}`} style={{ maxHeight: '75vh' }}>
+            <div className="sticky top-0 bg-white border-b px-4 py-3 flex-shrink-0 rounded-t-2xl">
+              <div className="w-8 h-1 bg-gray-300 rounded-full mx-auto mb-2" />
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-bold text-[#33a29b] truncate" style={{ fontFamily: '"Courier New", monospace' }}>{selectedRestaurant.name}</h2>
+                <button onClick={handleCloseRestaurant} className="text-gray-500 hover:text-gray-700 flex-shrink-0"><X size={18} /></button>
+              </div>
+              {selectedRestaurant.location?.address && (
+                <p className="text-[10px] text-gray-400 mt-0.5 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{selectedRestaurant.location.address}</p>
+              )}
+            </div>
+            <div className="overflow-y-auto flex-1 p-3 space-y-3">
+              {/* Score */}
+              {selectedRestaurant.avgSRR && (
+                <div className="bg-[#33a29b]/10 rounded-lg px-3 py-2 flex items-center justify-between border border-[#33a29b]/20">
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest" style={{ fontFamily: '"Courier New", monospace' }}>avg score</span>
+                  <span className={`text-xl font-bold ${getSRRColor(selectedRestaurant.avgSRR)}`} style={{ fontFamily: '"Courier New", monospace' }}>{selectedRestaurant.avgSRR}</span>
+                </div>
+              )}
+              {/* Rate button */}
+              <button
+                onClick={() => { setRestaurant(selectedRestaurant.name); setDishName(''); setIsSubmissionModalOpen(true); setSelectedRestaurant(null); }}
+                className="w-full py-2 bg-[#33a29b] text-white rounded-lg font-bold hover:bg-[#2a8a84] transition text-sm"
+                style={{ fontFamily: '"Courier New", monospace' }}
+              >rate a dish here</button>
+              {/* Top dishes */}
+              <div>
+                <h3 className="text-[9px] font-bold mb-2 text-gray-500 uppercase tracking-widest" style={{ fontFamily: '"Courier New", monospace' }}>top dishes</h3>
+                <div className="space-y-2">
+                  {selectedRestaurant.topDishes && selectedRestaurant.topDishes.length > 0 ? (
+                    selectedRestaurant.topDishes.slice(0, 8).map((dish, idx) => (
+                      <div key={idx} onClick={() => setSelectedDish(dish)}
+                        className="flex items-center justify-between rounded-lg p-2 bg-gray-50 hover:bg-gray-100 cursor-pointer transition border border-gray-100">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-bold truncate" style={{ fontFamily: '"Courier New", monospace' }}>{dish.name}</div>
+                          <div className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>${dish.price?.toFixed(2)} · {dish.numRatings} rating{dish.numRatings !== 1 ? 's' : ''}</div>
+                        </div>
+                        {dish.srr != null && (
+                          <span className={`text-sm font-bold ml-2 flex-shrink-0 ${getSRRColor(dish.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>{parseFloat(dish.srr).toFixed(1)}</span>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-gray-400 italic" style={{ fontFamily: '"Courier New", monospace' }}>no dishes rated yet</p>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -12029,7 +12023,7 @@ ${adminBugNote}`,
                       setExploreUserFollowersList({ type: 'followers', users: allUsers.filter(au => ids.includes(au.id)) });
                     }}>
                       <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{u.followers_count || u.friends || 0}</div>
-                      <div className="text-[10px] text-[#33a29b] underline" style={{ fontFamily: '"Courier New", monospace' }}>followers</div>
+                      <div className="text-[10px] text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>followers</div>
                     </button>
                     <button className="flex-1" onClick={async () => {
                       const { data } = await supabase.from('follows').select('following_id').eq('follower_id', u.id);
@@ -12037,7 +12031,7 @@ ${adminBugNote}`,
                       setExploreUserFollowersList({ type: 'following', users: allUsers.filter(au => ids.includes(au.id)) });
                     }}>
                       <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{u.following_count || 0}</div>
-                      <div className="text-[10px] text-[#33a29b] underline" style={{ fontFamily: '"Courier New", monospace' }}>following</div>
+                      <div className="text-[10px] text-[#33a29b]" style={{ fontFamily: '"Courier New", monospace' }}>following</div>
                     </button>
                     <div className="flex-1">
                       <div className={`font-bold text-base ${getSRRColor(avgScore)}`} style={{ fontFamily: '"Courier New", monospace' }}>{avgScore.toFixed(1)}</div>
@@ -12100,7 +12094,7 @@ ${adminBugNote}`,
                       return { color: '#3b82f6', shadow: '0 0 8px 1px rgba(59,130,246,0.35)' };
                     })() : null;
                     return (
-                      <div key={r.id} onClick={() => { if (dishObj) setSelectedDish(dishObj); }}
+                      <div key={r.id} onClick={() => { if (dishObj) { setDishReturnToUser({ type: 'explore', user: u }); setSelectedExploreUser(null); setSelectedDish(dishObj); } }}
                         className="flex items-center gap-3 py-2.5 px-2 rounded-lg cursor-pointer hover:bg-gray-100 transition border-b border-gray-100 last:border-0">
                         <span className="text-xs text-gray-400 w-5 flex-shrink-0" style={{ fontFamily: '"Courier New", monospace' }}>#{idx + 1}</span>
                         <div className="flex-1 min-w-0">
