@@ -7219,47 +7219,44 @@ ${adminBugNote}`,
                     />
                   ) : (
                     <div className="space-y-2">
-                      {getFilteredDishes().map((dish, idx) => {                        return (
-                          {(() => {
-                            const tierColor = dish.srr >= 96 ? '#9333ea' : dish.srr >= 89 ? '#eab308' : dish.srr >= 81 ? '#9ca3af' : dish.srr >= 72 ? '#22c55e' : dish.srr >= 57 ? '#3b82f6' : '#f59e0b';
-                            const tierEmoji = dish.srr >= 96 ? '💎' : dish.srr >= 89 ? '🥇' : dish.srr >= 81 ? '🏆' : dish.srr >= 72 ? '✅' : dish.srr >= 57 ? '🔵' : '⚠️';
-                            return (
-                              <div key={idx}
-                                className="bg-white rounded-lg shadow-sm hover:shadow-md transition cursor-pointer stagger-item rankings-card overflow-hidden"
-                                style={{ borderLeft: `3px solid ${tierColor}` }}
-                                onClick={() => setSelectedDish(dish)}>
-                                <div className="flex items-center gap-3 p-3">
-                                  <div className="w-7 text-center text-sm font-bold text-gray-400 rank-num flex-shrink-0">#{idx + 1}</div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="font-semibold text-sm dish-name truncate">{dish.name}</div>
-                                    <div className="text-[10px] text-gray-500 dish-meta truncate">{dish.restaurantName} • {dish.cuisine}{dish.subcategory ? ` • ${dish.subcategory}` : ''} • ${dish.price.toFixed(2)}</div>
-                                    {/* T/P/Po row */}
-                                    {(dish.taste_score != null || dish.portion_score != null) && (
-                                      <div className="flex items-center gap-2 mt-0.5">
-                                        {dish.taste_score != null && <span className="text-[9px] font-bold" style={{ color: '#f97316', fontFamily: '"Courier New", monospace' }}>T:{parseFloat(dish.taste_score).toFixed(0)}</span>}
-                                        {dish.price_score != null && <span className="text-[9px] font-bold" style={{ color: '#22c55e', fontFamily: '"Courier New", monospace' }}>P:{parseFloat(dish.price_score).toFixed(0)}</span>}
-                                        {dish.portion_score != null && <span className="text-[9px] font-bold" style={{ color: '#3b82f6', fontFamily: '"Courier New", monospace' }}>Po:{parseFloat(dish.portion_score).toFixed(0)}</span>}
-                                        {/* Tag dots */}
-                                        <div className="flex gap-1 ml-1">
-                                          {(dishTags[dish.id] || []).slice(0, 3).map(tag => {
-                                            const tagData = allTags.find(t => t.id === tag.tag_id);
-                                            if (!tagData) return null;
-                                            return <div key={tag.tag_id} className="w-3 h-3 rounded-full" style={{ backgroundColor: tagData.color }} title={tagData.name} />;
-                                          })}
-                                        </div>
-                                      </div>
-                                    )}
+                      {getFilteredDishes().map((dish, idx) => {
+                        const tierColor = dish.srr >= 96 ? '#9333ea' : dish.srr >= 89 ? '#eab308' : dish.srr >= 81 ? '#9ca3af' : dish.srr >= 72 ? '#22c55e' : dish.srr >= 57 ? '#3b82f6' : '#f59e0b';
+                        const tierEmoji = dish.srr >= 96 ? '💎' : dish.srr >= 89 ? '🥇' : dish.srr >= 81 ? '🏆' : dish.srr >= 72 ? '✅' : dish.srr >= 57 ? '🔵' : '⚠️';
+                        return (
+                          <div key={idx}
+                            className="bg-white rounded-lg shadow-sm hover:shadow-md transition cursor-pointer stagger-item rankings-card overflow-hidden"
+                            style={{ borderLeft: `3px solid ${tierColor}` }}
+                            onClick={() => setSelectedDish(dish)}>
+                            <div className="flex items-center gap-3 p-3">
+                              <div className="w-7 text-center text-sm font-bold text-gray-400 rank-num flex-shrink-0">#{idx + 1}</div>
+                              <div className="flex-1 min-w-0">
+                                <div className="font-semibold text-sm dish-name truncate">{dish.name}</div>
+                                <div className="text-[10px] text-gray-500 dish-meta truncate">{dish.restaurantName} • {dish.cuisine}{dish.subcategory ? ` • ${dish.subcategory}` : ''} • ${dish.price.toFixed(2)}</div>
+                                {/* T/P/Po row */}
+                                {(dish.taste_score != null || dish.portion_score != null) && (
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    {dish.taste_score != null && <span className="text-[9px] font-bold" style={{ color: '#f97316', fontFamily: '"Courier New", monospace' }}>T:{parseFloat(dish.taste_score).toFixed(0)}</span>}
+                                    {dish.price_score != null && <span className="text-[9px] font-bold" style={{ color: '#22c55e', fontFamily: '"Courier New", monospace' }}>P:{parseFloat(dish.price_score).toFixed(0)}</span>}
+                                    {dish.portion_score != null && <span className="text-[9px] font-bold" style={{ color: '#3b82f6', fontFamily: '"Courier New", monospace' }}>Po:{parseFloat(dish.portion_score).toFixed(0)}</span>}
+                                    {/* Tag dots */}
+                                    <div className="flex gap-1 ml-1">
+                                      {(dishTags[dish.id] || []).slice(0, 3).map(tag => {
+                                        const tagData = allTags.find(t => t.id === tag.tag_id);
+                                        if (!tagData) return null;
+                                        return <div key={tag.tag_id} className="w-3 h-3 rounded-full" style={{ backgroundColor: tagData.color }} title={tagData.name} />;
+                                      })}
+                                    </div>
                                   </div>
-                                  {/* Score column */}
-                                  <div className="flex flex-col items-center flex-shrink-0 min-w-[52px]">
-                                    <div className="text-base mb-0.5">{tierEmoji}</div>
-                                    <div className={`text-xl font-bold score ${getSRRColor(dish.srr)} ${dish.srr >= 90 ? 'score-shine' : ''}`} style={{ fontFamily: '"Courier New", monospace' }}>{typeof dish.srr === "number" ? dish.srr.toFixed(2) : dish.srr}</div>
-                                    <div className="text-[9px] text-gray-400 text-center" style={{ fontFamily: '"Courier New", monospace' }}>{dish.numRatings} rating{dish.numRatings !== 1 ? 's' : ''}</div>
-                                  </div>
-                                </div>
+                                )}
                               </div>
-                            );
-                          })()}
+                              {/* Score column */}
+                              <div className="flex flex-col items-center flex-shrink-0 min-w-[52px]">
+                                <div className="text-base mb-0.5">{tierEmoji}</div>
+                                <div className={`text-xl font-bold score ${getSRRColor(dish.srr)} ${dish.srr >= 90 ? 'score-shine' : ''}`} style={{ fontFamily: '"Courier New", monospace' }}>{typeof dish.srr === "number" ? dish.srr.toFixed(2) : dish.srr}</div>
+                                <div className="text-[9px] text-gray-400 text-center" style={{ fontFamily: '"Courier New", monospace' }}>{dish.numRatings} rating{dish.numRatings !== 1 ? 's' : ''}</div>
+                              </div>
+                            </div>
+                          </div>
                         );
                       })}
                     </div>
