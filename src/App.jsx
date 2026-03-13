@@ -854,7 +854,20 @@ const HuntersFindsApp = () => {
   const [selectedExploreUser, setSelectedExploreUser] = useState(null);
   const [exploreUserHistory, setExploreUserHistory] = useState([]);
   const [exploreUserFollowersList, setExploreUserFollowersList] = useState(null);
-  const openExploreUser = (u) => { setSelectedExploreUser(u); setExploreUserHistory([]); setExploreUserFollowersList(null); };
+  const openExploreUser = (u) => {
+    setSelectedExploreUser(u);
+    setExploreUserHistory([]);
+    setExploreUserFollowersList(null);
+    setViewFollowersOverlay(null);
+    // Fetch live follower counts
+    if (u) {
+      supabase.from('user_follows').select('id', { count: 'exact', head: true }).eq('following_id', u.id).then(({ count: fc }) => {
+        supabase.from('user_follows').select('id', { count: 'exact', head: true }).eq('follower_id', u.id).then(({ count: fg }) => {
+          setSelectedExploreUser(prev => prev && prev.id === u.id ? { ...prev, followers_count: fc || 0, following_count: fg || 0 } : prev);
+        });
+      });
+    }
+  };
   const [followingIds, setFollowingIds] = useState(new Set());
 
   React.useEffect(() => {
@@ -919,7 +932,15 @@ const HuntersFindsApp = () => {
       if (prev) setUserModalHistory(h => [...h, prev]);
       return u;
     });
-    setProfileModalTab('stats'); 
+    setProfileModalTab('stats');
+    // Fetch live follower counts
+    if (u) {
+      supabase.from('user_follows').select('id', { count: 'exact', head: true }).eq('following_id', u.id).then(({ count: fc }) => {
+        supabase.from('user_follows').select('id', { count: 'exact', head: true }).eq('follower_id', u.id).then(({ count: fg }) => {
+          setSelectedUserRaw(prev => prev && prev.id === u.id ? { ...prev, followers_count: fc || 0, following_count: fg || 0 } : prev);
+        });
+      });
+    }
   };
   const goBackUserModal = () => {
     setUserModalHistory(h => {
@@ -930,6 +951,7 @@ const HuntersFindsApp = () => {
   };
   const [isUserModalClosing, setIsUserModalClosing] = useState(false);
   const [userModalFollowersList, setUserModalFollowersList] = useState(null); // { type: 'followers'|'following', users: [] }
+  const [viewFollowersOverlay, setViewFollowersOverlay] = useState(null); // { tab: 'followers'|'following', followerUsers: [], followingUsers: [], onClickUser: fn }
   const [modalStack, setModalStack] = useState([]);
   const [restaurant, setRestaurant] = useState('');
   const [dishName, setDishName] = useState('');
@@ -4609,9 +4631,10 @@ const HuntersFindsApp = () => {
                     const nameColor = uStyle?.color || '#9ca3af';
                     const rName = uObj?.username || r.username || 'user';
                     const rScore = r.overall_score ? parseFloat(r.overall_score).toFixed(1) : null;
-                    return '<div style="display:flex;align-items:center;gap:6px;padding:1px 0;"><span style="font-size:9px;color:' + nameColor + ';font-weight:bold;">@' + rName + '</span>' + (rScore ? '<span style="font-size:9px;font-weight:bold;color:#374151;">' + rScore + '</span>' : '') + '</div>';
+                    const userId = r.user_id || '';
+                    return '<div style="display:flex;align-items:center;gap:6px;padding:1px 0;"><span style="font-size:9px;color:' + nameColor + ';font-weight:bold;cursor:pointer;text-decoration:underline;text-underline-offset:2px;" onclick="event.stopPropagation();window.openUserFromMap(\'' + userId + '\')">@' + rName + '</span>' + (rScore ? '<span style="font-size:9px;font-weight:bold;color:#374151;">' + rScore + '</span>' : '') + '</div>';
                   }).join('');
-                  return '<div style="padding: 4px 0; border-bottom: 1px solid #f0f0f0;"><div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="event.stopPropagation();window.openDishFromMap(\'' + dish.id + '\',\'' + restaurant.id + '\')">' +
+                  return '<div style="padding: 4px 0; border-bottom: 1px solid #f0f0f0;"><div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;padding:3px 4px;border-radius:5px;transition:background 0.15s;" onmouseover="this.style.background=\'#f0faf9\'" onmouseout="this.style.background=\'transparent\'" onclick="event.stopPropagation();window.openDishFromMap(\'' + dish.id + '\',\'' + restaurant.id + '\')">' +
                     '<span style="font-size:11px;font-weight:bold;">' + badge + dish.name + '</span>' +
                     '<span style="font-weight:bold;color:' + scoreColor + ';font-size:12px;">' + scoreStr + '</span></div>' +
                     (ratersHtml ? '<div style="margin-top:2px;">' + ratersHtml + '</div>' : '') +
@@ -4686,6 +4709,13 @@ const HuntersFindsApp = () => {
         if (window._mapInstance) window._mapInstance.closePopup();
         if (restaurantId) setMapReturnRestaurant(restaurantId);
         setSelectedDish(dish);
+      }
+    };
+    window.openUserFromMap = (userId) => {
+      const u = allUsers.find(u => u.id === userId);
+      if (u) {
+        if (window._mapInstance) window._mapInstance.closePopup();
+        openExploreUser(u);
       }
     };
   }
@@ -6029,6 +6059,7 @@ ${adminBugNote}`,
       setSelectedUser(null);
       setUserModalHistory([]);
       setUserModalFollowersList(null);
+      setViewFollowersOverlay(null);
       setIsUserModalClosing(false);
     }, 300);
   };
@@ -6789,9 +6820,9 @@ ${adminBugNote}`,
                 />
                 
                 {/* Close map filter on outside click */}
-                {mapActiveFilter && <div className="absolute inset-0 z-[15]" onClick={() => setMapActiveFilter(null)} />}
-                {/* Top bar: Find Nearby + Filter Pills */}
-                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2" style={{ fontFamily: '"Courier New", monospace' }}>
+                {mapActiveFilter === 'open' && <div className="absolute inset-0 z-[15]" onClick={() => setMapActiveFilter(null)} />}
+                {/* Top bar: Find Nearby + Filter button */}
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2" style={{ fontFamily: '"Courier New", monospace' }}>
                   {showMapFindNearby && (
                     <button
                       onClick={async () => {
@@ -6820,94 +6851,86 @@ ${adminBugNote}`,
                       find nearby
                     </button>
                   )}
-
-                  {/* Filter pills */}
-                  {(['quality', 'social', 'other']).map(pill => {
-                    const isActive = mapActiveFilter === pill;
-                    const hasSelections = pill === 'quality' ? mapFilters.quality.length > 0
-                      : pill === 'social' ? mapFilters.social.length > 0
-                      : (mapFilters.popularity.length > 0 || mapFilters.distance.length > 0);
+                  {/* Single filter button */}
+                  {(() => {
+                    const hasAny = mapFilters.quality.length > 0 || mapFilters.social.length > 0 || mapFilters.popularity.length > 0 || mapFilters.distance.length > 0;
+                    const totalCount = mapFilters.quality.length + mapFilters.social.length + mapFilters.popularity.length + mapFilters.distance.length;
                     return (
-                      <button key={pill}
-                        onClick={() => setMapActiveFilter(isActive ? null : pill)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-lg border ${
-                          isActive ? 'bg-[#33a29b] text-white border-[#33a29b]'
-                          : hasSelections ? 'bg-white text-[#33a29b] border-[#33a29b]'
+                      <button
+                        onClick={() => setMapActiveFilter(mapActiveFilter === 'open' ? null : 'open')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-lg border flex items-center gap-1.5 ${
+                          mapActiveFilter === 'open' ? 'bg-[#33a29b] text-white border-[#33a29b]'
+                          : hasAny ? 'bg-white text-[#33a29b] border-[#33a29b]'
                           : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
                         }`}
                         style={{ fontFamily: '"Courier New", monospace' }}
                       >
-                        {pill}{hasSelections && pill !== 'other' ? ` ✓` : ''}
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
+                        filter{totalCount > 0 ? ` (${totalCount})` : ''}
                       </button>
                     );
-                  })}
+                  })()}
                 </div>
 
-                {/* Filter dropdowns */}
-                {mapActiveFilter && (
-                  <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20 bg-white rounded-xl shadow-xl p-3 w-72"
+                {/* Filter panel — all 4 sections flat */}
+                {mapActiveFilter === 'open' && (
+                  <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20 bg-white rounded-xl shadow-xl p-4 w-72"
                     style={{ fontFamily: '"Courier New", monospace' }}
                     onClick={e => e.stopPropagation()}
                   >
-                    {mapActiveFilter === 'quality' && (
-                      <div>
-                        <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">quality</div>
+                    {/* Quality */}
+                    <div className="mb-3">
+                      <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">quality</div>
+                      <div className="flex flex-wrap gap-1.5">
                         {[['80+', '80+ score'], ['90+', '90+ score'], ['top', 'your top rated']].map(([val, label]) => (
-                          <label key={val} className="flex items-center gap-2 text-xs py-1 cursor-pointer">
-                            <input type="checkbox" checked={mapFilters.quality.includes(val)}
-                              onChange={e => setMapFilters(prev => ({ ...prev, quality: e.target.checked ? [...prev.quality, val] : prev.quality.filter(v => v !== val) }))} />
-                            <span>{label}</span>
-                          </label>
+                          <button key={val}
+                            onClick={() => setMapFilters(prev => ({ ...prev, quality: prev.quality.includes(val) ? prev.quality.filter(v => v !== val) : [...prev.quality, val] }))}
+                            className={`px-2 py-1 rounded-lg text-[11px] font-semibold border transition ${mapFilters.quality.includes(val) ? 'bg-[#33a29b] text-white border-[#33a29b]' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-[#33a29b]'}`}
+                          >{label}</button>
                         ))}
                       </div>
-                    )}
-                    {mapActiveFilter === 'social' && (
-                      <div>
-                        <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">social</div>
-                        {[['you', 'you rated'], ['friends', 'friends rated'], ['groups', 'group members rated']].map(([val, label]) => (
-                          <label key={val} className="flex items-center gap-2 text-xs py-1 cursor-pointer">
-                            <input type="checkbox" checked={mapFilters.social.includes(val)}
-                              onChange={e => setMapFilters(prev => ({ ...prev, social: e.target.checked ? [...prev.social, val] : prev.social.filter(v => v !== val) }))} />
-                            <span>{label}</span>
-                          </label>
+                    </div>
+                    {/* Social */}
+                    <div className="mb-3">
+                      <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">social</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[['you', 'you rated'], ['friends', 'friends rated'], ['groups', 'groups rated']].map(([val, label]) => (
+                          <button key={val}
+                            onClick={() => setMapFilters(prev => ({ ...prev, social: prev.social.includes(val) ? prev.social.filter(v => v !== val) : [...prev.social, val] }))}
+                            className={`px-2 py-1 rounded-lg text-[11px] font-semibold border transition ${mapFilters.social.includes(val) ? 'bg-[#33a29b] text-white border-[#33a29b]' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-[#33a29b]'}`}
+                          >{label}</button>
                         ))}
                       </div>
-                    )}
-                    {mapActiveFilter === 'other' && (
-                      <div className="flex gap-3">
-                        {/* Left: categories */}
-                        <div className="w-28 border-r border-gray-100 pr-2 space-y-1">
-                          {[['popularity', 'popularity'], ['distance', 'distance']].map(([cat, label]) => (
-                            <button key={cat}
-                              onClick={() => setMapOtherCategory(cat)}
-                              className={`w-full text-left px-2 py-1.5 rounded-lg text-xs font-semibold transition ${mapOtherCategory === cat ? 'bg-[#33a29b]/10 text-[#33a29b]' : 'text-gray-600 hover:bg-gray-50'}`}
-                            >{label}</button>
-                          ))}
-                        </div>
-                        {/* Right: options */}
-                        <div className="flex-1 space-y-1">
-                          {mapOtherCategory === 'popularity' && [['3+', '3+ ratings'], ['5+', '5+ ratings'], ['10+', '10+ ratings']].map(([val, label]) => (
-                            <label key={val} className="flex items-center gap-2 text-xs py-1 cursor-pointer">
-                              <input type="checkbox" checked={mapFilters.popularity.includes(val)}
-                                onChange={e => setMapFilters(prev => ({ ...prev, popularity: e.target.checked ? [...prev.popularity, val] : prev.popularity.filter(v => v !== val) }))} />
-                              <span>{label}</span>
-                            </label>
-                          ))}
-                          {mapOtherCategory === 'distance' && [['1mi', 'within 1 mile'], ['5mi', 'within 5 miles'], ['10mi', 'within 10 miles']].map(([val, label]) => (
-                            <label key={val} className="flex items-center gap-2 text-xs py-1 cursor-pointer">
-                              <input type="checkbox" checked={mapFilters.distance.includes(val)}
-                                onChange={e => setMapFilters(prev => ({ ...prev, distance: e.target.checked ? [...prev.distance, val] : prev.distance.filter(v => v !== val) }))} />
-                              <span>{label}</span>
-                            </label>
-                          ))}
-                        </div>
+                    </div>
+                    {/* Popularity */}
+                    <div className="mb-3">
+                      <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">popularity</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[['3+', '3+ ratings'], ['5+', '5+ ratings'], ['10+', '10+ ratings']].map(([val, label]) => (
+                          <button key={val}
+                            onClick={() => setMapFilters(prev => ({ ...prev, popularity: prev.popularity.includes(val) ? prev.popularity.filter(v => v !== val) : [...prev.popularity, val] }))}
+                            className={`px-2 py-1 rounded-lg text-[11px] font-semibold border transition ${mapFilters.popularity.includes(val) ? 'bg-[#33a29b] text-white border-[#33a29b]' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-[#33a29b]'}`}
+                          >{label}</button>
+                        ))}
                       </div>
-                    )}
+                    </div>
+                    {/* Distance */}
+                    <div>
+                      <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">distance</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[['1mi', '1 mile'], ['5mi', '5 miles'], ['10mi', '10 miles']].map(([val, label]) => (
+                          <button key={val}
+                            onClick={() => setMapFilters(prev => ({ ...prev, distance: prev.distance.includes(val) ? prev.distance.filter(v => v !== val) : [...prev.distance, val] }))}
+                            className={`px-2 py-1 rounded-lg text-[11px] font-semibold border transition ${mapFilters.distance.includes(val) ? 'bg-[#33a29b] text-white border-[#33a29b]' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-[#33a29b]'}`}
+                          >{label}</button>
+                        ))}
+                      </div>
+                    </div>
                     {/* Clear all */}
                     {(mapFilters.quality.length > 0 || mapFilters.social.length > 0 || mapFilters.popularity.length > 0 || mapFilters.distance.length > 0) && (
-                      <button onClick={() => { setMapFilters({ popularity: [], quality: [], recency: [], social: [], distance: [] }); }}
-                        className="mt-2 w-full text-center text-[10px] text-gray-400 hover:text-gray-600 border-t border-gray-100 pt-2"
-                      >clear all</button>
+                      <button onClick={() => setMapFilters({ popularity: [], quality: [], recency: [], social: [], distance: [] })}
+                        className="mt-3 w-full text-center text-[10px] text-gray-400 hover:text-red-500 border-t border-gray-100 pt-2 transition"
+                      >clear all filters</button>
                     )}
                   </div>
                 )}
@@ -7250,8 +7273,7 @@ ${adminBugNote}`,
                                 )}
                               </div>
                               {/* Score column */}
-                              <div className="flex flex-col items-center flex-shrink-0 min-w-[52px]">
-                                <div className="text-base mb-0.5">{tierEmoji}</div>
+                              <div className="flex flex-col items-center flex-shrink-0 min-w-[44px]">
                                 <div className={`text-xl font-bold score ${getSRRColor(dish.srr)} ${dish.srr >= 90 ? 'score-shine' : ''}`} style={{ fontFamily: '"Courier New", monospace' }}>{typeof dish.srr === "number" ? dish.srr.toFixed(2) : dish.srr}</div>
                                 <div className="text-[9px] text-gray-400 text-center" style={{ fontFamily: '"Courier New", monospace' }}>{dish.numRatings} rating{dish.numRatings !== 1 ? 's' : ''}</div>
                               </div>
@@ -7266,14 +7288,22 @@ ${adminBugNote}`,
 
               {rankingView === 'restaurants' && (
                 <div className="space-y-2">
-                  {getFilteredRestaurants().sort((a, b) => b.avgSRR - a.avgSRR).map((restaurant, idx) => {                    return (
-                      <div key={idx} className="bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition cursor-pointer stagger-item" onClick={() => setSelectedRestaurant(restaurant)}>
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 text-center text-lg font-bold text-gray-400">#{idx + 1}</div>
-                          <div className="flex-1">
-                            <div className="font-semibold text-sm">{restaurant.name}</div>
-                            <div className="text-xs text-gray-500">{restaurant.cuisine}</div>
-                          </div>                          <div className={`text-2xl font-bold ${getSRRColor(restaurant.avgSRR)} ${restaurant.avgSRR >= 90 ? 'score-shine' : ''}`}>{typeof restaurant.avgSRR === "number" ? restaurant.avgSRR.toFixed(2) : restaurant.avgSRR}</div>
+                  {getFilteredRestaurants().sort((a, b) => b.avgSRR - a.avgSRR).map((restaurant, idx) => {
+                    const tierColor = restaurant.avgSRR >= 96 ? '#9333ea' : restaurant.avgSRR >= 89 ? '#eab308' : restaurant.avgSRR >= 81 ? '#9ca3af' : restaurant.avgSRR >= 72 ? '#22c55e' : restaurant.avgSRR >= 57 ? '#3b82f6' : '#f59e0b';
+                    return (
+                      <div key={idx}
+                        className="bg-white rounded-lg shadow-sm hover:shadow-md transition cursor-pointer stagger-item overflow-hidden"
+                        style={{ borderLeft: `3px solid ${tierColor}` }}
+                        onClick={() => setSelectedRestaurant(restaurant)}>
+                        <div className="flex items-center gap-3 p-3">
+                          <div className="w-7 text-center text-sm font-bold text-gray-400 flex-shrink-0">#{idx + 1}</div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-sm truncate" style={{ fontFamily: '"Courier New", monospace' }}>{restaurant.name}</div>
+                            <div className="text-[10px] text-gray-500 truncate" style={{ fontFamily: '"Courier New", monospace' }}>{restaurant.cuisine} • {restaurant.numRatings || 0} rating{restaurant.numRatings !== 1 ? 's' : ''}</div>
+                          </div>
+                          <div className="flex flex-col items-center flex-shrink-0 min-w-[44px]">
+                            <div className={`text-xl font-bold ${getSRRColor(restaurant.avgSRR)} ${restaurant.avgSRR >= 90 ? 'score-shine' : ''}`} style={{ fontFamily: '"Courier New", monospace' }}>{typeof restaurant.avgSRR === "number" ? restaurant.avgSRR.toFixed(2) : restaurant.avgSRR}</div>
+                          </div>
                         </div>
                       </div>
                     );
@@ -7620,12 +7650,18 @@ ${adminBugNote}`,
                   ) : allUsers.length === 0 ? (
                     <EmptyState icon={Users} title="no other users yet" message="Invite friends to join hunters finds!" />
                   ) : (
-                    allUsers.map(u => (
+                    allUsers.map(u => {
+                      const uRatings = allRatings.filter(r => r.user_id === u.id && !r.is_deleted);
+                      const uAvg = uRatings.length > 0 ? uRatings.reduce((s, r) => s + (r.overall_score || (r.taste_score != null && r.portion_score != null && r.price_score != null ? (r.taste_score + r.portion_score + r.price_score) / 3 : 0)), 0) / uRatings.length : 0;
+                      const uTierColor = uAvg >= 96 ? '#9333ea' : uAvg >= 89 ? '#eab308' : uAvg >= 81 ? '#9ca3af' : uAvg >= 72 ? '#22c55e' : uAvg >= 57 ? '#3b82f6' : '#f59e0b';
+                      return (
                       <div
                         key={u.id}
-                        className="bg-white rounded-xl p-3 shadow-sm flex items-center gap-3 cursor-pointer hover:shadow-md transition"
+                        className="bg-white rounded-xl shadow-sm flex items-center gap-3 cursor-pointer hover:shadow-md transition overflow-hidden"
+                        style={{ borderLeft: uRatings.length > 0 ? `3px solid ${uTierColor}` : '3px solid #e5e7eb' }}
                         onClick={() => openExploreUser(u)}
                       >
+                        <div className="flex items-center gap-3 p-3 flex-1">
                         {/* Avatar */}
                         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
                           {(u.username || u.email || '?')[0].toUpperCase()}
@@ -7653,8 +7689,10 @@ ${adminBugNote}`,
                             {u.isFollowing ? 'following' : 'follow'}
                           </button>
                         )}
+                        </div>
                       </div>
-                    ))
+                    );
+                    })
                   )}
                 </div>
               )}
@@ -10418,19 +10456,25 @@ ${adminBugNote}`,
                     </div>
                     <div className="flex gap-4 flex-1 text-center">
                       <button className="flex-1" onClick={async () => {
-                        const { data } = await supabase.from('user_follows').select('follower_id').eq('following_id', u.id);
-                        const followerIds = (data || []).map(f => f.follower_id);
-                        const followerUsers = allUsers.filter(au => followerIds.includes(au.id));
-                        setUserModalFollowersList({ type: 'followers', users: followerUsers });
+                        const [{ data: fd }, { data: fg }] = await Promise.all([
+                          supabase.from('user_follows').select('follower_id').eq('following_id', u.id),
+                          supabase.from('user_follows').select('following_id').eq('follower_id', u.id)
+                        ]);
+                        const followerUsers = allUsers.filter(au => (fd||[]).map(f=>f.follower_id).includes(au.id));
+                        const followingUsers = allUsers.filter(au => (fg||[]).map(f=>f.following_id).includes(au.id));
+                        setViewFollowersOverlay({ tab: 'followers', followerUsers, followingUsers, onClickUser: (fu) => { setViewFollowersOverlay(null); setSelectedUser(fu); } });
                       }}>
                         <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{u.followers_count || u.friends || 0}</div>
                         <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>followers</div>
                       </button>
                       <button className="flex-1" onClick={async () => {
-                        const { data } = await supabase.from('user_follows').select('following_id').eq('follower_id', u.id);
-                        const followingIds = (data || []).map(f => f.following_id);
-                        const followingUsers = allUsers.filter(au => followingIds.includes(au.id));
-                        setUserModalFollowersList({ type: 'following', users: followingUsers });
+                        const [{ data: fd }, { data: fg }] = await Promise.all([
+                          supabase.from('user_follows').select('follower_id').eq('following_id', u.id),
+                          supabase.from('user_follows').select('following_id').eq('follower_id', u.id)
+                        ]);
+                        const followerUsers = allUsers.filter(au => (fd||[]).map(f=>f.follower_id).includes(au.id));
+                        const followingUsers = allUsers.filter(au => (fg||[]).map(f=>f.following_id).includes(au.id));
+                        setViewFollowersOverlay({ tab: 'following', followerUsers, followingUsers, onClickUser: (fu) => { setViewFollowersOverlay(null); setSelectedUser(fu); } });
                       }}>
                         <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{u.following_count || 0}</div>
                         <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>following</div>
@@ -10446,30 +10490,7 @@ ${adminBugNote}`,
                     </div>
                   </div>
 
-                  {/* Followers/following mini-list */}
-                  {userModalFollowersList && (
-                    <div className="border border-gray-200 rounded-xl p-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wide" style={{ fontFamily: '"Courier New", monospace' }}>{userModalFollowersList.type}</span>
-                        <button onClick={() => setUserModalFollowersList(null)} className="text-gray-400 hover:text-gray-600"><X size={14} /></button>
-                      </div>
-                      {userModalFollowersList.users.length === 0 ? (
-                        <p className="text-xs text-gray-400 italic" style={{ fontFamily: '"Courier New", monospace' }}>none yet</p>
-                      ) : (
-                        <div className="space-y-1 max-h-40 overflow-y-auto">
-                          {userModalFollowersList.users.map(fu => (
-                            <button key={fu.id} onClick={() => { setUserModalFollowersList(null); setSelectedUser(fu); }}
-                              className="w-full flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-gray-50 transition text-left">
-                              <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
-                                {(fu.username || '?')[0].toUpperCase()}
-                              </div>
-                              <span className="text-xs font-semibold" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(fu.id) || { color: '#374151' }) }}>@{fu.username || fu.email?.split('@')[0]}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
+
 
                   {/* Overlap badge */}
                   {dishOverlap > 0 && (
@@ -10492,7 +10513,7 @@ ${adminBugNote}`,
                         {isFollowingThem ? 'following' : 'follow'}
                       </button>
                       <button
-                        onClick={() => { const uname = u.username || u.email?.split('@')[0] || 'user'; handleStartDm(u.id, uname); setSelectedUser(null); setYouView('dms'); setActiveTab('you'); }}
+                        onClick={async () => { const uname = u.username || u.email?.split('@')[0] || 'user'; setSelectedUser(null); await handleStartDm(u.id, uname); setYouView('dms'); setActiveTab('you'); }}
                         className="flex-1 py-2 rounded-xl text-sm font-bold transition bg-gray-100 text-gray-700 hover:bg-gray-200"
                         style={{ fontFamily: '"Courier New", monospace' }}
                       >message</button>
@@ -11845,6 +11866,60 @@ ${adminBugNote}`,
       
       {/* Error Modal */}
       {/* Followers / Following Modal */}
+      {/* Shared followers/following overlay — used from selectedUser and selectedExploreUser modals */}
+      {viewFollowersOverlay && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-[75]" onClick={() => setViewFollowersOverlay(null)} style={{ backdropFilter: 'blur(4px)' }} />
+          <div className="fixed inset-0 flex items-center justify-center z-[76] p-4 pointer-events-none">
+            <div className="bg-white rounded-2xl w-full pointer-events-auto shadow-2xl" style={{ maxWidth: '380px', maxHeight: '70vh', display: 'flex', flexDirection: 'column' }}>
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0">
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => setViewFollowersOverlay(prev => ({ ...prev, tab: 'followers' }))}
+                    className={`text-sm font-bold pb-1 transition ${viewFollowersOverlay.tab === 'followers' ? 'text-gray-900 border-b-2 border-gray-900' : 'text-gray-400 hover:text-gray-600'}`}
+                    style={{ fontFamily: '"Courier New", monospace' }}
+                  >
+                    followers ({viewFollowersOverlay.followerUsers.length})
+                  </button>
+                  <button
+                    onClick={() => setViewFollowersOverlay(prev => ({ ...prev, tab: 'following' }))}
+                    className={`text-sm font-bold pb-1 transition ${viewFollowersOverlay.tab === 'following' ? 'text-gray-900 border-b-2 border-gray-900' : 'text-gray-400 hover:text-gray-600'}`}
+                    style={{ fontFamily: '"Courier New", monospace' }}
+                  >
+                    following ({viewFollowersOverlay.followingUsers.length})
+                  </button>
+                </div>
+                <button onClick={() => setViewFollowersOverlay(null)} className="text-gray-400 hover:text-gray-600 transition"><X size={18} /></button>
+              </div>
+              {/* List */}
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {(viewFollowersOverlay.tab === 'followers' ? viewFollowersOverlay.followerUsers : viewFollowersOverlay.followingUsers).length === 0 ? (
+                  <p className="text-center text-sm text-gray-400 py-8" style={{ fontFamily: '"Courier New", monospace' }}>none yet</p>
+                ) : (
+                  (viewFollowersOverlay.tab === 'followers' ? viewFollowersOverlay.followerUsers : viewFollowersOverlay.followingUsers).map(fu => (
+                    <button
+                      key={fu.id}
+                      onClick={() => viewFollowersOverlay.onClickUser(fu)}
+                      className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition text-left"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                        {(fu.username || fu.email || '?')[0].toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-sm" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(fu.id) || {}) }}>@{fu.username || fu.email?.split('@')[0]}</div>
+                        <div className="text-[10px] text-gray-400" style={{ fontFamily: '"Courier New", monospace' }}>{fu.ratingsCount || 0} ratings</div>
+                      </div>
+                      <ChevronRight size={16} className="text-gray-300 flex-shrink-0" />
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {showFollowersModal && (
         <>
           <div className="fixed inset-0 bg-black/40 z-[70]" onClick={() => setShowFollowersModal(false)} style={{ backdropFilter: 'blur(4px)' }} />
@@ -11938,7 +12013,7 @@ ${adminBugNote}`,
 
         return (
           <>
-            <div onClick={() => { setSelectedExploreUser(null); setExploreUserHistory([]); setExploreUserFollowersList(null); }} className="fixed inset-0 bg-black/40 z-[60]" style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }} />
+            <div onClick={() => { setSelectedExploreUser(null); setExploreUserHistory([]); setExploreUserFollowersList(null); setViewFollowersOverlay(null); }} className="fixed inset-0 bg-black/40 z-[60]" style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }} />
             <div className="fixed z-[61] bg-white rounded-2xl shadow-xl flex flex-col"
               style={{ top: '6%', left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 520px)', maxHeight: '86vh' }}>
 
@@ -11966,7 +12041,7 @@ ${adminBugNote}`,
                     </div>
                   </div>
                 </div>
-                <button onClick={() => { setSelectedExploreUser(null); setExploreUserHistory([]); setExploreUserFollowersList(null); }}><X size={20} /></button>
+                <button onClick={() => { setSelectedExploreUser(null); setExploreUserHistory([]); setExploreUserFollowersList(null); setViewFollowersOverlay(null); }}><X size={20} /></button>
               </div>
 
               <div className="overflow-y-auto p-4 space-y-4">
@@ -11977,17 +12052,25 @@ ${adminBugNote}`,
                   </div>
                   <div className="flex gap-4 flex-1 text-center">
                     <button className="flex-1" onClick={async () => {
-                      const { data } = await supabase.from('user_follows').select('follower_id').eq('following_id', u.id);
-                      const ids = (data || []).map(f => f.follower_id);
-                      setExploreUserFollowersList({ type: 'followers', users: allUsers.filter(au => ids.includes(au.id)) });
+                      const [{ data: fd }, { data: fg }] = await Promise.all([
+                        supabase.from('user_follows').select('follower_id').eq('following_id', u.id),
+                        supabase.from('user_follows').select('following_id').eq('follower_id', u.id)
+                      ]);
+                      const followerUsers = allUsers.filter(au => (fd||[]).map(f=>f.follower_id).includes(au.id));
+                      const followingUsers = allUsers.filter(au => (fg||[]).map(f=>f.following_id).includes(au.id));
+                      setViewFollowersOverlay({ tab: 'followers', followerUsers, followingUsers, onClickUser: (fu) => { setViewFollowersOverlay(null); setExploreUserHistory(h => [...h, u]); setSelectedExploreUser({ ...fu, isFollowing: userFollows.some(f => f.following_id === fu.id) }); } });
                     }}>
                       <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{u.followers_count || u.friends || 0}</div>
                       <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>followers</div>
                     </button>
                     <button className="flex-1" onClick={async () => {
-                      const { data } = await supabase.from('user_follows').select('following_id').eq('follower_id', u.id);
-                      const ids = (data || []).map(f => f.following_id);
-                      setExploreUserFollowersList({ type: 'following', users: allUsers.filter(au => ids.includes(au.id)) });
+                      const [{ data: fd }, { data: fg }] = await Promise.all([
+                        supabase.from('user_follows').select('follower_id').eq('following_id', u.id),
+                        supabase.from('user_follows').select('following_id').eq('follower_id', u.id)
+                      ]);
+                      const followerUsers = allUsers.filter(au => (fd||[]).map(f=>f.follower_id).includes(au.id));
+                      const followingUsers = allUsers.filter(au => (fg||[]).map(f=>f.following_id).includes(au.id));
+                      setViewFollowersOverlay({ tab: 'following', followerUsers, followingUsers, onClickUser: (fu) => { setViewFollowersOverlay(null); setExploreUserHistory(h => [...h, u]); setSelectedExploreUser({ ...fu, isFollowing: userFollows.some(f => f.following_id === fu.id) }); } });
                     }}>
                       <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{u.following_count || 0}</div>
                       <div className="text-[10px] text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>following</div>
@@ -12003,33 +12086,7 @@ ${adminBugNote}`,
                   </div>
                 </div>
 
-                {/* Followers/following mini-list */}
-                {exploreUserFollowersList && (
-                  <div className="border border-gray-200 rounded-xl p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wide" style={{ fontFamily: '"Courier New", monospace' }}>{exploreUserFollowersList.type}</span>
-                      <button onClick={() => setExploreUserFollowersList(null)} className="text-gray-400 hover:text-gray-600"><X size={14} /></button>
-                    </div>
-                    {exploreUserFollowersList.users.length === 0 ? (
-                      <p className="text-xs text-gray-400 italic" style={{ fontFamily: '"Courier New", monospace' }}>none yet</p>
-                    ) : (
-                      <div className="space-y-1 max-h-40 overflow-y-auto">
-                        {exploreUserFollowersList.users.map(fu => (
-                          <button key={fu.id} onClick={() => {
-                            setExploreUserHistory(h => [...h, u]);
-                            setSelectedExploreUser({ ...fu, isFollowing: userFollows.some(f => f.following_id === fu.id) });
-                            setExploreUserFollowersList(null);
-                          }} className="w-full flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-gray-50 transition text-left">
-                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#33a29b] to-[#2a8a84] flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
-                              {(fu.username || '?')[0].toUpperCase()}
-                            </div>
-                            <span className="text-xs font-semibold" style={{ fontFamily: '"Courier New", monospace', ...(getUsernameStyle(fu.id) || { color: '#374151' }) }}>@{fu.username || fu.email?.split('@')[0]}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+
 
                 {/* Overlap */}
                 {(u.dishOverlap > 0 || u.restaurantOverlap > 0) && (
