@@ -6479,6 +6479,14 @@ ${adminBugNote}`,
           animation: slideDownFade 0.3s ease-in forwards;
         }
 
+        .animate-slide-up-fade-centered {
+          animation: slideUpFadeCentered 0.3s ease-out forwards;
+        }
+
+        .animate-slide-down-fade-centered {
+          animation: slideDownFadeCentered 0.3s ease-in forwards;
+        }
+
         .animate-fade-in {
           animation: fadeIn 0.3s ease-out forwards;
         }
@@ -9351,8 +9359,8 @@ ${adminBugNote}`,
           <>
               <div onClick={handleCloseSubmission} className={`fixed inset-0 z-[46] bg-black/40 ${isSubmissionClosing ? 'animate-fade-out' : 'animate-fade-in'}`} />
               {/* Always centered modal */}
-              <div className={`fixed z-[47] bg-white shadow-xl flex flex-col ${isSubmissionClosing ? 'animate-slide-down-fade' : 'animate-slide-up-fade'}
-                top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-2xl w-[min(92vw,600px)]`}
+              <div className={`fixed z-[47] bg-white shadow-xl flex flex-col ${isSubmissionClosing ? 'animate-slide-down-fade-centered' : 'animate-slide-up-fade-centered'}
+                top-1/2 left-1/2 rounded-2xl w-[min(92vw,600px)]`}
                 style={{
                   maxHeight: 'calc(100vh - 80px)',
                   overflowY: 'auto',
