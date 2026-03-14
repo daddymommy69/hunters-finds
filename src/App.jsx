@@ -1001,6 +1001,7 @@ const HuntersFindsApp = () => {
   const [showMapFilters, setShowMapFilters] = useState(false);
   const [mapActiveFilter, setMapActiveFilter] = useState(null); // 'quality' | 'social' | 'other'
   const [mapOtherCategory, setMapOtherCategory] = useState('popularity');
+  const [mapFilterSection, setMapFilterSection] = useState('quality'); // active section in filter panel
   const [mapFilters, setMapFilters] = useState({
     popularity: [],
     quality: [],
@@ -2428,6 +2429,7 @@ const HuntersFindsApp = () => {
         
         existing.dishCount += 1;
         existing.topDishes.push(dish);
+        existing.numRatings = (existing.numRatings || 0) + (dish.numRatings || 0);
         
         // Recalculate average SRR
         const totalSRR = existing.topDishes.reduce((sum, d) => sum + d.srr, 0);
@@ -4632,7 +4634,7 @@ const HuntersFindsApp = () => {
                     const rName = uObj?.username || r.username || 'user';
                     const rScore = r.overall_score ? parseFloat(r.overall_score).toFixed(1) : null;
                     const userId = r.user_id || '';
-                    return '<div style="display:flex;align-items:center;gap:6px;padding:1px 0;"><span style="font-size:9px;color:' + nameColor + ';font-weight:bold;cursor:pointer;text-decoration:underline;text-underline-offset:2px;" onclick="event.stopPropagation();window.openUserFromMap(\'' + userId + '\')">@' + rName + '</span>' + (rScore ? '<span style="font-size:9px;font-weight:bold;color:#374151;">' + rScore + '</span>' : '') + '</div>';
+                    return '<div style="display:flex;align-items:center;gap:6px;padding:1px 0;"><span style="font-size:9px;color:' + nameColor + ';font-weight:bold;cursor:pointer;" onclick="event.stopPropagation();window.openUserFromMap(\'' + userId + '\')">@' + rName + '</span>' + (rScore ? '<span style="font-size:9px;font-weight:bold;color:#374151;">' + rScore + '</span>' : '') + '</div>';
                   }).join('');
                   return '<div style="padding: 4px 0; border-bottom: 1px solid #f0f0f0;"><div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;padding:3px 4px;border-radius:5px;transition:background 0.15s;" onmouseover="this.style.background=\'#f0faf9\'" onmouseout="this.style.background=\'transparent\'" onclick="event.stopPropagation();window.openDishFromMap(\'' + dish.id + '\',\'' + restaurant.id + '\')">' +
                     '<span style="font-size:11px;font-weight:bold;">' + badge + dish.name + '</span>' +
@@ -6874,54 +6876,52 @@ ${adminBugNote}`,
 
                 {/* Filter panel — all 4 sections flat */}
                 {mapActiveFilter === 'open' && (
-                  <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20 bg-white rounded-xl shadow-xl p-4 w-72"
-                    style={{ fontFamily: '"Courier New", monospace' }}
+                  <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20 bg-white rounded-xl shadow-xl overflow-hidden"
+                    style={{ fontFamily: '"Courier New", monospace', width: '280px' }}
                     onClick={e => e.stopPropagation()}
                   >
-                    {/* Quality */}
-                    <div className="mb-3">
-                      <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">quality</div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {[['80+', '80+ score'], ['90+', '90+ score'], ['top', 'your top rated']].map(([val, label]) => (
+                    <div className="flex">
+                      {/* Left: category pills */}
+                      <div className="flex flex-col gap-0 border-r border-gray-100 py-2 flex-shrink-0" style={{ width: '100px' }}>
+                        {[
+                          ['quality', mapFilters.quality.length],
+                          ['social', mapFilters.social.length],
+                          ['popularity', mapFilters.popularity.length],
+                          ['distance', mapFilters.distance.length],
+                        ].map(([cat, count]) => (
+                          <button key={cat}
+                            onClick={() => setMapFilterSection(cat)}
+                            className={`w-full text-left px-3 py-2 text-[11px] font-bold transition flex items-center justify-between ${mapFilterSection === cat ? 'bg-[#33a29b]/10 text-[#33a29b]' : 'text-gray-600 hover:bg-gray-50'}`}
+                          >
+                            <span>{cat}</span>
+                            {count > 0 && <span className="w-4 h-4 rounded-full bg-[#33a29b] text-white text-[9px] flex items-center justify-center flex-shrink-0">{count}</span>}
+                          </button>
+                        ))}
+                      </div>
+                      {/* Right: options for selected category */}
+                      <div className="flex-1 p-3 flex flex-col gap-2">
+                        {mapFilterSection === 'quality' && [['80+', '80+ score'], ['90+', '90+ score'], ['top', 'your top rated']].map(([val, label]) => (
                           <button key={val}
                             onClick={() => setMapFilters(prev => ({ ...prev, quality: prev.quality.includes(val) ? prev.quality.filter(v => v !== val) : [...prev.quality, val] }))}
-                            className={`px-2 py-1 rounded-lg text-[11px] font-semibold border transition ${mapFilters.quality.includes(val) ? 'bg-[#33a29b] text-white border-[#33a29b]' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-[#33a29b]'}`}
+                            className={`w-full px-3 py-1.5 rounded-lg text-[11px] font-semibold border text-left transition ${mapFilters.quality.includes(val) ? 'bg-[#33a29b] text-white border-[#33a29b]' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-[#33a29b]'}`}
                           >{label}</button>
                         ))}
-                      </div>
-                    </div>
-                    {/* Social */}
-                    <div className="mb-3">
-                      <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">social</div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {[['you', 'you rated'], ['friends', 'friends rated'], ['groups', 'groups rated']].map(([val, label]) => (
+                        {mapFilterSection === 'social' && [['you', 'you rated'], ['friends', 'friends rated'], ['groups', 'groups rated']].map(([val, label]) => (
                           <button key={val}
                             onClick={() => setMapFilters(prev => ({ ...prev, social: prev.social.includes(val) ? prev.social.filter(v => v !== val) : [...prev.social, val] }))}
-                            className={`px-2 py-1 rounded-lg text-[11px] font-semibold border transition ${mapFilters.social.includes(val) ? 'bg-[#33a29b] text-white border-[#33a29b]' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-[#33a29b]'}`}
+                            className={`w-full px-3 py-1.5 rounded-lg text-[11px] font-semibold border text-left transition ${mapFilters.social.includes(val) ? 'bg-[#33a29b] text-white border-[#33a29b]' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-[#33a29b]'}`}
                           >{label}</button>
                         ))}
-                      </div>
-                    </div>
-                    {/* Popularity */}
-                    <div className="mb-3">
-                      <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">popularity</div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {[['3+', '3+ ratings'], ['5+', '5+ ratings'], ['10+', '10+ ratings']].map(([val, label]) => (
+                        {mapFilterSection === 'popularity' && [['3+', '3+ ratings'], ['5+', '5+ ratings'], ['10+', '10+ ratings']].map(([val, label]) => (
                           <button key={val}
                             onClick={() => setMapFilters(prev => ({ ...prev, popularity: prev.popularity.includes(val) ? prev.popularity.filter(v => v !== val) : [...prev.popularity, val] }))}
-                            className={`px-2 py-1 rounded-lg text-[11px] font-semibold border transition ${mapFilters.popularity.includes(val) ? 'bg-[#33a29b] text-white border-[#33a29b]' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-[#33a29b]'}`}
+                            className={`w-full px-3 py-1.5 rounded-lg text-[11px] font-semibold border text-left transition ${mapFilters.popularity.includes(val) ? 'bg-[#33a29b] text-white border-[#33a29b]' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-[#33a29b]'}`}
                           >{label}</button>
                         ))}
-                      </div>
-                    </div>
-                    {/* Distance */}
-                    <div>
-                      <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">distance</div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {[['1mi', '1 mile'], ['5mi', '5 miles'], ['10mi', '10 miles']].map(([val, label]) => (
+                        {mapFilterSection === 'distance' && [['1mi', '1 mile'], ['5mi', '5 miles'], ['10mi', '10 miles']].map(([val, label]) => (
                           <button key={val}
                             onClick={() => setMapFilters(prev => ({ ...prev, distance: prev.distance.includes(val) ? prev.distance.filter(v => v !== val) : [...prev.distance, val] }))}
-                            className={`px-2 py-1 rounded-lg text-[11px] font-semibold border transition ${mapFilters.distance.includes(val) ? 'bg-[#33a29b] text-white border-[#33a29b]' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-[#33a29b]'}`}
+                            className={`w-full px-3 py-1.5 rounded-lg text-[11px] font-semibold border text-left transition ${mapFilters.distance.includes(val) ? 'bg-[#33a29b] text-white border-[#33a29b]' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-[#33a29b]'}`}
                           >{label}</button>
                         ))}
                       </div>
@@ -6929,7 +6929,7 @@ ${adminBugNote}`,
                     {/* Clear all */}
                     {(mapFilters.quality.length > 0 || mapFilters.social.length > 0 || mapFilters.popularity.length > 0 || mapFilters.distance.length > 0) && (
                       <button onClick={() => setMapFilters({ popularity: [], quality: [], recency: [], social: [], distance: [] })}
-                        className="mt-3 w-full text-center text-[10px] text-gray-400 hover:text-red-500 border-t border-gray-100 pt-2 transition"
+                        className="w-full text-center text-[10px] text-gray-400 hover:text-red-500 border-t border-gray-100 py-2 transition"
                       >clear all filters</button>
                     )}
                   </div>
@@ -7255,27 +7255,18 @@ ${adminBugNote}`,
                               <div className="flex-1 min-w-0">
                                 <div className="font-semibold text-sm dish-name truncate">{dish.name}</div>
                                 <div className="text-[10px] text-gray-500 dish-meta truncate">{dish.restaurantName} • {dish.cuisine}{dish.subcategory ? ` • ${dish.subcategory}` : ''} • ${dish.price.toFixed(2)}</div>
-                                {/* T/P/Po row */}
-                                {(dish.taste_score != null || dish.portion_score != null) && (
-                                  <div className="flex items-center gap-2 mt-0.5">
-                                    {dish.taste_score != null && <span className="text-[9px] font-bold" style={{ color: '#f97316', fontFamily: '"Courier New", monospace' }}>T:{parseFloat(dish.taste_score).toFixed(0)}</span>}
-                                    {dish.price_score != null && <span className="text-[9px] font-bold" style={{ color: '#22c55e', fontFamily: '"Courier New", monospace' }}>P:{parseFloat(dish.price_score).toFixed(0)}</span>}
-                                    {dish.portion_score != null && <span className="text-[9px] font-bold" style={{ color: '#3b82f6', fontFamily: '"Courier New", monospace' }}>Po:{parseFloat(dish.portion_score).toFixed(0)}</span>}
-                                    {/* Tag dots */}
-                                    <div className="flex gap-1 ml-1">
-                                      {(dishTags[dish.id] || []).slice(0, 3).map(tag => {
-                                        const tagData = allTags.find(t => t.id === tag.tag_id);
-                                        if (!tagData) return null;
-                                        return <div key={tag.tag_id} className="w-3 h-3 rounded-full" style={{ backgroundColor: tagData.color }} title={tagData.name} />;
-                                      })}
-                                    </div>
-                                  </div>
-                                )}
+                                <div className="text-[9px] text-gray-400 mt-0.5" style={{ fontFamily: '"Courier New", monospace' }}>{dish.numRatings} rating{dish.numRatings !== 1 ? 's' : ''}</div>
                               </div>
                               {/* Score column */}
                               <div className="flex flex-col items-center flex-shrink-0 min-w-[44px]">
                                 <div className={`text-xl font-bold score ${getSRRColor(dish.srr)} ${dish.srr >= 90 ? 'score-shine' : ''}`} style={{ fontFamily: '"Courier New", monospace' }}>{typeof dish.srr === "number" ? dish.srr.toFixed(2) : dish.srr}</div>
-                                <div className="text-[9px] text-gray-400 text-center" style={{ fontFamily: '"Courier New", monospace' }}>{dish.numRatings} rating{dish.numRatings !== 1 ? 's' : ''}</div>
+                                {(dish.taste_score != null || dish.price_score != null || dish.portion_score != null) && (
+                                  <div className="flex flex-col items-center gap-0 mt-0.5">
+                                    {dish.taste_score != null && <span className="text-[9px] font-bold leading-tight" style={{ color: '#f97316', fontFamily: '"Courier New", monospace' }}>{parseFloat(dish.taste_score).toFixed(0)}</span>}
+                                    {dish.price_score != null && <span className="text-[9px] font-bold leading-tight" style={{ color: '#22c55e', fontFamily: '"Courier New", monospace' }}>{parseFloat(dish.price_score).toFixed(0)}</span>}
+                                    {dish.portion_score != null && <span className="text-[9px] font-bold leading-tight" style={{ color: '#3b82f6', fontFamily: '"Courier New", monospace' }}>{parseFloat(dish.portion_score).toFixed(0)}</span>}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -10839,7 +10830,7 @@ ${adminBugNote}`,
                                     </div>
                                   </div>
                                   <div className="text-xs text-gray-500" style={{ fontFamily: '"Courier New", monospace' }}>
-                                    ${dish.price?.toFixed(2)} • {dish.cuisine}
+                                    ${dish.price?.toFixed(2)} • {dish.cuisine} • {dish.numRatings || 0} rating{dish.numRatings !== 1 ? 's' : ''}
                                   </div>
                                 </div>
                                 <div className={`text-xl font-bold ${isTop3 ? 'text-purple-500' : getSRRColor(dish.srr)}`} style={{ fontFamily: '"Courier New", monospace' }}>
