@@ -1342,8 +1342,8 @@ const HuntersFindsApp = () => {
   // EDIT RATING HANDLER
   const handleEditRating = (rating) => {
     console.log('Editing rating:', rating);
-    const cat = rating.dish?.cuisine_type || rating.cuisine_type || '';
-    const sub = rating.dish?.subcategory || rating.subcategory || '';
+    const cat = rating.dish?.cuisine || rating.dish?.cuisine_type || rating.cuisine || rating.cuisine_type || rating.category || rating.dish?.category || '';
+    const sub = rating.dish?.subcategory || rating.subcategory || rating.dish_subcategory || '';
     setEditingRating(rating);
     setRestaurant(rating.restaurant_name || '');
     setRestaurantLocked(true);
@@ -2052,6 +2052,47 @@ const HuntersFindsApp = () => {
       setIsMapLoaded(true);
       return;
     }
+
+    // Inject custom popup CSS to strip Leaflet chrome for glassmorphism card
+    const popupStyle = document.createElement('style');
+    popupStyle.textContent = `
+      .hunters-popup .leaflet-popup-content-wrapper {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        border-radius: 14px !important;
+        overflow: hidden !important;
+      }
+      .hunters-popup .leaflet-popup-content {
+        margin: 0 !important;
+        width: auto !important;
+      }
+      .hunters-popup .leaflet-popup-tip-container {
+        display: none !important;
+      }
+      .hunters-popup .leaflet-popup-close-button {
+        color: #6b7280 !important;
+        font-size: 16px !important;
+        right: 8px !important;
+        top: 6px !important;
+        z-index: 10 !important;
+        font-weight: 700 !important;
+        background: rgba(255,255,255,0.8) !important;
+        border-radius: 50% !important;
+        width: 20px !important;
+        height: 20px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        line-height: 1 !important;
+      }
+      .hunters-popup .leaflet-popup-close-button:hover {
+        color: #111 !important;
+        background: rgba(255,255,255,1) !important;
+      }
+    `;
+    document.head.appendChild(popupStyle);
 
     // Load Leaflet CSS
     const cssLink = document.createElement('link');
@@ -4601,92 +4642,104 @@ const HuntersFindsApp = () => {
         { icon, title: restaurant.name }
       );
       
-      // Create rich popup with Google Places data
+      // Create rich popup — glassmorphism card
+      const totalRatings = restaurant.topDishes ? restaurant.topDishes.reduce((s, d) => s + (d.numRatings || 0), 0) : 0;
+      const srrColor = restaurant.avgSRR >= 96 ? '#9333ea' : restaurant.avgSRR >= 89 ? '#eab308' : restaurant.avgSRR >= 81 ? '#9ca3af' : restaurant.avgSRR >= 72 ? '#22c55e' : restaurant.avgSRR >= 57 ? '#3b82f6' : '#33a29b';
+      const cuisineTag = restaurant.cuisine ? `<span style="display:inline-block;background:rgba(51,162,155,0.12);color:#33a29b;border:1px solid rgba(51,162,155,0.25);border-radius:20px;padding:2px 8px;font-size:9px;font-weight:700;letter-spacing:0.05em;margin-top:3px;">${restaurant.cuisine}</span>` : '';
+      const openHours = restaurant.googleData?.opening_hours ? `<span style="font-size:10px;font-weight:700;color:${restaurant.googleData.opening_hours.open_now ? '#22c55e' : '#ef4444'};margin-left:6px;">${restaurant.googleData.opening_hours.open_now ? '● open' : '● closed'}</span>` : '';
+      const googleRating = restaurant.googleData?.rating ? `<div style="display:flex;align-items:center;gap:5px;padding:5px 0;border-top:1px solid rgba(0,0,0,0.06);margin-top:6px;"><span style="font-size:10px;color:#f59e0b;font-weight:700;">★ ${restaurant.googleData.rating}</span><span style="font-size:9px;color:#9ca3af;">(${restaurant.googleData.user_ratings_total || 0} Google reviews)</span></div>` : '';
+
+      const dishesHtml = (restaurant.topDishes && restaurant.topDishes.length > 0) ? (() => {
+        return '<div style="max-height:160px;overflow-y:auto;margin-top:8px;">' +
+          restaurant.topDishes.slice(0, 5).map(dish => {
+            const isTop = top3DishIds.has(dish.id);
+            const sc = dish.srr >= 96 ? '#9333ea' : dish.srr >= 89 ? '#eab308' : dish.srr >= 81 ? '#9ca3af' : dish.srr >= 72 ? '#22c55e' : '#3b82f6';
+            const scoreStr = typeof dish.srr === 'number' ? dish.srr.toFixed(1) : dish.srr;
+            const topBadge = isTop ? '<span style="font-size:8px;background:#a855f7;color:white;border-radius:3px;padding:1px 4px;margin-right:4px;font-weight:700;">★</span>' : '';
+            const dishRatings = allRatings.filter(r => r.dish_id === dish.id && !r.is_deleted).sort((a,b) => (b.overall_score||0)-(a.overall_score||0));
+            const ratersHtml = dishRatings.slice(0, 3).map(r => {
+              const uObj = allUsers.find(u => u.id === r.user_id);
+              const uStyle = r.user_id ? getUsernameStyle(r.user_id) : null;
+              const nameColor = uStyle?.color || '#9ca3af';
+              const rName = uObj?.username || r.username || 'user';
+              const initials = rName[0].toUpperCase();
+              const rScore = r.overall_score ? parseFloat(r.overall_score).toFixed(1) : null;
+              const userId = r.user_id || '';
+              return '<span style="display:inline-flex;align-items:center;gap:3px;margin-right:6px;cursor:pointer;" onclick="event.stopPropagation();window.openUserFromMap(\'' + userId + '\')">' +
+                '<span style="width:14px;height:14px;border-radius:50%;background:#33a29b;color:white;font-size:7px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">' + initials + '</span>' +
+                '<span style="font-size:9px;color:' + nameColor + ';font-weight:700;">@' + rName + '</span>' +
+                (rScore ? '<span style="font-size:9px;color:#6b7280;">· ' + rScore + '</span>' : '') +
+              '</span>';
+            }).join('');
+            return '<div style="padding:5px 4px;border-bottom:1px solid rgba(0,0,0,0.05);cursor:pointer;border-radius:6px;transition:background 0.15s;" onmouseover="this.style.background=\'rgba(51,162,155,0.07)\'" onmouseout="this.style.background=\'transparent\'" onclick="event.stopPropagation();window.openDishFromMap(\'' + dish.id + '\',\'' + restaurant.id + '\')">' +
+              '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+                '<span style="font-size:11px;font-weight:700;color:#1f2937;">' + topBadge + dish.name + '</span>' +
+                '<span style="font-weight:800;color:' + sc + ';font-size:12px;margin-left:8px;flex-shrink:0;">' + scoreStr + '</span>' +
+              '</div>' +
+              (ratersHtml ? '<div style="margin-top:3px;display:flex;flex-wrap:wrap;">' + ratersHtml + '</div>' : '') +
+            '</div>';
+          }).join('') + '</div>';
+      })() : '<div style="padding:10px 0;text-align:center;color:#9ca3af;font-size:11px;">no dishes rated yet</div>';
+
+      const mapsHtml = (restaurant.location?.lat && restaurant.location?.lng) ? `
+        <div style="display:flex;gap:5px;margin-top:6px;">
+          <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(restaurant.name + (restaurant.location?.address ? ' ' + restaurant.location.address : ''))}" target="_blank" rel="noopener noreferrer"
+            style="flex:1;padding:6px;background:rgba(66,133,244,0.08);color:#4285F4;border:1px solid rgba(66,133,244,0.2);border-radius:6px;font-weight:700;font-size:10px;text-align:center;text-decoration:none;display:block;">
+            Google Maps
+          </a>
+          <a href="https://maps.apple.com/?ll=${restaurant.location.lat},${restaurant.location.lng}&q=${encodeURIComponent(restaurant.name)}" target="_blank" rel="noopener noreferrer"
+            style="flex:1;padding:6px;background:rgba(0,0,0,0.04);color:#555;border:1px solid rgba(0,0,0,0.1);border-radius:6px;font-weight:700;font-size:10px;text-align:center;text-decoration:none;display:block;">
+            Apple Maps
+          </a>
+        </div>` : '';
+
       const popupContent = `
-        <div style="font-family: 'Courier New', monospace; min-width: 240px; max-width: 320px;">
-          ${restaurant.googleData?.photo || restaurant.photo ? `
-            <img 
-              src="${restaurant.googleData?.photo || restaurant.photo}" 
-              style="width: 100%; height: 140px; object-fit: cover; border-radius: 8px; margin-bottom: 10px;"
-              onerror="this.style.display='none'"
-            />
-          ` : ''}
+        <div style="font-family:'Courier New',monospace;width:300px;background:rgba(255,255,255,0.95);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.7);border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,0.12),0 2px 8px rgba(0,0,0,0.08);overflow:hidden;padding:0;">
           
-          <h3 style="font-weight: bold; margin: 0 0 8px 0; font-size: 15px;">${restaurant.name}</h3>
-          
-          ${restaurant.avgSRR ? `
-            <div style="background: #f0fdf4; border: 1px solid #86efac; padding: 8px; border-radius: 6px; margin-bottom: 8px;">
-              <div style="font-size: 10px; color: #666; text-transform: uppercase; margin-bottom: 6px;">Hunters Finds Rating</div>
-              <div style="font-weight: bold; font-size: 18px; color: #10b981; margin-bottom: 8px;">${typeof restaurant.avgSRR === "number" ? restaurant.avgSRR.toFixed(2) : restaurant.avgSRR}</div>
-              ${(restaurant.topDishes && restaurant.topDishes.length > 0) ? `
-                <div style="font-size: 10px; color: #666; text-transform: uppercase; margin-bottom: 4px; border-top: 1px solid #d1fae5; padding-top: 6px;">Top Rated Dishes</div>
-                ${restaurant.topDishes.slice(0, 3).map(dish => {
-                  const isTop = top3DishIds.has(dish.id);
-                  const badge = isTop ? '<span style="font-size:9px;background:#a855f7;color:white;border-radius:3px;padding:1px 4px;margin-right:4px;">★</span>' : '';
-                  const scoreColor = isTop ? '#a855f7' : '#10b981';
-                  const scoreStr = typeof dish.srr === 'number' ? dish.srr.toFixed(2) : dish.srr;
-                  // Get all raters for this dish (up to 5)
-                  const dishRatings = allRatings.filter(r => r.dish_id === dish.id && !r.is_deleted).sort((a,b) => (b.overall_score||0)-(a.overall_score||0));
-                  const ratersHtml = dishRatings.slice(0, 5).map(r => {
-                    const uObj = allUsers.find(u => u.id === r.user_id);
-                    const uStyle = r.user_id ? getUsernameStyle(r.user_id) : null;
-                    const nameColor = uStyle?.color || '#9ca3af';
-                    const rName = uObj?.username || r.username || 'user';
-                    const rScore = r.overall_score ? parseFloat(r.overall_score).toFixed(1) : null;
-                    const userId = r.user_id || '';
-                    return '<div style="display:flex;align-items:center;gap:6px;padding:1px 0;"><span style="font-size:9px;color:' + nameColor + ';font-weight:bold;cursor:pointer;" onclick="event.stopPropagation();window.openUserFromMap(\'' + userId + '\')">@' + rName + '</span>' + (rScore ? '<span style="font-size:9px;font-weight:bold;color:#374151;">' + rScore + '</span>' : '') + '</div>';
-                  }).join('');
-                  return '<div style="padding: 4px 0; border-bottom: 1px solid #f0f0f0;"><div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;padding:3px 4px;border-radius:5px;transition:background 0.15s;" onmouseover="this.style.background=\'#f0faf9\'" onmouseout="this.style.background=\'transparent\'" onclick="event.stopPropagation();window.openDishFromMap(\'' + dish.id + '\',\'' + restaurant.id + '\')">' +
-                    '<span style="font-size:11px;font-weight:bold;">' + badge + dish.name + '</span>' +
-                    '<span style="font-weight:bold;color:' + scoreColor + ';font-size:12px;">' + scoreStr + '</span></div>' +
-                    (ratersHtml ? '<div style="margin-top:2px;">' + ratersHtml + '</div>' : '') +
-                  '</div>';
-                }).join('')}
-              ` : ''}
+          <!-- Header strip -->
+          <div style="border-left:3px solid ${srrColor};padding:10px 12px 6px 12px;">
+            <div style="font-weight:800;font-size:14px;color:#111827;line-height:1.2;">${restaurant.name}</div>
+            <div style="display:flex;align-items:center;gap:4px;margin-top:3px;flex-wrap:wrap;">
+              ${cuisineTag}
+              ${openHours}
             </div>
-          ` : `
-            <div style="background: #f9fafb; padding: 10px; border-radius: 6px; margin-bottom: 8px; text-align: center;">
-              <span style="font-size: 11px; color: #9ca3af;">Nothing rated yet</span>
-            </div>
-          `}
-          
-          ${restaurant.googleData?.rating ? `
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding: 6px; background: #fef3c7; border-radius: 6px;">
-              <span style="font-weight: bold; font-size: 15px;">${restaurant.googleData.rating}</span>
-              <span style="font-size: 10px; color: #666;">(${restaurant.googleData.user_ratings_total || 0} Google reviews)</span>
-            </div>
-          ` : ''}
-          
-          ${restaurant.googleData?.opening_hours ? `
-            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 11px;">
-              <span style="font-weight: bold; color: ${restaurant.googleData.opening_hours.open_now ? '#10b981' : '#ef4444'};">
-                ${restaurant.googleData.opening_hours.open_now ? 'Open now' : 'Closed'}
-              </span>
-            </div>
-          ` : ''}
-          
-          <button 
-            onclick="event.stopPropagation(); window.openRestaurantFromMap('${restaurant.id}')" 
-            style="width: 100%; padding: 10px; background: #33a29b; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 8px; font-size: 12px;"
-          >
-            ${!restaurant.avgSRR ? 'Rate a Dish' : 'View Details'}
-          </button>
-          ${restaurant.latitude && restaurant.longitude ? `
-          <div style="display:flex;gap:6px;margin-top:6px;">
-            <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(restaurant.name + (restaurant.address ? ' ' + restaurant.address : ''))}" target="_blank" rel="noopener noreferrer"
-              style="flex:1;padding:7px;background:#fff;color:#4285F4;border:1.5px solid #4285F4;border-radius:6px;cursor:pointer;font-weight:bold;font-size:11px;text-align:center;text-decoration:none;display:block;">
-              Google Maps
-            </a>
-            <a href="https://maps.apple.com/?ll=${restaurant.latitude},${restaurant.longitude}&q=${encodeURIComponent(restaurant.name)}" target="_blank" rel="noopener noreferrer"
-              style="flex:1;padding:7px;background:#fff;color:#555;border:1.5px solid #ccc;border-radius:6px;cursor:pointer;font-weight:bold;font-size:11px;text-align:center;text-decoration:none;display:block;">
-              Apple Maps
-            </a>
           </div>
-          ` : ''}
+
+          <!-- Score row -->
+          ${restaurant.avgSRR ? `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 12px;background:rgba(51,162,155,0.05);border-top:1px solid rgba(51,162,155,0.1);border-bottom:1px solid rgba(51,162,155,0.1);">
+            <div>
+              <div style="font-size:9px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.08em;font-weight:600;">hunters finds</div>
+              <div style="font-size:22px;font-weight:800;color:${srrColor};line-height:1;">${typeof restaurant.avgSRR === 'number' ? restaurant.avgSRR.toFixed(2) : restaurant.avgSRR}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:9px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.08em;font-weight:600;">ratings</div>
+              <div style="font-size:16px;font-weight:700;color:#374151;">${totalRatings}</div>
+            </div>
+          </div>` : `
+          <div style="padding:8px 12px;background:rgba(0,0,0,0.02);border-top:1px solid rgba(0,0,0,0.06);border-bottom:1px solid rgba(0,0,0,0.06);">
+            <div style="font-size:11px;color:#9ca3af;text-align:center;">no ratings yet — be the first!</div>
+          </div>`}
+
+          <!-- Dishes -->
+          <div style="padding:4px 10px 6px 10px;">
+            <div style="font-size:9px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.08em;font-weight:700;margin-bottom:2px;padding-top:4px;">top dishes</div>
+            ${dishesHtml}
+            ${googleRating}
+          </div>
+
+          <!-- Sticky bottom actions -->
+          <div style="padding:8px 10px;border-top:1px solid rgba(0,0,0,0.06);background:rgba(255,255,255,0.95);">
+            <button onclick="event.stopPropagation();window.openRestaurantFromMap('${restaurant.id}')"
+              style="width:100%;padding:8px;background:#33a29b;color:white;border:none;border-radius:8px;cursor:pointer;font-weight:700;font-size:12px;font-family:'Courier New',monospace;margin-bottom:5px;">
+              ${!restaurant.avgSRR ? 'rate a dish here' : 'view details'}
+            </button>
+            ${mapsHtml}
+          </div>
         </div>
       `;
       
-      marker.bindPopup(popupContent, { maxWidth: 320 });
+      marker.bindPopup(popupContent, { maxWidth: 320, className: 'hunters-popup' });
       markers.addLayer(marker);
     });
     
@@ -7261,10 +7314,12 @@ ${adminBugNote}`,
                               <div className="flex flex-col items-center flex-shrink-0 min-w-[44px]">
                                 <div className={`text-xl font-bold score ${getSRRColor(dish.srr)} ${dish.srr >= 90 ? 'score-shine' : ''}`} style={{ fontFamily: '"Courier New", monospace' }}>{typeof dish.srr === "number" ? dish.srr.toFixed(2) : dish.srr}</div>
                                 {(dish.taste_score != null || dish.price_score != null || dish.portion_score != null) && (
-                                  <div className="flex flex-col items-center gap-0 mt-0.5">
-                                    {dish.taste_score != null && <span className="text-[9px] font-bold leading-tight" style={{ color: '#f97316', fontFamily: '"Courier New", monospace' }}>{parseFloat(dish.taste_score).toFixed(0)}</span>}
-                                    {dish.price_score != null && <span className="text-[9px] font-bold leading-tight" style={{ color: '#22c55e', fontFamily: '"Courier New", monospace' }}>{parseFloat(dish.price_score).toFixed(0)}</span>}
-                                    {dish.portion_score != null && <span className="text-[9px] font-bold leading-tight" style={{ color: '#3b82f6', fontFamily: '"Courier New", monospace' }}>{parseFloat(dish.portion_score).toFixed(0)}</span>}
+                                  <div className="flex items-center gap-1 mt-0.5 justify-center">
+                                    {dish.taste_score != null && <span className="text-[9px] font-bold" style={{ color: '#f97316', fontFamily: '"Courier New", monospace' }}>{parseFloat(dish.taste_score).toFixed(0)}</span>}
+                                    {dish.taste_score != null && dish.price_score != null && <span className="text-[8px] text-gray-300">·</span>}
+                                    {dish.price_score != null && <span className="text-[9px] font-bold" style={{ color: '#22c55e', fontFamily: '"Courier New", monospace' }}>{parseFloat(dish.price_score).toFixed(0)}</span>}
+                                    {dish.price_score != null && dish.portion_score != null && <span className="text-[8px] text-gray-300">·</span>}
+                                    {dish.portion_score != null && <span className="text-[9px] font-bold" style={{ color: '#3b82f6', fontFamily: '"Courier New", monospace' }}>{parseFloat(dish.portion_score).toFixed(0)}</span>}
                                   </div>
                                 )}
                               </div>
@@ -9295,10 +9350,9 @@ ${adminBugNote}`,
         <>
           <>
               <div onClick={handleCloseSubmission} className={`fixed inset-0 z-[46] bg-black/40 ${isSubmissionClosing ? 'animate-fade-out' : 'animate-fade-in'}`} />
-              {/* Mobile: centered floating. Desktop: bottom sheet */}
+              {/* Always centered modal */}
               <div className={`fixed z-[47] bg-white shadow-xl flex flex-col ${isSubmissionClosing ? 'animate-slide-down-fade' : 'animate-slide-up-fade'}
-                top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-2xl w-[min(92vw,600px)]
-                md:top-auto md:translate-y-0 md:bottom-0 md:rounded-t-2xl md:rounded-b-none md:w-[min(92vw,600px)]`}
+                top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-2xl w-[min(92vw,600px)]`}
                 style={{
                   maxHeight: 'calc(100vh - 80px)',
                   overflowY: 'auto',
@@ -9306,7 +9360,7 @@ ${adminBugNote}`,
                 onClick={e => e.stopPropagation()}
               >
             <div className="sticky top-0 z-10 bg-white border-b px-3 py-2 flex justify-center items-center relative rounded-t-2xl flex-shrink-0">
-              <div className="hidden md:block absolute top-1.5 left-1/2 -translate-x-1/2 w-8 h-1 bg-gray-300 rounded-full" />
+
               <h2 className="text-sm font-bold text-center mt-0 md:mt-1 md:text-lg" style={{ fontFamily: '"Courier New", monospace' }}>hunter rater</h2>
               <button onClick={handleCloseSubmission} className="absolute right-3"><X size={20} /></button>
             </div>
@@ -10060,7 +10114,7 @@ ${adminBugNote}`,
                           <>
                             <div className="fixed inset-0 z-10" onClick={() => setOverflowOpen(false)} />
                             <div className="absolute right-0 top-9 bg-white rounded-xl shadow-xl border z-20 py-1 min-w-[140px]">
-                              <button onClick={(e) => { e.stopPropagation(); setOverflowOpen(false); handleEditRating({ id: selectedDish.id, dish_name: selectedDish.name, dish: { name: selectedDish.name }, restaurant_name: selectedDish.restaurantName, taste_score: selectedDish.taste, portion_score: selectedDish.portion, price_value_score: selectedDish.priceValue, price: selectedDish.price, comment: selectedDish.comment || '', created_at: selectedDish.created_at, edit_count: selectedDish.edit_count || 0 }); handleCloseDish(); }} className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 transition" style={{ fontFamily: '"Courier New", monospace' }}>edit rating</button>
+                              <button onClick={(e) => { e.stopPropagation(); setOverflowOpen(false); handleEditRating({ id: selectedDish.id, dish_name: selectedDish.name, dish: { name: selectedDish.name, cuisine: selectedDish.cuisine, cuisine_type: selectedDish.cuisine, subcategory: selectedDish.subcategory }, restaurant_name: selectedDish.restaurantName, taste_score: selectedDish.taste_score, portion_score: selectedDish.portion_score, price_value_score: selectedDish.price_score, price: selectedDish.price, comment: selectedDish.comment || '', created_at: selectedDish.created_at, edit_count: selectedDish.edit_count || 0 }); handleCloseDish(); }} className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 transition" style={{ fontFamily: '"Courier New", monospace' }}>edit rating</button>
                               {userHasRatedDish && (
                                 <button onClick={async (e) => { e.stopPropagation(); setOverflowOpen(false); let q = supabase.from('ratings').select('id,taste_score,portion_score,price_score,overall_score,comment,created_at,user_id').eq('dish_id', selectedDish.id).eq('is_deleted', false); if (userRole !== 'admin' && userRole !== 'moderator') q = q.eq('user_id', user.id); const { data: rw } = await q.maybeSingle(); if (!rw) return; handleDeleteRating({ id: rw.id, dish_id: selectedDish.id, dish_name: selectedDish.name, dish: { name: selectedDish.name }, restaurant_name: selectedDish.restaurantName, user_id: user.id, taste_score: rw.taste_score, portion_score: rw.portion_score, price_value_score: rw.price_score, price: selectedDish.price, comment: rw.comment || '', created_at: rw.created_at }); handleCloseDish(); }} className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition" style={{ fontFamily: '"Courier New", monospace' }}>delete rating</button>
                               )}
