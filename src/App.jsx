@@ -4860,7 +4860,7 @@ const HuntersFindsApp = () => {
       // Venue type logic
       const rTag = venueTags[restaurant.id];
       const venueType = rTag?.venue || 'restaurant';
-      const effectiveGoogleData = restaurant.googleData || googleDataOverrides[restaurant.id] || null;
+      const effectiveGoogleData = googleDataOverrides[restaurant.id] || restaurant.googleData || null;
       const openNowRaw = effectiveGoogleData?.opening_hours?.open_now;
       const openNow = openNowRaw === true || openNowRaw === 'true' || openNowRaw === 1;
 
