@@ -4497,6 +4497,30 @@ const HuntersFindsApp = () => {
     return () => { if (mapUpdateTimerRef.current) clearTimeout(mapUpdateTimerRef.current); };
   }, [mapFilters, mapInstance, activeTab, allRestaurants]);
 
+  // Background enrich restaurants missing google_data (for open-now glow on map)
+  React.useEffect(() => {
+    if (activeTab !== 'map' || !allRestaurants.length || !userLocation) return;
+    const missing = allRestaurants.filter(r =>
+      r.location?.lat && !r.googleData?.opening_hours && !r.isGooglePlace && r.id && !r.id.startsWith('generated-')
+    ).slice(0, 5); // max 5 at a time to respect API limits
+    if (!missing.length) return;
+    const enrichBatch = async () => {
+      for (const restaurant of missing) {
+        try {
+          const results = await searchGooglePlacesAPI(restaurant.name, restaurant.location, { limit: 1 });
+          if (!results?.length) continue;
+          const place = results[0];
+          const nameMatch = place.name.toLowerCase().includes(restaurant.name.toLowerCase().split(' ')[0]) ||
+                            restaurant.name.toLowerCase().includes(place.name.toLowerCase().split(' ')[0]);
+          if (!nameMatch) continue;
+          const googleData = { rating: place.rating, user_ratings_total: place.user_ratings_total, opening_hours: place.opening_hours, place_id: place.place_id };
+          await supabase.from('restaurants').update({ google_data: googleData }).eq('id', restaurant.id);
+        } catch (e) { /* silent */ }
+      }
+    };
+    enrichBatch();
+  }, [activeTab, userLocation]);
+
   // Fetch venue tags and social links when map tab opens
   React.useEffect(() => {
     if (activeTab !== 'map') return;
@@ -6203,6 +6227,44 @@ ${adminBugNote}`,
       .then(({ data }) => setUserHasRatedDish(!!data));
   }, [selectedDish, user]);
 
+  // Auto-enrich restaurant with Google Places data when modal opens (backfills missing google_data)
+  React.useEffect(() => {
+    if (!selectedRestaurant) return;
+    // Only enrich if google_data is missing (no opening_hours, rating, etc.)
+    if (selectedRestaurant.googleData?.opening_hours) return;
+    if (selectedRestaurant.isGooglePlace) return;
+    const enrich = async () => {
+      try {
+        const loc = selectedRestaurant.location || userLocation || { lat: 37.8044, lng: -122.2712 };
+        const results = await searchGooglePlacesAPI(selectedRestaurant.name, loc, { limit: 1 });
+        if (!results || results.length === 0) return;
+        const place = results[0];
+        // Only use if name matches reasonably well
+        const nameMatch = place.name.toLowerCase().includes(selectedRestaurant.name.toLowerCase().split(' ')[0]) ||
+                          selectedRestaurant.name.toLowerCase().includes(place.name.toLowerCase().split(' ')[0]);
+        if (!nameMatch) return;
+        const googleData = {
+          rating: place.rating,
+          user_ratings_total: place.user_ratings_total,
+          opening_hours: place.opening_hours,
+          place_id: place.place_id,
+        };
+        // Update in memory immediately
+        setSelectedRestaurant(prev => prev ? { ...prev, googleData } : prev);
+        // Backfill in DB if restaurant has an id
+        if (selectedRestaurant.id && !selectedRestaurant.id.startsWith('generated-')) {
+          await supabase.from('restaurants').update({
+            google_data: googleData,
+            ...(place.lat && !selectedRestaurant.location?.lat ? { latitude: place.lat, longitude: place.lng } : {})
+          }).eq('id', selectedRestaurant.id);
+        }
+      } catch (e) {
+        // silently fail — enrichment is best-effort
+      }
+    };
+    enrich();
+  }, [selectedRestaurant?.id]);
+
   const handleCloseRestaurant = () => {
     if (restaurantModalJustOpenedRef.current) return; // Ignore clicks right after opening
     setIsRestaurantModalClosing(true);
@@ -7129,7 +7191,7 @@ ${adminBugNote}`,
                             className={`w-full px-3 py-1.5 rounded-lg text-[11px] font-semibold border text-left transition ${mapFilters.distance.includes(val) ? 'bg-[#33a29b] text-white border-[#33a29b]' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-[#33a29b]'}`}
                           >{label}</button>
                         ))}
-                        {mapFilterSection === 'venue type' && [['food_truck', '🚚 food truck'], ['home_chef', '🏠 home chef'], ['street_food', '🌮 street food'], ['popup', '⛺ pop-up']].map(([val, label]) => (
+                        {mapFilterSection === 'venue type' && [['food_truck', 'food truck'], ['home_chef', 'home chef'], ['street_food', 'street food'], ['popup', 'pop-up']].map(([val, label]) => (
                           <button key={val}
                             onClick={() => setMapFilters(prev => ({ ...prev, venueType: (prev.venueType||[]).includes(val) ? (prev.venueType||[]).filter(v => v !== val) : [...(prev.venueType||[]), val] }))}
                             className={`w-full px-3 py-1.5 rounded-lg text-[11px] font-semibold border text-left transition ${(mapFilters.venueType||[]).includes(val) ? 'bg-[#33a29b] text-white border-[#33a29b]' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-[#33a29b]'}`}
@@ -7166,18 +7228,26 @@ ${adminBugNote}`,
                       ))}
                       <div className="border-t border-gray-100 pt-1.5 mt-1.5">
                         <div className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">venue types</div>
-                        {[['🚚', 'food truck'], ['🏠', 'home chef'], ['🌮', 'street food'], ['⛺', 'pop-up']].map(([emoji, label]) => (
-                          <div key={label} className="flex items-center gap-2 mb-1">
-                            <span style={{ fontSize: 10 }}>{emoji}</span>
+                        {[
+                          ['food_truck', 'food truck', <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="8" width="15" height="10" rx="1"/><path d="M16 8l3 4h2a1 1 0 011 1v3h-6"/><circle cx="5.5" cy="18.5" r="1.5"/><circle cx="16.5" cy="18.5" r="1.5"/></svg>],
+                          ['home_chef', 'home chef', <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>],
+                          ['street_food', 'street food', <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11V6a1 1 0 011-1h16a1 1 0 011 1v5"/><path d="M3 11h18v2a9 9 0 01-18 0v-2z"/><line x1="12" y1="5" x2="12" y2="2"/></svg>],
+                          ['popup', 'pop-up', <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 19 22 19"/><line x1="2" y1="19" x2="22" y2="19"/></svg>],
+                        ].map(([key, label, icon]) => (
+                          <div key={key} className="flex items-center gap-2 mb-1">
+                            <div className="text-gray-500 flex-shrink-0">{icon}</div>
                             <span className="text-gray-600">{label}</span>
                           </div>
                         ))}
                       </div>
                       <div className="border-t border-gray-100 pt-1.5 mt-1.5">
                         <div className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">payment</div>
-                        {[['💵', 'cash only'], ['📱', 'venmo/zelle']].map(([emoji, label]) => (
-                          <div key={label} className="flex items-center gap-2 mb-1">
-                            <span style={{ fontSize: 10 }}>{emoji}</span>
+                        {[
+                          ['cash_only', 'cash only', <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M2 10h3M19 10h3M2 14h3M19 14h3"/></svg>],
+                          ['venmo_zelle', 'venmo/zelle', <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12" y2="18"/></svg>],
+                        ].map(([key, label, icon]) => (
+                          <div key={key} className="flex items-center gap-2 mb-1">
+                            <div className="text-gray-500 flex-shrink-0">{icon}</div>
                             <span className="text-gray-600">{label}</span>
                           </div>
                         ))}
@@ -10195,7 +10265,7 @@ ${adminBugNote}`,
                     <div>
                       <div className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1">venue type</div>
                       <div className="flex flex-wrap gap-1">
-                        {[['food_truck','🚚 truck'],['home_chef','🏠 home chef'],['street_food','🌮 street food'],['popup','⛺ pop-up']].map(([val,label]) => (
+                        {[['food_truck','food truck'],['home_chef','home chef'],['street_food','street food'],['popup','pop-up']].map(([val,label]) => (
                           <button key={val} type="button"
                             onClick={() => setVenueTagForm(p => ({ ...p, venue: p.venue === val ? '' : val }))}
                             className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold border transition ${venueTagForm.venue === val ? 'bg-[#33a29b] text-white border-[#33a29b]' : 'bg-white text-gray-600 border-gray-200 hover:border-[#33a29b]'}`}
@@ -10206,7 +10276,7 @@ ${adminBugNote}`,
                     <div>
                       <div className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1">payment</div>
                       <div className="flex gap-1">
-                        {[['cash_only','💵 cash only'],['venmo_zelle','📱 venmo/zelle']].map(([val,label]) => (
+                        {[['cash_only','cash only'],['venmo_zelle','venmo/zelle']].map(([val,label]) => (
                           <button key={val} type="button"
                             onClick={() => setVenueTagForm(p => ({ ...p, payments: p.payments.includes(val) ? p.payments.filter(x=>x!==val) : [...p.payments, val] }))}
                             className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold border transition ${venueTagForm.payments.includes(val) ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-gray-600 border-gray-200 hover:border-amber-400'}`}
@@ -10214,11 +10284,11 @@ ${adminBugNote}`,
                         ))}
                       </div>
                     </div>
-                    <input type="text" placeholder="📷 instagram handle (optional)"
+                    <input type="text" placeholder="instagram handle (optional)"
                       value={venueTagForm.instagram} onChange={e => setVenueTagForm(p => ({ ...p, instagram: e.target.value }))}
                       className="w-full px-2 py-1 text-[10px] border border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
                       style={{ fontFamily: '"Courier New", monospace' }} />
-                    <input type="text" placeholder="🌐 website url (optional)"
+                    <input type="text" placeholder="website url (optional)"
                       value={venueTagForm.website} onChange={e => setVenueTagForm(p => ({ ...p, website: e.target.value }))}
                       className="w-full px-2 py-1 text-[10px] border border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
                       style={{ fontFamily: '"Courier New", monospace' }} />
@@ -11014,8 +11084,18 @@ ${adminBugNote}`,
                 {/* Venue Tags + Payment Tags */}
                 {(() => {
                   const rTags = venueTags[selectedRestaurant.id];
-                  const venueLabels = { food_truck: '🚚 food truck', home_chef: '🏠 home chef', street_food: '🌮 street food', popup: '⛺ pop-up' };
-                  const paymentLabels = { cash_only: '💵 cash only', venmo_zelle: '📱 venmo/zelle' };
+                  const venueLabels = { food_truck: 'food truck', home_chef: 'home chef', street_food: 'street food', popup: 'pop-up' };
+                  const venueIcons = {
+                    food_truck: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="8" width="15" height="10" rx="1"/><path d="M16 8l3 4h2a1 1 0 011 1v3h-6"/><circle cx="5.5" cy="18.5" r="1.5"/><circle cx="16.5" cy="18.5" r="1.5"/></svg>,
+                    home_chef: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
+                    street_food: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11V6a1 1 0 011-1h16a1 1 0 011 1v5"/><path d="M3 11h18v2a9 9 0 01-18 0v-2z"/><line x1="12" y1="5" x2="12" y2="2"/></svg>,
+                    popup: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 19 22 19"/><line x1="2" y1="19" x2="22" y2="19"/></svg>,
+                  };
+                  const paymentIcons = {
+                    cash_only: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>,
+                    venmo_zelle: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>,
+                  };
+                  const paymentLabels = { cash_only: 'cash only', venmo_zelle: 'venmo/zelle' };
                   const social = restaurantSocialLinks[selectedRestaurant.id] || {};
                   const hasAny = rTags?.venue || rTags?.payments?.length || Object.keys(social).length;
                   return (
@@ -11023,12 +11103,14 @@ ${adminBugNote}`,
                       {/* Tags row */}
                       <div className="flex flex-wrap gap-1 mb-1.5">
                         {rTags?.venue && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#33a29b]/10 text-[#33a29b] border border-[#33a29b]/20" style={{ fontFamily: '"Courier New", monospace' }}>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#33a29b]/10 text-[#33a29b] border border-[#33a29b]/20" style={{ fontFamily: '"Courier New", monospace' }}>
+                            {venueIcons[rTags.venue]}
                             {venueLabels[rTags.venue] || rTags.venue}
                           </span>
                         )}
                         {(rTags?.payments || []).map(p => (
-                          <span key={p} className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200" style={{ fontFamily: '"Courier New", monospace' }}>
+                          <span key={p} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200" style={{ fontFamily: '"Courier New", monospace' }}>
+                            {paymentIcons[p]}
                             {paymentLabels[p] || p}
                           </span>
                         ))}
@@ -12240,7 +12322,7 @@ ${adminBugNote}`,
                 <div>
                   <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">venue type</div>
                   <div className="flex flex-wrap gap-1.5">
-                    {[['', 'regular restaurant'], ['food_truck', '🚚 food truck'], ['home_chef', '🏠 home chef'], ['street_food', '🌮 street food'], ['popup', '⛺ pop-up']].map(([val, label]) => (
+                    {[['', 'regular restaurant'], ['food_truck', 'food truck'], ['home_chef', 'home chef'], ['street_food', 'street food'], ['popup', 'pop-up']].map(([val, label]) => (
                       <button key={val}
                         onClick={() => setVenueTagForm(p => ({ ...p, venue: p.venue === val ? '' : val }))}
                         className={`px-2 py-1 rounded-lg text-[11px] font-semibold border transition ${venueTagForm.venue === val ? 'bg-[#33a29b] text-white border-[#33a29b]' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-[#33a29b]'}`}
@@ -12252,7 +12334,7 @@ ${adminBugNote}`,
                 <div>
                   <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">payment</div>
                   <div className="flex gap-1.5">
-                    {[['cash_only', '💵 cash only'], ['venmo_zelle', '📱 venmo/zelle']].map(([val, label]) => (
+                    {[['cash_only', 'cash only'], ['venmo_zelle', 'venmo/zelle']].map(([val, label]) => (
                       <button key={val}
                         onClick={() => setVenueTagForm(p => ({ ...p, payments: p.payments.includes(val) ? p.payments.filter(x=>x!==val) : [...p.payments, val] }))}
                         className={`px-2 py-1 rounded-lg text-[11px] font-semibold border transition ${venueTagForm.payments.includes(val) ? 'bg-amber-500 text-white border-amber-500' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-amber-400'}`}
@@ -12264,7 +12346,7 @@ ${adminBugNote}`,
                 <div>
                   <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">social & links</div>
                   <div className="space-y-2">
-                    {[['instagram', '📷 instagram handle'], ['tiktok', '🎵 tiktok handle'], ['website', '🌐 website url'], ['ordering', '🛍️ ordering link']].map(([key, placeholder]) => (
+                    {[['instagram', 'instagram handle'], ['tiktok', 'tiktok handle'], ['website', 'website url'], ['ordering', 'ordering link']].map(([key, placeholder]) => (
                       <input key={key} type="text" placeholder={placeholder}
                         value={venueTagForm[key]}
                         onChange={e => setVenueTagForm(p => ({ ...p, [key]: e.target.value }))}
