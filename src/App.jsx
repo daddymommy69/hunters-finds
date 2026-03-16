@@ -842,6 +842,12 @@ const HuntersFindsApp = () => {
   const [showMapFindNearby, setShowMapFindNearby] = useState(true);
   const [dishReturnToUser, setDishReturnToUser] = useState(null); // { type: 'selected'|'explore', user: object }
   const [mapReturnRestaurant, setMapReturnRestaurant] = useState(null); // restaurant to reopen popup after closing dish
+  const [mapReturnPopupId, setMapReturnPopupId] = useState(null); // restaurant id to reopen leaflet popup after closing restaurant modal
+  const [venueTags, setVenueTags] = useState({}); // { restaurantId: { venue: 'food_truck', payments: ['cash_only'] } }
+  const [restaurantSocialLinks, setRestaurantSocialLinks] = useState({}); // { restaurantId: { instagram, tiktok, website, ordering } }
+  const [showVenueTagModal, setShowVenueTagModal] = useState(null); // restaurantId
+  const [venueTagForm, setVenueTagForm] = useState({ venue: '', payments: [], instagram: '', tiktok: '', website: '', ordering: '' });
+  const [modalNavDirection, setModalNavDirection] = useState('forward'); // 'forward' | 'back'
   
   const [isSubmissionModalOpen, setIsSubmissionModalOpen] = useState(false);
   const [exploreView, setExploreView] = useState(() => {
@@ -855,6 +861,7 @@ const HuntersFindsApp = () => {
   const [exploreUserHistory, setExploreUserHistory] = useState([]);
   const [exploreUserFollowersList, setExploreUserFollowersList] = useState(null);
   const openExploreUser = (u) => {
+    setModalNavDirection('forward');
     setSelectedExploreUser(u);
     setExploreUserHistory([]);
     setExploreUserFollowersList(null);
@@ -927,7 +934,8 @@ const HuntersFindsApp = () => {
   const [userLists, setUserLists] = useState([]);
   const [selectedUser, setSelectedUserRaw] = useState(null);
   const [userModalHistory, setUserModalHistory] = useState([]); // back stack
-  const setSelectedUser = (u) => { 
+  const setSelectedUser = (u) => {
+    if (u) setModalNavDirection('forward');
     setSelectedUserRaw(prev => {
       if (prev) setUserModalHistory(h => [...h, prev]);
       return u;
@@ -943,6 +951,7 @@ const HuntersFindsApp = () => {
     }
   };
   const goBackUserModal = () => {
+    setModalNavDirection('back');
     setUserModalHistory(h => {
       const prev = h[h.length - 1];
       if (prev) { setSelectedUserRaw(prev); setProfileModalTab('stats'); }
@@ -1002,12 +1011,14 @@ const HuntersFindsApp = () => {
   const [mapActiveFilter, setMapActiveFilter] = useState(null); // 'quality' | 'social' | 'other'
   const [mapOtherCategory, setMapOtherCategory] = useState('popularity');
   const [mapFilterSection, setMapFilterSection] = useState('quality'); // active section in filter panel
+  const [legendOpen, setLegendOpen] = useState(false);
   const [mapFilters, setMapFilters] = useState({
     popularity: [],
     quality: [],
     recency: [],
     social: [],
-    distance: []
+    distance: [],
+    venueType: []
   });
   const [googlePlacesResults, setGooglePlacesResults] = useState([]);
   
@@ -4382,6 +4393,31 @@ const HuntersFindsApp = () => {
     `;
   };
   
+  // Venue-type icon pins — same teardrop shape as castle, different interior icon
+  const createVenuePin = (color, size, venueType, openNow = false) => {
+    const id = `vp-${venueType}-${color.replace('#','')}`;
+    const glowFilter = openNow ? `<filter id="glow-${id}"><feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="#f59e0b" flood-opacity="0.9"/></filter>` : `<filter id="shadow-${id}"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.4"/></filter>`;
+    const filterRef = openNow ? `url(#glow-${id})` : `url(#shadow-${id})`;
+    // Interior icons for each venue type
+    const icons = {
+      restaurant: `<path d="M38,45 L38,75 M50,45 L50,75 M62,45 L62,75 M35,55 L65,55" stroke="white" stroke-width="5" stroke-linecap="round"/>`,
+      food_truck: `<rect x="28" y="50" width="44" height="24" rx="5" fill="white" opacity="0.9"/><rect x="32" y="54" width="12" height="10" rx="2" fill="${color}"/><rect x="48" y="54" width="12" height="10" rx="2" fill="${color}"/><circle cx="36" cy="76" r="5" fill="white"/><circle cx="64" cy="76" r="5" fill="white"/>`,
+      home_chef: `<path d="M50,35 L50,40 M35,45 Q35,38 50,38 Q65,38 65,45 L65,65 L35,65 Z" fill="white" opacity="0.9"/><rect x="43" y="65" width="14" height="8" fill="white" opacity="0.7"/><path d="M43,55 Q50,50 57,55" stroke="${color}" stroke-width="3" fill="none"/>`,
+      street_food: `<path d="M32,65 Q32,45 50,42 Q68,45 68,65" fill="white" opacity="0.9"/><line x1="50" y1="42" x2="50" y2="35" stroke="white" stroke-width="4"/><line x1="42" y1="38" x2="58" y2="38" stroke="white" stroke-width="4" stroke-linecap="round"/>`,
+      popup: `<path d="M34,65 L34,50 L50,38 L66,50 L66,65 Z" fill="white" opacity="0.9"/><line x1="34" y1="50" x2="66" y2="50" stroke="${color}" stroke-width="3"/><line x1="50" y1="38" x2="50" y2="65" stroke="${color}" stroke-width="2" opacity="0.5"/>`,
+    };
+    const icon = icons[venueType] || icons.restaurant;
+    return `<svg width="${size}" height="${size * 1.2}" viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+      <defs>${glowFilter}</defs>
+      <g filter="${filterRef}">
+        <path d="M 30,90 L 30,40 L 25,40 L 25,30 L 20,30 L 20,20 L 30,20 L 30,30 L 40,30 L 40,20 L 50,20 L 50,30 L 60,30 L 60,20 L 70,20 L 70,30 L 75,30 L 75,40 L 70,40 L 70,90 Z"
+              fill="${color}" stroke="white" stroke-width="4"/>
+        ${icon}
+        <circle cx="50" cy="105" r="8" fill="${color}" stroke="white" stroke-width="3"/>
+      </g>
+    </svg>`;
+  };
+
   // Determine restaurant category
   const getRestaurantCategory = (restaurant, top3RestaurantIds, top3DishRestaurantIds) => {
     if (top3RestaurantIds?.has(restaurant.id)) return 'top3_restaurant';
@@ -4460,7 +4496,37 @@ const HuntersFindsApp = () => {
     
     return () => { if (mapUpdateTimerRef.current) clearTimeout(mapUpdateTimerRef.current); };
   }, [mapFilters, mapInstance, activeTab, allRestaurants]);
-  
+
+  // Fetch venue tags and social links when map tab opens
+  React.useEffect(() => {
+    if (activeTab !== 'map') return;
+    const fetchVenueTags = async () => {
+      const { data } = await supabase.from('venue_tags').select('*');
+      if (!data) return;
+      const tagMap = {};
+      data.forEach(tag => {
+        if (!tagMap[tag.restaurant_id]) tagMap[tag.restaurant_id] = { venue: null, payments: [] };
+        if (tag.tag_type === 'venue') tagMap[tag.restaurant_id].venue = tag.tag_value;
+        if (tag.tag_type === 'payment') tagMap[tag.restaurant_id].payments.push(tag.tag_value);
+      });
+      setVenueTags(tagMap);
+    };
+    fetchVenueTags();
+  }, [activeTab]);
+
+  // Fetch social links for all restaurants
+  React.useEffect(() => {
+    if (!allRestaurants.length) return;
+    const fetchSocial = async () => {
+      const { data } = await supabase.from('restaurants').select('id,social_links').not('social_links', 'is', null);
+      if (!data) return;
+      const socialMap = {};
+      data.forEach(r => { if (r.social_links && Object.keys(r.social_links).length) socialMap[r.id] = r.social_links; });
+      setRestaurantSocialLinks(socialMap);
+    };
+    fetchSocial();
+  }, [allRestaurants.length]);
+
   const updateMapMarkers = (restaurants) => {
     if (!mapInstance || !window.L) return;
     
@@ -4560,6 +4626,14 @@ const HuntersFindsApp = () => {
       });
     }
     
+    // Venue type filter
+    if ((filters.venueType||[]).length > 0) {
+      filteredRestaurants = filteredRestaurants.filter(r => {
+        const vt = venueTags[r.id]?.venue || 'restaurant';
+        return filters.venueType.includes(vt);
+      });
+    }
+
     // Legacy filters (keep for compatibility)
     if (mapFilterCuisine !== 'all') {
       filteredRestaurants = filteredRestaurants.filter(r => 
@@ -4629,10 +4703,26 @@ const HuntersFindsApp = () => {
 
       const category = getRestaurantCategory(restaurantForCategory, top3RestaurantIds, top3DishRestaurantIds);
       const config = pinConfig[category];
-      
+
+      // Venue type logic
+      const rTag = venueTags[restaurant.id];
+      const venueType = rTag?.venue || 'restaurant';
+      const openNow = restaurant.googleData?.opening_hours?.open_now === true;
+
+      let pinHtml;
+      if (category === 'top3_restaurant') {
+        pinHtml = createCrystalCastlePin(config.size);
+      } else if (venueType !== 'restaurant') {
+        pinHtml = createVenuePin(config.color, config.size, venueType, openNow);
+      } else if (openNow) {
+        pinHtml = createVenuePin(config.color, config.size, 'restaurant', true);
+      } else {
+        pinHtml = createCastlePin(config.color, config.size);
+      }
+
       const icon = window.L.divIcon({
         className: 'custom-castle-marker',
-        html: category === 'top3_restaurant' ? createCrystalCastlePin(config.size) : createCastlePin(config.color, config.size),
+        html: pinHtml,
         iconSize: [config.size, config.size * 1.2],
         iconAnchor: [config.size / 2, config.size * 1.2]
       });
@@ -4744,6 +4834,7 @@ const HuntersFindsApp = () => {
     });
     
     mapInstance.addLayer(markers);
+    window._mapMarkers = markers; // store for popup reopen
   };
   
   // Add window function for popup buttons
@@ -4751,9 +4842,9 @@ const HuntersFindsApp = () => {
     window.openRestaurantFromMap = (restaurantId) => {
       const restaurant = allRestaurants.find(r => r.id === restaurantId);
       if (restaurant) {
-        // Close any open Leaflet popups first
         if (window._mapInstance) window._mapInstance.closePopup();
         restaurantModalJustOpenedRef.current = true;
+        setMapReturnPopupId(restaurantId);
         setSelectedRestaurant(restaurant);
         setTimeout(() => { restaurantModalJustOpenedRef.current = false; }, 600);
       }
@@ -4927,6 +5018,7 @@ const HuntersFindsApp = () => {
     setComment('');
     setRestaurantLocked(false);
     setSelectedGooglePlace(null);
+    setVenueTagForm({ venue: '', payments: [], instagram: '', tiktok: '', website: '', ordering: '' });
   };
   const handleSubmit = async () => {
     // Check if user is logged in
@@ -5262,6 +5354,28 @@ const HuntersFindsApp = () => {
     }
     
     setSubmittedRating(rating);
+
+    // Save venue tags + social links if user suggested any
+    if (venueTagForm.venue || venueTagForm.payments.length || venueTagForm.instagram || venueTagForm.website || venueTagForm.tiktok || venueTagForm.ordering) {
+      const restId = rating.restaurant_id || rating.dish?.restaurant_id;
+      if (restId && user) {
+        const inserts = [];
+        if (venueTagForm.venue) inserts.push({ restaurant_id: restId, tag_type: 'venue', tag_value: venueTagForm.venue, added_by: user.id });
+        venueTagForm.payments.forEach(p => inserts.push({ restaurant_id: restId, tag_type: 'payment', tag_value: p, added_by: user.id }));
+        if (inserts.length) supabase.from('venue_tags').upsert(inserts, { onConflict: 'restaurant_id,tag_type,tag_value' });
+        const social = {};
+        if (venueTagForm.instagram) social.instagram = venueTagForm.instagram.replace('@','');
+        if (venueTagForm.tiktok) social.tiktok = venueTagForm.tiktok.replace('@','');
+        if (venueTagForm.website) social.website = venueTagForm.website;
+        if (venueTagForm.ordering) social.ordering = venueTagForm.ordering;
+        if (Object.keys(social).length) {
+          supabase.from('restaurants').update({ social_links: social }).eq('id', restId);
+          setRestaurantSocialLinks(prev => ({ ...prev, [restId]: social }));
+        }
+        setVenueTagForm({ venue: '', payments: [], instagram: '', tiktok: '', website: '', ordering: '' });
+      }
+    }
+
     setIsSubmissionModalOpen(false);
     setIsResultsModalOpen(true);
   };
@@ -6093,9 +6207,22 @@ ${adminBugNote}`,
     if (restaurantModalJustOpenedRef.current) return; // Ignore clicks right after opening
     setIsRestaurantModalClosing(true);
     setTimeout(() => {
+      const returnId = mapReturnPopupId;
       setSelectedRestaurant(null);
       setIsRestaurantModalClosing(false);
-      setRestaurantModalView('scores'); // Reset to scores view
+      setRestaurantModalView('scores');
+      setMapReturnPopupId(null);
+      if (returnId && window._mapMarkers) {
+        // Find the marker for this restaurant and open its popup
+        window._mapMarkers.eachLayer && window._mapMarkers.eachLayer(layer => {
+          if (layer.options?.title) {
+            const rest = allRestaurants.find(r => r.id === returnId);
+            if (rest && layer.options.title === rest.name) {
+              setTimeout(() => layer.openPopup && layer.openPopup(), 50);
+            }
+          }
+        });
+      }
     }, 300);
   };
 
@@ -6430,6 +6557,22 @@ ${adminBugNote}`,
             transform: translate(-50%, 30px);
           }
         }
+
+        @keyframes slideInFromRight {
+          from { opacity: 0; transform: translateX(60px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes slideOutToRight {
+          from { opacity: 1; transform: translateX(0); }
+          to { opacity: 0; transform: translateX(60px); }
+        }
+        @keyframes slideInFromLeft {
+          from { opacity: 0; transform: translateX(-60px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+        .animate-slide-in-right { animation: slideInFromRight 0.22s ease-out forwards; }
+        .animate-slide-out-right { animation: slideOutToRight 0.22s ease-in forwards; }
+        .animate-slide-in-left { animation: slideInFromLeft 0.22s ease-out forwards; }
 
         @keyframes slideUpFadeCentered {
           from {
@@ -6916,8 +7059,8 @@ ${adminBugNote}`,
                   )}
                   {/* Single filter button */}
                   {(() => {
-                    const hasAny = mapFilters.quality.length > 0 || mapFilters.social.length > 0 || mapFilters.popularity.length > 0 || mapFilters.distance.length > 0;
-                    const totalCount = mapFilters.quality.length + mapFilters.social.length + mapFilters.popularity.length + mapFilters.distance.length;
+                    const hasAny = mapFilters.quality.length > 0 || mapFilters.social.length > 0 || mapFilters.popularity.length > 0 || mapFilters.distance.length > 0 || (mapFilters.venueType||[]).length > 0;
+                    const totalCount = mapFilters.quality.length + mapFilters.social.length + mapFilters.popularity.length + mapFilters.distance.length + (mapFilters.venueType||[]).length;
                     return (
                       <button
                         onClick={() => setMapActiveFilter(mapActiveFilter === 'open' ? null : 'open')}
@@ -6947,6 +7090,7 @@ ${adminBugNote}`,
                         {[
                           ['quality', mapFilters.quality.length],
                           ['social', mapFilters.social.length],
+                          ['venue type', (mapFilters.venueType||[]).length],
                           ['popularity', mapFilters.popularity.length],
                           ['distance', mapFilters.distance.length],
                         ].map(([cat, count]) => (
@@ -6985,11 +7129,17 @@ ${adminBugNote}`,
                             className={`w-full px-3 py-1.5 rounded-lg text-[11px] font-semibold border text-left transition ${mapFilters.distance.includes(val) ? 'bg-[#33a29b] text-white border-[#33a29b]' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-[#33a29b]'}`}
                           >{label}</button>
                         ))}
+                        {mapFilterSection === 'venue type' && [['food_truck', '🚚 food truck'], ['home_chef', '🏠 home chef'], ['street_food', '🌮 street food'], ['popup', '⛺ pop-up']].map(([val, label]) => (
+                          <button key={val}
+                            onClick={() => setMapFilters(prev => ({ ...prev, venueType: (prev.venueType||[]).includes(val) ? (prev.venueType||[]).filter(v => v !== val) : [...(prev.venueType||[]), val] }))}
+                            className={`w-full px-3 py-1.5 rounded-lg text-[11px] font-semibold border text-left transition ${(mapFilters.venueType||[]).includes(val) ? 'bg-[#33a29b] text-white border-[#33a29b]' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-[#33a29b]'}`}
+                          >{label}</button>
+                        ))}
                       </div>
                     </div>
                     {/* Clear all */}
-                    {(mapFilters.quality.length > 0 || mapFilters.social.length > 0 || mapFilters.popularity.length > 0 || mapFilters.distance.length > 0) && (
-                      <button onClick={() => setMapFilters({ popularity: [], quality: [], recency: [], social: [], distance: [] })}
+                    {(mapFilters.quality.length > 0 || mapFilters.social.length > 0 || mapFilters.popularity.length > 0 || mapFilters.distance.length > 0 || (mapFilters.venueType||[]).length > 0) && (
+                      <button onClick={() => setMapFilters({ popularity: [], quality: [], recency: [], social: [], distance: [], venueType: [] })}
                         className="w-full text-center text-[10px] text-gray-400 hover:text-red-500 border-t border-gray-100 py-2 transition"
                       >clear all filters</button>
                     )}
@@ -6997,30 +7147,56 @@ ${adminBugNote}`,
                 )}
 
                                 {/* Legend */}
-                <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-lg p-2 z-10 map-legend" style={{ fontFamily: '"Courier New", monospace' }}>
-                  <h4 className="text-xs font-bold mb-2">Legend</h4>
-                  <div className="space-y-2 text-xs">
-                    <div className="flex items-center gap-2">
-                      <div style={{ width: 12, height: 12, background: 'linear-gradient(135deg, #e0f7ff 0%, #bae6fd 50%, #7dd3fc 100%)', borderRadius: '50%', border: '2px solid white', boxShadow: '0 1px 4px rgba(125,211,252,0.7)' }}></div>
-                      <span>Top 3 Restaurants</span>
+                {/* Collapsible Legend */}
+                <div className="absolute bottom-4 left-4 z-10" style={{ fontFamily: '"Courier New", monospace' }}>
+                  {legendOpen && (
+                    <div className="bg-white/95 rounded-xl shadow-lg p-3 mb-2 text-[10px] space-y-1.5 border border-white/60" style={{ backdropFilter: 'blur(6px)', minWidth: '160px' }}>
+                      <div className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-2">pin types</div>
+                      {[
+                        ['linear-gradient(135deg,#e0f7ff,#7dd3fc)', 'top 3 restaurants', null],
+                        ['#c084fc', 'top 3 dishes', null],
+                        ['#33a29b', 'your restaurants', null],
+                        ['#3b82f6', 'community rated', null],
+                        ['#9ca3af', 'unrated', null],
+                      ].map(([bg, label]) => (
+                        <div key={label} className="flex items-center gap-2">
+                          <div style={{ width: 10, height: 10, background: bg, borderRadius: '50%', border: '1.5px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.15)', flexShrink: 0 }} />
+                          <span className="text-gray-600">{label}</span>
+                        </div>
+                      ))}
+                      <div className="border-t border-gray-100 pt-1.5 mt-1.5">
+                        <div className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">venue types</div>
+                        {[['🚚', 'food truck'], ['🏠', 'home chef'], ['🌮', 'street food'], ['⛺', 'pop-up']].map(([emoji, label]) => (
+                          <div key={label} className="flex items-center gap-2 mb-1">
+                            <span style={{ fontSize: 10 }}>{emoji}</span>
+                            <span className="text-gray-600">{label}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="border-t border-gray-100 pt-1.5 mt-1.5">
+                        <div className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">payment</div>
+                        {[['💵', 'cash only'], ['📱', 'venmo/zelle']].map(([emoji, label]) => (
+                          <div key={label} className="flex items-center gap-2 mb-1">
+                            <span style={{ fontSize: 10 }}>{emoji}</span>
+                            <span className="text-gray-600">{label}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="border-t border-gray-100 pt-1.5 mt-1.5">
+                        <div className="flex items-center gap-2">
+                          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#f59e0b', boxShadow: '0 0 6px 2px rgba(245,158,11,0.7)', flexShrink: 0 }} />
+                          <span className="text-gray-600">open now (glow)</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <div style={{ width: 12, height: 12, background: '#c084fc', borderRadius: '50%', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}></div>
-                      <span>Top 3 Dishes</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div style={{ width: 12, height: 12, background: '#33a29b', borderRadius: '50%', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}></div>
-                      <span>Your Restaurants</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div style={{ width: 12, height: 12, background: '#3b82f6', borderRadius: '50%', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}></div>
-                      <span>Community Rated</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div style={{ width: 12, height: 12, background: '#9ca3af', borderRadius: '50%', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}></div>
-                      <span>Unrated</span>
-                    </div>
-                  </div>
+                  )}
+                  <button
+                    onClick={() => setLegendOpen(v => !v)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold shadow-lg border transition ${legendOpen ? 'bg-[#33a29b] text-white border-[#33a29b]' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><circle cx="12" cy="16" r="1" fill="currentColor"/></svg>
+                    legend {legendOpen ? '▲' : '▼'}
+                  </button>
                 </div>
                 
 
@@ -10010,6 +10186,45 @@ ${adminBugNote}`,
                   )}
                 </div>
 
+                {/* Optional: Venue tags + social links suggestion */}
+                <details className="mb-2">
+                  <summary className="text-[10px] font-bold text-gray-400 cursor-pointer hover:text-gray-600 transition select-none" style={{ fontFamily: '"Courier New", monospace' }}>
+                    + suggest venue info (optional)
+                  </summary>
+                  <div className="mt-2 space-y-2 p-2 bg-gray-50 rounded-lg border border-gray-100">
+                    <div>
+                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1">venue type</div>
+                      <div className="flex flex-wrap gap-1">
+                        {[['food_truck','🚚 truck'],['home_chef','🏠 home chef'],['street_food','🌮 street food'],['popup','⛺ pop-up']].map(([val,label]) => (
+                          <button key={val} type="button"
+                            onClick={() => setVenueTagForm(p => ({ ...p, venue: p.venue === val ? '' : val }))}
+                            className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold border transition ${venueTagForm.venue === val ? 'bg-[#33a29b] text-white border-[#33a29b]' : 'bg-white text-gray-600 border-gray-200 hover:border-[#33a29b]'}`}
+                          >{label}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1">payment</div>
+                      <div className="flex gap-1">
+                        {[['cash_only','💵 cash only'],['venmo_zelle','📱 venmo/zelle']].map(([val,label]) => (
+                          <button key={val} type="button"
+                            onClick={() => setVenueTagForm(p => ({ ...p, payments: p.payments.includes(val) ? p.payments.filter(x=>x!==val) : [...p.payments, val] }))}
+                            className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold border transition ${venueTagForm.payments.includes(val) ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-gray-600 border-gray-200 hover:border-amber-400'}`}
+                          >{label}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <input type="text" placeholder="📷 instagram handle (optional)"
+                      value={venueTagForm.instagram} onChange={e => setVenueTagForm(p => ({ ...p, instagram: e.target.value }))}
+                      className="w-full px-2 py-1 text-[10px] border border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
+                      style={{ fontFamily: '"Courier New", monospace' }} />
+                    <input type="text" placeholder="🌐 website url (optional)"
+                      value={venueTagForm.website} onChange={e => setVenueTagForm(p => ({ ...p, website: e.target.value }))}
+                      className="w-full px-2 py-1 text-[10px] border border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
+                      style={{ fontFamily: '"Courier New", monospace' }} />
+                  </div>
+                </details>
+
                 <button 
                   onClick={editingRating ? saveEditedRating : handleSubmit} 
                   disabled={!restaurant || !dishName || !dishCategory || !price} 
@@ -10086,7 +10301,7 @@ ${adminBugNote}`,
 
         return (
         <>
-          <div onClick={handleCloseDish} className={`fixed inset-0 bg-black/40 ${dishReturnToUser ? 'z-[65]' : 'z-50'} ${isDishModalClosing ? 'animate-fade-out' : 'animate-fade-in'}`} style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }} />
+          <div onClick={() => { if (dishReturnToUser || mapReturnRestaurant) handleCloseDish(); else handleCloseDish(); }} className={`fixed inset-0 bg-black/40 ${dishReturnToUser ? 'z-[65]' : 'z-50'} ${isDishModalClosing ? 'animate-fade-out' : 'animate-fade-in'}`} style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }} />
           {/* Mobile: bottom sheet. Desktop: centered modal */}
           <div className={`fixed bg-white w-full pointer-events-auto flex flex-col
             md:inset-0 md:flex md:items-center md:justify-center md:p-4 md:pointer-events-none md:bg-transparent
@@ -10111,9 +10326,17 @@ ${adminBugNote}`,
                 {/* Mobile drag handle */}
                 <div className="absolute top-2 left-1/2 -translate-x-1/2 w-8 h-1 bg-gray-300/60 rounded-full md:hidden" />
                 <div className="flex justify-between items-center mb-3">
-                  <button onClick={(e) => { e.stopPropagation(); handleSaveItem(selectedDish, 'dish'); }} className="p-1.5 rounded-full hover:bg-white/60 transition">
-                    <Bookmark size={18} className={isItemSaved(selectedDish.id, 'dish') ? 'fill-[#33a29b] text-[#33a29b]' : 'text-gray-400'} />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    {dishReturnToUser && (
+                      <button onClick={(e) => { e.stopPropagation(); handleCloseDish(); }} className="flex items-center gap-1 text-white/70 hover:text-white transition text-[10px] font-semibold mr-1" style={{ fontFamily: '"Courier New", monospace' }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+                        back
+                      </button>
+                    )}
+                    <button onClick={(e) => { e.stopPropagation(); handleSaveItem(selectedDish, 'dish'); }} className="p-1.5 rounded-full hover:bg-white/60 transition">
+                      <Bookmark size={18} className={isItemSaved(selectedDish.id, 'dish') ? 'fill-[#33a29b] text-[#33a29b]' : 'text-gray-400'} />
+                    </button>
+                  </div>
                   <div className="flex items-center gap-2">
                     {user && canEditRating({ user_id: user.id, created_at: selectedDish.created_at || new Date().toISOString() }) && (
                       <div className="relative">
@@ -10479,7 +10702,7 @@ ${adminBugNote}`,
         const theirBadges = viewingUserBadges[u.id] || [];
         return (
           <>
-            <div onClick={handleCloseUser} className={`fixed inset-0 bg-black/40 z-50 ${isUserModalClosing ? 'animate-fade-out' : 'animate-fade-in'}`} style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }} />
+            <div onClick={() => userModalHistory.length > 0 ? goBackUserModal() : handleCloseUser()} className={`fixed inset-0 bg-black/40 z-50 ${isUserModalClosing ? 'animate-fade-out' : 'animate-fade-in'}`} style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }} />
             <div className={`fixed inset-0 flex items-center justify-center z-50 p-4 pointer-events-none`}>
               <div className={`bg-white rounded-2xl w-full pointer-events-auto flex flex-col ${isUserModalClosing ? 'animate-slide-down-fade-simple' : 'animate-slide-up-fade-simple'}`} style={{ maxWidth: '520px', maxHeight: '82vh' }}>
                 
@@ -10487,8 +10710,9 @@ ${adminBugNote}`,
                 <div className="sticky top-0 bg-white border-b px-4 py-3 flex justify-between items-center rounded-t-2xl flex-shrink-0">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     {userModalHistory.length > 0 && (
-                      <button onClick={goBackUserModal} className="p-1 rounded-full hover:bg-gray-100 transition text-gray-500 flex-shrink-0">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+                      <button onClick={goBackUserModal} className="flex items-center gap-1 text-gray-400 hover:text-gray-700 transition text-[10px] font-semibold flex-shrink-0" style={{ fontFamily: '"Courier New", monospace' }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+                        back to @{userModalHistory[userModalHistory.length - 1]?.username || 'prev'}
                       </button>
                     )}
                     <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
@@ -10513,8 +10737,14 @@ ${adminBugNote}`,
                           supabase.from('user_follows').select('follower_id').eq('following_id', u.id),
                           supabase.from('user_follows').select('following_id').eq('follower_id', u.id)
                         ]);
-                        const followerUsers = allUsers.filter(au => (fd||[]).map(f=>f.follower_id).includes(au.id));
-                        const followingUsers = allUsers.filter(au => (fg||[]).map(f=>f.following_id).includes(au.id));
+                        const followerIds = (fd||[]).map(f=>f.follower_id);
+                        const followingIds = (fg||[]).map(f=>f.following_id);
+                        const [{ data: fuData }, { data: fgData }] = await Promise.all([
+                          supabase.from('users').select('id,username,email').in('id', followerIds.length ? followerIds : ['00000000-0000-0000-0000-000000000000']),
+                          supabase.from('users').select('id,username,email').in('id', followingIds.length ? followingIds : ['00000000-0000-0000-0000-000000000000'])
+                        ]);
+                        const followerUsers = (fuData||[]).map(u => ({ ...u, ratingsCount: allRatings.filter(r=>r.user_id===u.id&&!r.is_deleted).length }));
+                        const followingUsers = (fgData||[]).map(u => ({ ...u, ratingsCount: allRatings.filter(r=>r.user_id===u.id&&!r.is_deleted).length }));
                         setViewFollowersOverlay({ tab: 'followers', followerUsers, followingUsers, onClickUser: (fu) => { setViewFollowersOverlay(null); setSelectedUser(fu); } });
                       }}>
                         <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{u.followers_count || u.friends || 0}</div>
@@ -10525,8 +10755,14 @@ ${adminBugNote}`,
                           supabase.from('user_follows').select('follower_id').eq('following_id', u.id),
                           supabase.from('user_follows').select('following_id').eq('follower_id', u.id)
                         ]);
-                        const followerUsers = allUsers.filter(au => (fd||[]).map(f=>f.follower_id).includes(au.id));
-                        const followingUsers = allUsers.filter(au => (fg||[]).map(f=>f.following_id).includes(au.id));
+                        const followerIds = (fd||[]).map(f=>f.follower_id);
+                        const followingIds = (fg||[]).map(f=>f.following_id);
+                        const [{ data: fuData }, { data: fgData }] = await Promise.all([
+                          supabase.from('users').select('id,username,email').in('id', followerIds.length ? followerIds : ['00000000-0000-0000-0000-000000000000']),
+                          supabase.from('users').select('id,username,email').in('id', followingIds.length ? followingIds : ['00000000-0000-0000-0000-000000000000'])
+                        ]);
+                        const followerUsers = (fuData||[]).map(u => ({ ...u, ratingsCount: allRatings.filter(r=>r.user_id===u.id&&!r.is_deleted).length }));
+                        const followingUsers = (fgData||[]).map(u => ({ ...u, ratingsCount: allRatings.filter(r=>r.user_id===u.id&&!r.is_deleted).length }));
                         setViewFollowersOverlay({ tab: 'following', followerUsers, followingUsers, onClickUser: (fu) => { setViewFollowersOverlay(null); setSelectedUser(fu); } });
                       }}>
                         <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{u.following_count || 0}</div>
@@ -10774,6 +11010,76 @@ ${adminBugNote}`,
                     )}
                   </div>
                 </div>
+
+                {/* Venue Tags + Payment Tags */}
+                {(() => {
+                  const rTags = venueTags[selectedRestaurant.id];
+                  const venueLabels = { food_truck: '🚚 food truck', home_chef: '🏠 home chef', street_food: '🌮 street food', popup: '⛺ pop-up' };
+                  const paymentLabels = { cash_only: '💵 cash only', venmo_zelle: '📱 venmo/zelle' };
+                  const social = restaurantSocialLinks[selectedRestaurant.id] || {};
+                  const hasAny = rTags?.venue || rTags?.payments?.length || Object.keys(social).length;
+                  return (
+                    <div className="mb-2">
+                      {/* Tags row */}
+                      <div className="flex flex-wrap gap-1 mb-1.5">
+                        {rTags?.venue && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#33a29b]/10 text-[#33a29b] border border-[#33a29b]/20" style={{ fontFamily: '"Courier New", monospace' }}>
+                            {venueLabels[rTags.venue] || rTags.venue}
+                          </span>
+                        )}
+                        {(rTags?.payments || []).map(p => (
+                          <span key={p} className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200" style={{ fontFamily: '"Courier New", monospace' }}>
+                            {paymentLabels[p] || p}
+                          </span>
+                        ))}
+                      </div>
+                      {/* Social links */}
+                      {Object.keys(social).length > 0 && (
+                        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                          {social.instagram && (
+                            <a href={`https://instagram.com/${social.instagram.replace('@','')}`} target="_blank" rel="noopener noreferrer"
+                              className="flex items-center gap-1 text-[10px] font-bold text-pink-600 hover:text-pink-800 transition" style={{ fontFamily: '"Courier New", monospace' }}>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1.5" fill="currentColor"/></svg>
+                              @{social.instagram.replace('@','')}
+                            </a>
+                          )}
+                          {social.tiktok && (
+                            <a href={`https://tiktok.com/@${social.tiktok.replace('@','')}`} target="_blank" rel="noopener noreferrer"
+                              className="flex items-center gap-1 text-[10px] font-bold text-gray-800 hover:text-black transition" style={{ fontFamily: '"Courier New", monospace' }}>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34V8.69a8.18 8.18 0 004.79 1.53V6.77a4.85 4.85 0 01-1.02-.08z"/></svg>
+                              @{social.tiktok.replace('@','')}
+                            </a>
+                          )}
+                          {social.website && (
+                            <a href={social.website.startsWith('http') ? social.website : `https://${social.website}`} target="_blank" rel="noopener noreferrer"
+                              className="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-800 transition" style={{ fontFamily: '"Courier New", monospace' }}>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+                              website
+                            </a>
+                          )}
+                          {social.ordering && (
+                            <a href={social.ordering.startsWith('http') ? social.ordering : `https://${social.ordering}`} target="_blank" rel="noopener noreferrer"
+                              className="flex items-center gap-1 text-[10px] font-bold text-[#33a29b] hover:text-[#2a8a84] transition" style={{ fontFamily: '"Courier New", monospace' }}>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>
+                              order online
+                            </a>
+                          )}
+                        </div>
+                      )}
+                      {/* Suggest tag button */}
+                      {user && (
+                        <button
+                          onClick={() => { setShowVenueTagModal(selectedRestaurant.id); }}
+                          className="text-[9px] text-gray-400 hover:text-[#33a29b] transition flex items-center gap-1" style={{ fontFamily: '"Courier New", monospace' }}
+                        >
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                          suggest tag or social link
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {/* Rate a Dish button for DB restaurants (Google Place ones already have it above) */}
                 {!selectedRestaurant.isGooglePlace && (
                   <button
@@ -11919,6 +12225,93 @@ ${adminBugNote}`,
       
       {/* Error Modal */}
       {/* Followers / Following Modal */}
+      {/* Venue Tag / Social Link suggestion modal */}
+      {showVenueTagModal && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-[80]" onClick={() => setShowVenueTagModal(null)} style={{ backdropFilter: 'blur(4px)' }} />
+          <div className="fixed inset-0 flex items-center justify-center z-[81] p-4 pointer-events-none">
+            <div className="bg-white rounded-2xl w-full pointer-events-auto shadow-2xl" style={{ maxWidth: '360px', fontFamily: '"Courier New", monospace' }}>
+              <div className="flex items-center justify-between px-4 py-3 border-b">
+                <span className="text-sm font-bold">suggest tags & links</span>
+                <button onClick={() => setShowVenueTagModal(null)} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+              </div>
+              <div className="p-4 space-y-3">
+                {/* Venue type */}
+                <div>
+                  <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">venue type</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[['', 'regular restaurant'], ['food_truck', '🚚 food truck'], ['home_chef', '🏠 home chef'], ['street_food', '🌮 street food'], ['popup', '⛺ pop-up']].map(([val, label]) => (
+                      <button key={val}
+                        onClick={() => setVenueTagForm(p => ({ ...p, venue: p.venue === val ? '' : val }))}
+                        className={`px-2 py-1 rounded-lg text-[11px] font-semibold border transition ${venueTagForm.venue === val ? 'bg-[#33a29b] text-white border-[#33a29b]' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-[#33a29b]'}`}
+                      >{label}</button>
+                    ))}
+                  </div>
+                </div>
+                {/* Payment tags */}
+                <div>
+                  <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">payment</div>
+                  <div className="flex gap-1.5">
+                    {[['cash_only', '💵 cash only'], ['venmo_zelle', '📱 venmo/zelle']].map(([val, label]) => (
+                      <button key={val}
+                        onClick={() => setVenueTagForm(p => ({ ...p, payments: p.payments.includes(val) ? p.payments.filter(x=>x!==val) : [...p.payments, val] }))}
+                        className={`px-2 py-1 rounded-lg text-[11px] font-semibold border transition ${venueTagForm.payments.includes(val) ? 'bg-amber-500 text-white border-amber-500' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-amber-400'}`}
+                      >{label}</button>
+                    ))}
+                  </div>
+                </div>
+                {/* Social links */}
+                <div>
+                  <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">social & links</div>
+                  <div className="space-y-2">
+                    {[['instagram', '📷 instagram handle'], ['tiktok', '🎵 tiktok handle'], ['website', '🌐 website url'], ['ordering', '🛍️ ordering link']].map(([key, placeholder]) => (
+                      <input key={key} type="text" placeholder={placeholder}
+                        value={venueTagForm[key]}
+                        onChange={e => setVenueTagForm(p => ({ ...p, [key]: e.target.value }))}
+                        className="w-full px-3 py-1.5 text-xs border-2 border-gray-200 rounded-lg focus:border-[#33a29b] focus:outline-none"
+                        style={{ fontFamily: '"Courier New", monospace' }}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <button
+                  onClick={async () => {
+                    if (!user) return;
+                    const restId = showVenueTagModal;
+                    const inserts = [];
+                    if (venueTagForm.venue) inserts.push({ restaurant_id: restId, tag_type: 'venue', tag_value: venueTagForm.venue, added_by: user.id });
+                    venueTagForm.payments.forEach(p => inserts.push({ restaurant_id: restId, tag_type: 'payment', tag_value: p, added_by: user.id }));
+                    if (inserts.length) {
+                      await supabase.from('venue_tags').upsert(inserts, { onConflict: 'restaurant_id,tag_type,tag_value' });
+                    }
+                    // Save social links
+                    const social = {};
+                    if (venueTagForm.instagram) social.instagram = venueTagForm.instagram.replace('@','');
+                    if (venueTagForm.tiktok) social.tiktok = venueTagForm.tiktok.replace('@','');
+                    if (venueTagForm.website) social.website = venueTagForm.website;
+                    if (venueTagForm.ordering) social.ordering = venueTagForm.ordering;
+                    if (Object.keys(social).length) {
+                      await supabase.from('restaurants').update({ social_links: social }).eq('id', restId);
+                      setRestaurantSocialLinks(prev => ({ ...prev, [restId]: social }));
+                    }
+                    // Refresh venue tags
+                    const { data } = await supabase.from('venue_tags').select('*').eq('restaurant_id', restId);
+                    if (data) {
+                      const tagMap = { venue: null, payments: [] };
+                      data.forEach(t => { if (t.tag_type==='venue') tagMap.venue=t.tag_value; if (t.tag_type==='payment') tagMap.payments.push(t.tag_value); });
+                      setVenueTags(prev => ({ ...prev, [restId]: tagMap }));
+                    }
+                    setShowVenueTagModal(null);
+                    setVenueTagForm({ venue: '', payments: [], instagram: '', tiktok: '', website: '', ordering: '' });
+                  }}
+                  className="w-full py-2 bg-[#33a29b] text-white rounded-xl font-bold text-sm hover:bg-[#2a8a84] transition"
+                >submit</button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Shared followers/following overlay — used from selectedUser and selectedExploreUser modals */}
       {viewFollowersOverlay && (
         <>
@@ -12066,8 +12459,8 @@ ${adminBugNote}`,
 
         return (
           <>
-            <div onClick={() => { setSelectedExploreUser(null); setExploreUserHistory([]); setExploreUserFollowersList(null); setViewFollowersOverlay(null); }} className="fixed inset-0 bg-black/40 z-[60]" style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }} />
-            <div className="fixed z-[61] bg-white rounded-2xl shadow-xl flex flex-col"
+            <div onClick={() => { if (exploreUserHistory.length > 0) { setExploreUserHistory(h => { const prev = h[h.length-1]; if (prev) setSelectedExploreUser(prev); return h.slice(0,-1); }); setExploreUserFollowersList(null); } else { setSelectedExploreUser(null); setExploreUserHistory([]); setExploreUserFollowersList(null); setViewFollowersOverlay(null); } }} className="fixed inset-0 bg-black/40 z-[60]" style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }} />
+            <div className={`fixed z-[61] bg-white rounded-2xl shadow-xl flex flex-col ${modalNavDirection === 'back' ? 'animate-slide-in-left' : 'animate-slide-in-right'}`}
               style={{ top: '6%', left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 520px)', maxHeight: '86vh' }}>
 
               {/* Header */}
@@ -12081,8 +12474,9 @@ ${adminBugNote}`,
                         return h.slice(0, -1);
                       });
                       setExploreUserFollowersList(null);
-                    }} className="p-1 rounded-full hover:bg-gray-100 transition text-gray-500 flex-shrink-0">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+                    }} className="flex items-center gap-1 text-gray-400 hover:text-gray-700 transition text-[10px] font-semibold flex-shrink-0" style={{ fontFamily: '"Courier New", monospace' }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+                      back to @{exploreUserHistory[exploreUserHistory.length - 1]?.username || 'prev'}
                     </button>
                   )}
                   <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
@@ -12109,8 +12503,14 @@ ${adminBugNote}`,
                         supabase.from('user_follows').select('follower_id').eq('following_id', u.id),
                         supabase.from('user_follows').select('following_id').eq('follower_id', u.id)
                       ]);
-                      const followerUsers = allUsers.filter(au => (fd||[]).map(f=>f.follower_id).includes(au.id));
-                      const followingUsers = allUsers.filter(au => (fg||[]).map(f=>f.following_id).includes(au.id));
+                      const followerIds = (fd||[]).map(f=>f.follower_id);
+                      const followingIds = (fg||[]).map(f=>f.following_id);
+                      const [{ data: fuData }, { data: fgData }] = await Promise.all([
+                        supabase.from('users').select('id,username,email').in('id', followerIds.length ? followerIds : ['00000000-0000-0000-0000-000000000000']),
+                        supabase.from('users').select('id,username,email').in('id', followingIds.length ? followingIds : ['00000000-0000-0000-0000-000000000000'])
+                      ]);
+                      const followerUsers = (fuData||[]).map(u => ({ ...u, ratingsCount: allRatings.filter(r=>r.user_id===u.id&&!r.is_deleted).length }));
+                      const followingUsers = (fgData||[]).map(u => ({ ...u, ratingsCount: allRatings.filter(r=>r.user_id===u.id&&!r.is_deleted).length }));
                       setViewFollowersOverlay({ tab: 'followers', followerUsers, followingUsers, onClickUser: (fu) => { setViewFollowersOverlay(null); setExploreUserHistory(h => [...h, u]); setSelectedExploreUser({ ...fu, isFollowing: userFollows.some(f => f.following_id === fu.id) }); } });
                     }}>
                       <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{u.followers_count || u.friends || 0}</div>
@@ -12121,8 +12521,14 @@ ${adminBugNote}`,
                         supabase.from('user_follows').select('follower_id').eq('following_id', u.id),
                         supabase.from('user_follows').select('following_id').eq('follower_id', u.id)
                       ]);
-                      const followerUsers = allUsers.filter(au => (fd||[]).map(f=>f.follower_id).includes(au.id));
-                      const followingUsers = allUsers.filter(au => (fg||[]).map(f=>f.following_id).includes(au.id));
+                      const followerIds = (fd||[]).map(f=>f.follower_id);
+                      const followingIds = (fg||[]).map(f=>f.following_id);
+                      const [{ data: fuData }, { data: fgData }] = await Promise.all([
+                        supabase.from('users').select('id,username,email').in('id', followerIds.length ? followerIds : ['00000000-0000-0000-0000-000000000000']),
+                        supabase.from('users').select('id,username,email').in('id', followingIds.length ? followingIds : ['00000000-0000-0000-0000-000000000000'])
+                      ]);
+                      const followerUsers = (fuData||[]).map(u => ({ ...u, ratingsCount: allRatings.filter(r=>r.user_id===u.id&&!r.is_deleted).length }));
+                      const followingUsers = (fgData||[]).map(u => ({ ...u, ratingsCount: allRatings.filter(r=>r.user_id===u.id&&!r.is_deleted).length }));
                       setViewFollowersOverlay({ tab: 'following', followerUsers, followingUsers, onClickUser: (fu) => { setViewFollowersOverlay(null); setExploreUserHistory(h => [...h, u]); setSelectedExploreUser({ ...fu, isFollowing: userFollows.some(f => f.following_id === fu.id) }); } });
                     }}>
                       <div className="font-bold text-base" style={{ fontFamily: '"Courier New", monospace' }}>{u.following_count || 0}</div>
