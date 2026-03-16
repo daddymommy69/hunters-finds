@@ -4529,10 +4529,11 @@ const HuntersFindsApp = () => {
       r.location?.lat &&
       !r.isGooglePlace &&
       r.id && !r.id.startsWith('generated-') &&
-      !googleDataOverrides[r.id] && // not already enriched this session
+      !googleDataOverrides[r.id]?.opening_hours && // not already successfully enriched
       (
         !r.googleData?.opening_hours || // no hours at all
-        r.googleData?.opening_hours?.open_now === undefined // hours exist but open_now missing
+        r.googleData?.opening_hours?.open_now === undefined || // hours exist but open_now missing
+        r.googleData?.opening_hours?.open_now === null
       )
     ).slice(0, 8);
     if (!missing.length) return;
@@ -4547,14 +4548,18 @@ const HuntersFindsApp = () => {
           const pName = place.name.toLowerCase();
           const nameMatch = pName.includes(rName.split(' ')[0]) || rName.includes(pName.split(' ')[0]);
           if (!nameMatch) continue;
-          // Try Place Details to get proper opening_hours with open_now
+          // Try Place Details for proper opening_hours.open_now
           let openingHours = place.opening_hours || null;
-          if (place.place_id && !openingHours?.open_now !== undefined) {
+          let detailsSuccess = false;
+          if (place.place_id) {
             try {
               const detailsResp = await fetch(`/api/places/details?place_id=${encodeURIComponent(place.place_id)}`);
-              const detailsData = await detailsResp.json();
-              if (detailsData.status === 'OK' && detailsData.result?.opening_hours) {
-                openingHours = detailsData.result.opening_hours;
+              if (detailsResp.ok) {
+                const detailsData = await detailsResp.json();
+                if (detailsData.status === 'OK' && detailsData.result?.opening_hours) {
+                  openingHours = detailsData.result.opening_hours;
+                  detailsSuccess = true;
+                }
               }
             } catch (e) { /* silent fallback */ }
           }
@@ -4564,9 +4569,11 @@ const HuntersFindsApp = () => {
             opening_hours: openingHours,
             place_id: place.place_id,
           };
-          // Update in-memory immediately so map re-renders without page reload
-          setGoogleDataOverrides(prev => ({ ...prev, [restaurant.id]: googleData }));
-          // Also persist to DB
+          // Only cache in memory if we got useful data (don't permanently block retries on failure)
+          if (openingHours !== null) {
+            setGoogleDataOverrides(prev => ({ ...prev, [restaurant.id]: googleData }));
+          }
+          // Always persist to DB — saves place_id at minimum for next Details call
           supabase.from('restaurants').update({ google_data: googleData }).eq('id', restaurant.id);
         } catch (e) { /* silent */ }
       }
