@@ -4539,44 +4539,74 @@ const HuntersFindsApp = () => {
     if (!missing.length) return;
     const enrichBatch = async () => {
       const loc = userLocation || { lat: 37.8044, lng: -122.2712 };
+      // Clear stale Places cache so we get fresh results with current open_now status
+    try {
+      const keysToDelete = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('google-')) keysToDelete.push(k);
+      }
+      keysToDelete.forEach(k => localStorage.removeItem(k));
+      if (keysToDelete.length) console.log('🧹 Cleared', keysToDelete.length, 'stale Places cache entries');
+    } catch (e) {}
+    console.log('🏪 Enriching', missing.length, 'restaurants:', missing.map(r => r.name));
       for (const restaurant of missing) {
         try {
-          const results = await searchGooglePlacesAPI(restaurant.name, restaurant.location || loc, { limit: 1 });
-          if (!results?.length) continue;
-          const place = results[0];
-          const rName = restaurant.name.toLowerCase();
-          const pName = place.name.toLowerCase();
-          const nameMatch = pName.includes(rName.split(' ')[0]) || rName.includes(pName.split(' ')[0]);
-          if (!nameMatch) continue;
-          // Try Place Details for proper opening_hours.open_now
-          let openingHours = place.opening_hours || null;
-          let detailsSuccess = false;
-          if (place.place_id) {
+          let placeId = restaurant.googleData?.place_id || restaurant.google_place_id || null;
+          let rating = restaurant.googleData?.rating || null;
+          let userRatingsTotal = restaurant.googleData?.user_ratings_total || null;
+
+          // If no place_id, run Text Search to get one
+          if (!placeId) {
+            console.log('🔎 Text search for:', restaurant.name);
+            const results = await searchGooglePlacesAPI(restaurant.name, restaurant.location || loc, { limit: 1 });
+            if (!results?.length) { console.log('❌ No results for:', restaurant.name); continue; }
+            const place = results[0];
+            const rName = restaurant.name.toLowerCase();
+            const pName = place.name.toLowerCase();
+            const nameMatch = pName.includes(rName.split(' ')[0]) || rName.includes(pName.split(' ')[0]);
+            if (!nameMatch) { console.log('❌ Name mismatch:', restaurant.name, '≠', place.name); continue; }
+            placeId = place.place_id;
+            rating = place.rating;
+            userRatingsTotal = place.user_ratings_total;
+            console.log('✅ Found place_id for', restaurant.name, ':', placeId);
+          } else {
+            console.log('⚡ Using existing place_id for', restaurant.name, ':', placeId);
+          }
+
+          // Call Place Details for opening_hours.open_now
+          let openingHours = null;
+          if (placeId) {
             try {
-              const detailsResp = await fetch(`/api/places/details?place_id=${encodeURIComponent(place.place_id)}`);
+              console.log('📋 Calling Place Details for:', restaurant.name);
+              const detailsResp = await fetch(`/api/places/details?place_id=${encodeURIComponent(placeId)}`);
+              const detailsText = await detailsResp.text();
+              console.log('📋 Details response status:', detailsResp.status, 'body:', detailsText.slice(0, 200));
               if (detailsResp.ok) {
-                const detailsData = await detailsResp.json();
+                const detailsData = JSON.parse(detailsText);
                 if (detailsData.status === 'OK' && detailsData.result?.opening_hours) {
                   openingHours = detailsData.result.opening_hours;
-                  detailsSuccess = true;
+                  console.log('✅ Got opening_hours for', restaurant.name, '— open_now:', openingHours.open_now);
+                } else {
+                  console.log('⚠️ Details API status:', detailsData.status, 'for', restaurant.name);
                 }
               }
-            } catch (e) { /* silent fallback */ }
+            } catch (e) {
+              console.log('❌ Details call failed for', restaurant.name, ':', e.message);
+            }
           }
-          const googleData = {
-            rating: place.rating,
-            user_ratings_total: place.user_ratings_total,
-            opening_hours: openingHours,
-            place_id: place.place_id,
-          };
-          // Only cache in memory if we got useful data (don't permanently block retries on failure)
+
+          const googleData = { rating, user_ratings_total: userRatingsTotal, opening_hours: openingHours, place_id: placeId };
           if (openingHours !== null) {
+            console.log('🗺️ Updating map pin for:', restaurant.name, '— open:', openingHours.open_now);
             setGoogleDataOverrides(prev => ({ ...prev, [restaurant.id]: googleData }));
           }
-          // Always persist to DB — saves place_id at minimum for next Details call
           supabase.from('restaurants').update({ google_data: googleData }).eq('id', restaurant.id);
-        } catch (e) { /* silent */ }
+        } catch (e) {
+          console.log('❌ Enrichment error for', restaurant.name, ':', e.message);
+        }
       }
+      console.log('🏁 Enrichment batch complete');
     };
     enrichBatch();
   }, [activeTab, allRestaurants.length]);
