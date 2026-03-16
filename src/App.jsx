@@ -844,6 +844,7 @@ const HuntersFindsApp = () => {
   const [mapReturnRestaurant, setMapReturnRestaurant] = useState(null); // restaurant to reopen popup after closing dish
   const [mapReturnPopupId, setMapReturnPopupId] = useState(null); // restaurant id to reopen leaflet popup after closing restaurant modal
   const [venueTags, setVenueTags] = useState({}); // { restaurantId: { venue: 'food_truck', payments: ['cash_only'] } }
+  const [googleDataOverrides, setGoogleDataOverrides] = useState({}); // { restaurantId: googleData } — patches missing google_data in memory
   const [restaurantSocialLinks, setRestaurantSocialLinks] = useState({}); // { restaurantId: { instagram, tiktok, website, ordering } }
   const [showVenueTagModal, setShowVenueTagModal] = useState(null); // restaurantId
   const [venueTagForm, setVenueTagForm] = useState({ venue: '', payments: [], instagram: '', tiktok: '', website: '', ordering: '' });
@@ -4495,31 +4496,46 @@ const HuntersFindsApp = () => {
     }, 200);
     
     return () => { if (mapUpdateTimerRef.current) clearTimeout(mapUpdateTimerRef.current); };
-  }, [mapFilters, mapInstance, activeTab, allRestaurants]);
+  }, [mapFilters, mapInstance, activeTab, allRestaurants, googleDataOverrides]);
 
   // Background enrich restaurants missing google_data (for open-now glow on map)
   React.useEffect(() => {
-    if (activeTab !== 'map' || !allRestaurants.length || !userLocation) return;
+    if (activeTab !== 'map' || !allRestaurants.length) return;
     const missing = allRestaurants.filter(r =>
-      r.location?.lat && !r.googleData?.opening_hours && !r.isGooglePlace && r.id && !r.id.startsWith('generated-')
-    ).slice(0, 5); // max 5 at a time to respect API limits
+      r.location?.lat &&
+      !r.googleData?.opening_hours &&
+      !googleDataOverrides[r.id]?.opening_hours &&
+      !r.isGooglePlace &&
+      r.id && !r.id.startsWith('generated-')
+    ).slice(0, 8);
     if (!missing.length) return;
     const enrichBatch = async () => {
+      const loc = userLocation || { lat: 37.8044, lng: -122.2712 };
       for (const restaurant of missing) {
         try {
-          const results = await searchGooglePlacesAPI(restaurant.name, restaurant.location, { limit: 1 });
+          const results = await searchGooglePlacesAPI(restaurant.name, restaurant.location || loc, { limit: 1 });
           if (!results?.length) continue;
           const place = results[0];
-          const nameMatch = place.name.toLowerCase().includes(restaurant.name.toLowerCase().split(' ')[0]) ||
-                            restaurant.name.toLowerCase().includes(place.name.toLowerCase().split(' ')[0]);
+          const rName = restaurant.name.toLowerCase();
+          const pName = place.name.toLowerCase();
+          const nameMatch = pName.includes(rName.split(' ')[0]) || rName.includes(pName.split(' ')[0]);
           if (!nameMatch) continue;
-          const googleData = { rating: place.rating, user_ratings_total: place.user_ratings_total, opening_hours: place.opening_hours, place_id: place.place_id };
-          await supabase.from('restaurants').update({ google_data: googleData }).eq('id', restaurant.id);
+          // opening_hours from Text Search may only have open_now — that's enough for the glow
+          const googleData = {
+            rating: place.rating,
+            user_ratings_total: place.user_ratings_total,
+            opening_hours: place.opening_hours || null,
+            place_id: place.place_id,
+          };
+          // Update in-memory immediately so map re-renders without page reload
+          setGoogleDataOverrides(prev => ({ ...prev, [restaurant.id]: googleData }));
+          // Also persist to DB
+          supabase.from('restaurants').update({ google_data: googleData }).eq('id', restaurant.id);
         } catch (e) { /* silent */ }
       }
     };
     enrichBatch();
-  }, [activeTab, userLocation]);
+  }, [activeTab, allRestaurants.length]);
 
   // Fetch venue tags and social links when map tab opens
   React.useEffect(() => {
@@ -4731,7 +4747,8 @@ const HuntersFindsApp = () => {
       // Venue type logic
       const rTag = venueTags[restaurant.id];
       const venueType = rTag?.venue || 'restaurant';
-      const openNow = restaurant.googleData?.opening_hours?.open_now === true;
+      const effectiveGoogleData = restaurant.googleData || googleDataOverrides[restaurant.id] || null;
+      const openNow = effectiveGoogleData?.opening_hours?.open_now === true;
 
       let pinHtml;
       if (category === 'top3_restaurant') {
@@ -4760,8 +4777,8 @@ const HuntersFindsApp = () => {
       const totalRatings = restaurant.topDishes ? restaurant.topDishes.reduce((s, d) => s + (d.numRatings || 0), 0) : 0;
       const srrColor = restaurant.avgSRR >= 96 ? '#9333ea' : restaurant.avgSRR >= 89 ? '#eab308' : restaurant.avgSRR >= 81 ? '#9ca3af' : restaurant.avgSRR >= 72 ? '#22c55e' : restaurant.avgSRR >= 57 ? '#3b82f6' : '#33a29b';
       const cuisineTag = restaurant.cuisine ? `<span style="display:inline-block;background:rgba(51,162,155,0.12);color:#33a29b;border:1px solid rgba(51,162,155,0.25);border-radius:20px;padding:2px 8px;font-size:9px;font-weight:700;letter-spacing:0.05em;margin-top:3px;">${restaurant.cuisine}</span>` : '';
-      const openHours = restaurant.googleData?.opening_hours ? `<span style="font-size:10px;font-weight:700;color:${restaurant.googleData.opening_hours.open_now ? '#22c55e' : '#ef4444'};margin-left:6px;">${restaurant.googleData.opening_hours.open_now ? '● open' : '● closed'}</span>` : '';
-      const googleRating = restaurant.googleData?.rating ? `<div style="display:flex;align-items:center;gap:5px;padding:5px 0;border-top:1px solid rgba(0,0,0,0.06);margin-top:6px;"><span style="font-size:10px;color:#f59e0b;font-weight:700;">★ ${restaurant.googleData.rating}</span><span style="font-size:9px;color:#9ca3af;">(${restaurant.googleData.user_ratings_total || 0} Google reviews)</span></div>` : '';
+      const openHours = effectiveGoogleData?.opening_hours ? `<span style="font-size:10px;font-weight:700;color:${effectiveGoogleData.opening_hours.open_now ? '#22c55e' : '#ef4444'};margin-left:6px;">${effectiveGoogleData.opening_hours.open_now ? '● open' : '● closed'}</span>` : '';
+      const googleRating = effectiveGoogleData?.rating ? `<div style="display:flex;align-items:center;gap:5px;padding:5px 0;border-top:1px solid rgba(0,0,0,0.06);margin-top:6px;"><span style="font-size:10px;color:#f59e0b;font-weight:700;">★ ${effectiveGoogleData.rating}</span><span style="font-size:9px;color:#9ca3af;">(${effectiveGoogleData.user_ratings_total || 0} Google reviews)</span></div>` : '';
 
       const dishesHtml = (restaurant.topDishes && restaurant.topDishes.length > 0) ? (() => {
         return '<div style="max-height:160px;overflow-y:auto;margin-top:8px;">' +
@@ -6249,11 +6266,14 @@ ${adminBugNote}`,
           opening_hours: place.opening_hours,
           place_id: place.place_id,
         };
-        // Update in memory immediately
+        // Update in memory immediately — both modal and map
         setSelectedRestaurant(prev => prev ? { ...prev, googleData } : prev);
-        // Backfill in DB if restaurant has an id
+        if (selectedRestaurant.id) {
+          setGoogleDataOverrides(prev => ({ ...prev, [selectedRestaurant.id]: googleData }));
+        }
+        // Backfill in DB
         if (selectedRestaurant.id && !selectedRestaurant.id.startsWith('generated-')) {
-          await supabase.from('restaurants').update({
+          supabase.from('restaurants').update({
             google_data: googleData,
             ...(place.lat && !selectedRestaurant.location?.lat ? { latitude: place.lat, longitude: place.lng } : {})
           }).eq('id', selectedRestaurant.id);
