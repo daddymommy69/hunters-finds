@@ -4635,7 +4635,20 @@ const HuntersFindsApp = () => {
           const googleData = { rating, user_ratings_total: userRatingsTotal, opening_hours: openingHours, place_id: placeId };
           if (openingHours !== null) {
             console.log('🗺️ Updating map pin for:', restaurant.name, '— open:', openingHours.open_now);
-            setGoogleDataOverrides(prev => ({ ...prev, [restaurant.id]: googleData }));
+            // Also apply override to any duplicate DB entries with same coordinates
+            const rLat = restaurant.location?.lat || foundLat;
+            const rLng = restaurant.location?.lng || foundLng;
+            const sameLocIds = rLat && rLng ? allRestaurants
+              .filter(r => r.id && !r.id.startsWith('generated-') &&
+                Math.abs((r.location?.lat || 0) - rLat) < 0.0001 &&
+                Math.abs((r.location?.lng || 0) - rLng) < 0.0001)
+              .map(r => r.id) : [restaurant.id];
+            console.log('📍 Applying override to IDs:', sameLocIds);
+            setGoogleDataOverrides(prev => {
+              const next = { ...prev };
+              sameLocIds.forEach(id => { next[id] = googleData; });
+              return next;
+            });
           }
           supabase.from('restaurants').update({ google_data: googleData }).eq('id', restaurant.id);
         } catch (e) {
@@ -4816,6 +4829,17 @@ const HuntersFindsApp = () => {
         if (existing.topDishes.length > 0) {
           const valid = existing.topDishes.filter(d => d.srr != null);
           existing.avgSRR = valid.length > 0 ? valid.reduce((s, d) => s + d.srr, 0) / valid.length : existing.avgSRR;
+        }
+        // If the incoming restaurant has a place_id and existing doesn't, promote it as the canonical entry
+        const incomingPlaceId = restaurant.googleData?.place_id || restaurant.google_place_id;
+        const existingPlaceId = existing.googleData?.place_id || existing.google_place_id;
+        if (incomingPlaceId && !existingPlaceId) {
+          // Transfer merged dishes to incoming, swap it in as the canonical entry
+          restaurant.topDishes = existing.topDishes;
+          restaurant.avgSRR = existing.avgSRR;
+          const idx = deduped.indexOf(existing);
+          if (idx >= 0) deduped[idx] = restaurant;
+          seenCoords.set(key, restaurant);
         }
       } else {
         seenCoords.set(key, restaurant);
