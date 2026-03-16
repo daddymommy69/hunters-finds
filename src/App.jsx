@@ -4525,17 +4525,30 @@ const HuntersFindsApp = () => {
   // Background enrich restaurants missing google_data (for open-now glow on map)
   React.useEffect(() => {
     if (activeTab !== 'map' || !allRestaurants.length) return;
+    // Log all restaurants and why they are/aren't being enriched
+    allRestaurants.forEach(r => {
+      if (!r.id || r.id.startsWith('generated-') || r.isGooglePlace) return;
+      const hasLat = !!r.location?.lat;
+      const alreadyEnriched = !!googleDataOverrides[r.id]?.opening_hours;
+      const hasHours = !!r.googleData?.opening_hours;
+      const openNowDefined = r.googleData?.opening_hours?.open_now !== undefined && r.googleData?.opening_hours?.open_now !== null;
+      const needsEnrich = hasLat && !alreadyEnriched && (!hasHours || !openNowDefined);
+      if (!needsEnrich) {
+        console.log('⏭️ Skipping', r.name, '— lat:', hasLat, 'enriched:', alreadyEnriched, 'hasHours:', hasHours, 'openNowDefined:', openNowDefined);
+      }
+    });
+
     const missing = allRestaurants.filter(r =>
       r.location?.lat &&
       !r.isGooglePlace &&
       r.id && !r.id.startsWith('generated-') &&
-      !googleDataOverrides[r.id]?.opening_hours && // not already successfully enriched
+      !googleDataOverrides[r.id]?.opening_hours &&
       (
-        !r.googleData?.opening_hours || // no hours at all
-        r.googleData?.opening_hours?.open_now === undefined || // hours exist but open_now missing
+        !r.googleData?.opening_hours ||
+        r.googleData?.opening_hours?.open_now === undefined ||
         r.googleData?.opening_hours?.open_now === null
       )
-    ).slice(0, 8);
+    ); // no slice — process all missing restaurants
     if (!missing.length) return;
     const enrichBatch = async () => {
       const loc = userLocation || { lat: 37.8044, lng: -122.2712 };
