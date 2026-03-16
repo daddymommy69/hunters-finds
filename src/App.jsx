@@ -4600,7 +4600,7 @@ const HuntersFindsApp = () => {
             supabase.from('restaurants').update({ latitude: foundLat, longitude: foundLng }).eq('id', restaurant.id);
           }
 
-          // Call Place Details for opening_hours.open_now
+          // Call Place Details for opening_hours.open_now + geometry (lat/lng)
           let openingHours = null;
           if (placeId) {
             try {
@@ -4610,9 +4610,19 @@ const HuntersFindsApp = () => {
               console.log('📋 Details response status:', detailsResp.status, 'body:', detailsText.slice(0, 200));
               if (detailsResp.ok) {
                 const detailsData = JSON.parse(detailsText);
-                if (detailsData.status === 'OK' && detailsData.result?.opening_hours) {
-                  openingHours = detailsData.result.opening_hours;
-                  console.log('✅ Got opening_hours for', restaurant.name, '— open_now:', openingHours.open_now);
+                if (detailsData.status === 'OK') {
+                  if (detailsData.result?.opening_hours) {
+                    openingHours = detailsData.result.opening_hours;
+                    console.log('✅ Got opening_hours for', restaurant.name, '— open_now:', openingHours.open_now);
+                  } else {
+                    console.log('⚠️ No opening_hours in Details for', restaurant.name);
+                  }
+                  // Extract coordinates from geometry if we don't have them yet
+                  if (!foundLat && detailsData.result?.geometry?.location) {
+                    foundLat = detailsData.result.geometry.location.lat;
+                    foundLng = detailsData.result.geometry.location.lng;
+                    console.log('📍 Got coords from Details for', restaurant.name, ':', foundLat, foundLng);
+                  }
                 } else {
                   console.log('⚠️ Details API status:', detailsData.status, 'for', restaurant.name);
                 }
