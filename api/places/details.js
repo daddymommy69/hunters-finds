@@ -22,7 +22,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const fields = 'opening_hours,rating,user_ratings_total,name,formatted_address';
+    const fields = 'opening_hours,rating,user_ratings_total,name,formatted_address,geometry';
     const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(place_id)}&fields=${fields}&key=${apiKey}`;
 
     const response = await fetch(url);
