@@ -845,6 +845,7 @@ const HuntersFindsApp = () => {
   const [mapReturnPopupId, setMapReturnPopupId] = useState(null); // restaurant id to reopen leaflet popup after closing restaurant modal
   const [venueTags, setVenueTags] = useState({}); // { restaurantId: { venue: 'food_truck', payments: ['cash_only'] } }
   const [googleDataOverrides, setGoogleDataOverrides] = useState({}); // { restaurantId: googleData } — patches missing google_data in memory
+  const [locationOverrides, setLocationOverrides] = useState({}); // { restaurantId: {lat, lng} } — patches missing coordinates in memory
   const [restaurantSocialLinks, setRestaurantSocialLinks] = useState({}); // { restaurantId: { instagram, tiktok, website, ordering } }
   const [showVenueTagModal, setShowVenueTagModal] = useState(null); // restaurantId
   const [venueTagForm, setVenueTagForm] = useState({ venue: '', payments: [], instagram: '', tiktok: '', website: '', ordering: '' });
@@ -4520,7 +4521,7 @@ const HuntersFindsApp = () => {
       updateMapMarkers(allRestaurants);
     }, 800); // slightly longer delay to batch multiple enrichments
     return () => { if (enrichRedrawTimerRef.current) clearTimeout(enrichRedrawTimerRef.current); };
-  }, [googleDataOverrides]);
+  }, [googleDataOverrides, locationOverrides]);
 
   // Background enrich restaurants missing google_data (for open-now glow on map)
   React.useEffect(() => {
@@ -4570,6 +4571,9 @@ const HuntersFindsApp = () => {
           let userRatingsTotal = restaurant.googleData?.user_ratings_total || null;
 
           // If no place_id, run Text Search to get one
+          let foundLat = restaurant.location?.lat || null;
+          let foundLng = restaurant.location?.lng || null;
+
           if (!placeId) {
             console.log('🔎 Text search for:', restaurant.name);
             const results = await searchGooglePlacesAPI(restaurant.name, restaurant.location || loc, { limit: 1 });
@@ -4582,9 +4586,18 @@ const HuntersFindsApp = () => {
             placeId = place.place_id;
             rating = place.rating;
             userRatingsTotal = place.user_ratings_total;
-            console.log('✅ Found place_id for', restaurant.name, ':', placeId);
+            foundLat = place.lat || null;
+            foundLng = place.lng || null;
+            console.log('✅ Found place_id for', restaurant.name, ':', placeId, 'coords:', foundLat, foundLng);
           } else {
             console.log('⚡ Using existing place_id for', restaurant.name, ':', placeId);
+          }
+
+          // If restaurant has no coordinates, save them now
+          if (foundLat && foundLng && !restaurant.location?.lat) {
+            console.log('📍 Saving coordinates for', restaurant.name);
+            setLocationOverrides(prev => ({ ...prev, [restaurant.id]: { lat: foundLat, lng: foundLng } }));
+            supabase.from('restaurants').update({ latitude: foundLat, longitude: foundLng }).eq('id', restaurant.id);
           }
 
           // Call Place Details for opening_hours.open_now
@@ -4818,7 +4831,10 @@ const HuntersFindsApp = () => {
 
     // Add markers
     deduped.forEach(restaurant => {
-      if (!restaurant.location || !restaurant.location.lat || !restaurant.location.lng) return;
+      // Apply location override if restaurant has no coordinates yet
+      const locOverride = locationOverrides[restaurant.id];
+      const effectiveLocation = restaurant.location?.lat ? restaurant.location : (locOverride ? { lat: locOverride.lat, lng: locOverride.lng } : null);
+      if (!effectiveLocation?.lat || !effectiveLocation?.lng) return;
 
       // Check if current user has rated this restaurant (rated_by_user may not be set)
       const userRatedThis = user && activeUserRatings.some(r =>
@@ -4857,7 +4873,7 @@ const HuntersFindsApp = () => {
       });
       
       const marker = window.L.marker(
-        [restaurant.location.lat, restaurant.location.lng],
+        [effectiveLocation.lat, effectiveLocation.lng],
         { icon, title: restaurant.name }
       );
       
@@ -4900,13 +4916,13 @@ const HuntersFindsApp = () => {
           }).join('') + '</div>';
       })() : '<div style="padding:10px 0;text-align:center;color:#9ca3af;font-size:11px;">no dishes rated yet</div>';
 
-      const mapsHtml = (restaurant.location?.lat && restaurant.location?.lng) ? `
+      const mapsHtml = (effectiveLocation?.lat && effectiveLocation?.lng) ? `
         <div style="display:flex;gap:5px;margin-top:6px;">
           <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(restaurant.name + (restaurant.location?.address ? ' ' + restaurant.location.address : ''))}" target="_blank" rel="noopener noreferrer"
             style="flex:1;padding:6px;background:rgba(66,133,244,0.08);color:#4285F4;border:1px solid rgba(66,133,244,0.2);border-radius:6px;font-weight:700;font-size:10px;text-align:center;text-decoration:none;display:block;">
             Google Maps
           </a>
-          <a href="https://maps.apple.com/?ll=${restaurant.location.lat},${restaurant.location.lng}&q=${encodeURIComponent(restaurant.name)}" target="_blank" rel="noopener noreferrer"
+          <a href="https://maps.apple.com/?ll=${effectiveLocation.lat},${effectiveLocation.lng}&q=${encodeURIComponent(restaurant.name)}" target="_blank" rel="noopener noreferrer"
             style="flex:1;padding:6px;background:rgba(0,0,0,0.04);color:#555;border:1px solid rgba(0,0,0,0.1);border-radius:6px;font-weight:700;font-size:10px;text-align:center;text-decoration:none;display:block;">
             Apple Maps
           </a>
