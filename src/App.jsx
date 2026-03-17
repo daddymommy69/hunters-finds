@@ -4403,6 +4403,7 @@ const HuntersFindsApp = () => {
                 fill="url(#crystalSheen-${id})" opacity="0.6"/>
           <rect x="42" y="65" width="16" height="25" fill="white" opacity="0.5" rx="2"/>
           <polygon points="28,25 30,22 32,25 30,28" fill="white" opacity="0.9"/>
+          ${openNow ? `<path d="M38,45 L38,75 M50,45 L50,75 M62,45 L62,75 M35,55 L65,55" stroke="white" stroke-width="4" stroke-linecap="round" opacity="0.8"/>` : ""}
           <circle cx="50" cy="105" r="8" fill="url(#crystalBody-${id})" stroke="white" stroke-width="3"/>
         </g>
       </svg>
