@@ -846,6 +846,7 @@ const HuntersFindsApp = () => {
   const [venueTags, setVenueTags] = useState({}); // { restaurantId: { venue: 'food_truck', payments: ['cash_only'] } }
   const [googleDataOverrides, setGoogleDataOverrides] = useState({}); // { restaurantId: googleData } — patches missing google_data in memory
   const [locationOverrides, setLocationOverrides] = useState({}); // { restaurantId: {lat, lng} } — patches missing coordinates in memory
+  const latestRestaurantsRef = React.useRef([]); // always-current ref to avoid stale closure in setTimeout
   const [restaurantSocialLinks, setRestaurantSocialLinks] = useState({}); // { restaurantId: { instagram, tiktok, website, ordering } }
   const [showVenueTagModal, setShowVenueTagModal] = useState(null); // restaurantId
   const [venueTagForm, setVenueTagForm] = useState({ venue: '', payments: [], instagram: '', tiktok: '', website: '', ordering: '' });
@@ -2506,6 +2507,9 @@ const HuntersFindsApp = () => {
     
     return Object.values(restaurantMap);
   }, [restaurants, allDishes]);
+
+  // Keep latestRestaurantsRef always pointing to current allRestaurants
+  React.useEffect(() => { latestRestaurantsRef.current = allRestaurants; }, [allRestaurants]);
 
   // Global top 3 dish IDs by community avg score (used for purple highlighting)
   const top3DishIds = React.useMemo(() => {
@@ -4512,14 +4516,15 @@ const HuntersFindsApp = () => {
   }, [mapFilters, mapInstance, activeTab, allRestaurants]);
 
   // Separate effect for googleDataOverrides — always re-renders pins regardless of popup state
-  // Uses a short delay so enrichment batches don't cause multiple rapid redraws
+  // Uses latestRestaurantsRef to avoid stale closure in the setTimeout callback
   const enrichRedrawTimerRef = React.useRef(null);
   React.useEffect(() => {
     if (!mapInstance || activeTab !== 'map' || !Object.keys(googleDataOverrides).length) return;
     if (enrichRedrawTimerRef.current) clearTimeout(enrichRedrawTimerRef.current);
     enrichRedrawTimerRef.current = setTimeout(() => {
-      updateMapMarkers(allRestaurants);
-    }, 800); // slightly longer delay to batch multiple enrichments
+      // Use ref to get latest allRestaurants — avoids stale closure bug
+      updateMapMarkers(latestRestaurantsRef.current);
+    }, 800);
     return () => { if (enrichRedrawTimerRef.current) clearTimeout(enrichRedrawTimerRef.current); };
   }, [googleDataOverrides, locationOverrides]);
 
@@ -4620,7 +4625,7 @@ const HuntersFindsApp = () => {
             // Also apply override to any duplicate DB entries with same coordinates
             const rLat = restaurant.location?.lat || foundLat;
             const rLng = restaurant.location?.lng || foundLng;
-            const sameLocIds = rLat && rLng ? allRestaurants
+            const sameLocIds = rLat && rLng ? latestRestaurantsRef.current
               .filter(r => r.id && !r.id.startsWith('generated-') &&
                 Math.abs((r.location?.lat || 0) - rLat) < 0.0001 &&
                 Math.abs((r.location?.lng || 0) - rLng) < 0.0001)
