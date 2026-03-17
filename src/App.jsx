@@ -12696,8 +12696,9 @@ ${adminBugNote}`,
         return (
           <>
             <div onClick={() => { if (exploreUserHistory.length > 0) { setExploreUserHistory(h => { const prev = h[h.length-1]; if (prev) setSelectedExploreUser(prev); return h.slice(0,-1); }); setExploreUserFollowersList(null); } else { setSelectedExploreUser(null); setExploreUserHistory([]); setExploreUserFollowersList(null); setViewFollowersOverlay(null); } }} className="fixed inset-0 bg-black/40 z-[60]" style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }} />
-            <div className="fixed z-[61] bg-white rounded-2xl shadow-xl flex flex-col animate-slide-up-fade-simple"
-              style={{ top: '6%', left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 520px)', maxHeight: '86vh' }}>
+            <div className="fixed z-[61] inset-0 flex items-start justify-center pointer-events-none" style={{ paddingTop: '6vh' }}>
+            <div className="bg-white rounded-2xl shadow-xl flex flex-col pointer-events-auto animate-slide-up-fade-simple"
+              style={{ width: 'min(92vw, 520px)', maxHeight: '86vh' }}>
 
               {/* Header */}
               <div className="sticky top-0 bg-white border-b px-4 py-3 flex items-center justify-between rounded-t-2xl flex-shrink-0">
@@ -12859,6 +12860,7 @@ ${adminBugNote}`,
                   </div>
                 )}
               </div>
+            </div>
             </div>
           </>
         );
