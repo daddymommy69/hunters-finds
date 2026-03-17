@@ -4526,30 +4526,12 @@ const HuntersFindsApp = () => {
   // Background enrich restaurants missing google_data (for open-now glow on map)
   React.useEffect(() => {
     if (activeTab !== 'map' || !allRestaurants.length) return;
-    // Log all restaurants and why they are/aren't being enriched
-    allRestaurants.forEach(r => {
-      if (!r.id || r.id.startsWith('generated-') || r.isGooglePlace) return;
-      const hasLat = !!r.location?.lat;
-      const alreadyEnriched = !!googleDataOverrides[r.id]?.opening_hours;
-      const hasHours = !!r.googleData?.opening_hours;
-      const openNowDefined = r.googleData?.opening_hours?.open_now !== undefined && r.googleData?.opening_hours?.open_now !== null;
-      const needsEnrich = hasLat && !alreadyEnriched && (!hasHours || !openNowDefined);
-      if (!needsEnrich) {
-        console.log('⏭️ Skipping', r.name, '— lat:', hasLat, 'enriched:', alreadyEnriched, 'hasHours:', hasHours, 'openNowDefined:', openNowDefined);
-      }
-    });
-
     const missing = allRestaurants.filter(r =>
       r.location?.lat &&
       !r.isGooglePlace &&
       r.id && !r.id.startsWith('generated-') &&
-      !googleDataOverrides[r.id]?.opening_hours &&
-      (
-        !r.googleData?.opening_hours ||
-        r.googleData?.opening_hours?.open_now === undefined ||
-        r.googleData?.opening_hours?.open_now === null
-      )
-    ); // no slice — process all missing restaurants
+      !googleDataOverrides[r.id] // only skip if already enriched THIS session
+    ); // no slice — process all, open_now changes throughout the day
     if (!missing.length) return;
     const enrichBatch = async () => {
       const loc = userLocation || { lat: 37.8044, lng: -122.2712 };
@@ -12709,7 +12691,7 @@ ${adminBugNote}`,
         return (
           <>
             <div onClick={() => { if (exploreUserHistory.length > 0) { setExploreUserHistory(h => { const prev = h[h.length-1]; if (prev) setSelectedExploreUser(prev); return h.slice(0,-1); }); setExploreUserFollowersList(null); } else { setSelectedExploreUser(null); setExploreUserHistory([]); setExploreUserFollowersList(null); setViewFollowersOverlay(null); } }} className="fixed inset-0 bg-black/40 z-[60]" style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }} />
-            <div className={`fixed z-[61] bg-white rounded-2xl shadow-xl flex flex-col ${modalNavDirection === 'back' ? 'animate-slide-in-left' : 'animate-slide-in-right'}`}
+            <div className="fixed z-[61] bg-white rounded-2xl shadow-xl flex flex-col animate-slide-up-fade-simple"
               style={{ top: '6%', left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 520px)', maxHeight: '86vh' }}>
 
               {/* Header */}
