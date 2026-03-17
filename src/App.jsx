@@ -4360,7 +4360,7 @@ const HuntersFindsApp = () => {
   const createCastlePin = (color, size) => {
     const shadowId = `shadow-${color.replace('#', '')}`;
     return `
-      <svg width="${size}" height="${size * 1.2}" viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+      <svg width="${size}" height="${size * 1.2}" viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg" style="overflow:visible">
         <defs>
           <filter id="${shadowId}">
             <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.4"/>
@@ -4377,10 +4377,13 @@ const HuntersFindsApp = () => {
   };
 
   // Crystal glassy castle pin for top 3 restaurants
-  const createCrystalCastlePin = (size) => {
-    const id = `crystal-${size}`;
+  const createCrystalCastlePin = (size, openNow = false) => {
+    const id = `crystal-${size}-${openNow ? 'open' : 'closed'}`;
+    const filterDef = openNow
+      ? `<filter id="crystalShadow-${id}" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#f59e0b" flood-opacity="1"/></filter>`
+      : `<filter id="crystalShadow-${id}" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#7dd3fc" flood-opacity="0.6"/></filter>`;
     return `
-      <svg width="${size}" height="${size * 1.2}" viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+      <svg width="${size}" height="${size * 1.2}" viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg" style="overflow:visible">
         <defs>
           <linearGradient id="crystalBody-${id}" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" style="stop-color:#e0f7ff;stop-opacity:0.95"/>
@@ -4391,21 +4394,15 @@ const HuntersFindsApp = () => {
             <stop offset="0%" style="stop-color:white;stop-opacity:0.7"/>
             <stop offset="100%" style="stop-color:white;stop-opacity:0"/>
           </linearGradient>
-          <filter id="crystalShadow-${id}">
-            <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#7dd3fc" flood-opacity="0.6"/>
-          </filter>
+          ${filterDef}
         </defs>
         <g filter="url(#crystalShadow-${id})">
           <path d="M 30,90 L 30,40 L 25,40 L 25,30 L 20,30 L 20,20 L 30,20 L 30,30 L 40,30 L 40,20 L 50,20 L 50,30 L 60,30 L 60,20 L 70,20 L 70,30 L 75,30 L 75,40 L 70,40 L 70,90 Z"
                 fill="url(#crystalBody-${id})" stroke="white" stroke-width="3.5"/>
-          <!-- sheen overlay -->
           <path d="M 30,90 L 30,40 L 25,40 L 25,30 L 20,30 L 20,20 L 30,20 L 30,30 L 40,30 L 40,20 L 50,20 L 50,30 L 60,30 L 60,20 L 70,20 L 70,30 L 75,30 L 75,40 L 70,40 L 70,90 Z"
                 fill="url(#crystalSheen-${id})" opacity="0.6"/>
-          <!-- door window -->
           <rect x="42" y="65" width="16" height="25" fill="white" opacity="0.5" rx="2"/>
-          <!-- sparkle top-left -->
           <polygon points="28,25 30,22 32,25 30,28" fill="white" opacity="0.9"/>
-          <!-- dot tail -->
           <circle cx="50" cy="105" r="8" fill="url(#crystalBody-${id})" stroke="white" stroke-width="3"/>
         </g>
       </svg>
@@ -4426,7 +4423,7 @@ const HuntersFindsApp = () => {
       popup: `<path d="M34,65 L34,50 L50,38 L66,50 L66,65 Z" fill="white" opacity="0.9"/><line x1="34" y1="50" x2="66" y2="50" stroke="${color}" stroke-width="3"/><line x1="50" y1="38" x2="50" y2="65" stroke="${color}" stroke-width="2" opacity="0.5"/>`,
     };
     const icon = icons[venueType] || icons.restaurant;
-    return `<svg width="${size}" height="${size * 1.2}" viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+    return `<svg width="${size}" height="${size * 1.2}" viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg" style="overflow:visible">
       <defs>${glowFilter}</defs>
       <g filter="${filterRef}">
         <path d="M 30,90 L 30,40 L 25,40 L 25,30 L 20,30 L 20,20 L 30,20 L 30,30 L 40,30 L 40,20 L 50,20 L 50,30 L 60,30 L 60,20 L 70,20 L 70,30 L 75,30 L 75,40 L 70,40 L 70,90 Z"
@@ -4877,7 +4874,7 @@ const HuntersFindsApp = () => {
 
       let pinHtml;
       if (category === 'top3_restaurant') {
-        pinHtml = createCrystalCastlePin(config.size);
+        pinHtml = createCrystalCastlePin(config.size, openNow);
       } else if (venueType !== 'restaurant') {
         pinHtml = createVenuePin(config.color, config.size, venueType, openNow);
       } else if (openNow) {
