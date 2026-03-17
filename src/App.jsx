@@ -4415,7 +4415,7 @@ const HuntersFindsApp = () => {
   // Venue-type icon pins — same teardrop shape as castle, different interior icon
   const createVenuePin = (color, size, venueType, openNow = false) => {
     const id = `vp-${venueType}-${color.replace('#','')}`;
-    const glowFilter = openNow ? `<filter id="glow-${id}"><feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="#f59e0b" flood-opacity="0.9"/></filter>` : `<filter id="shadow-${id}"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.4"/></filter>`;
+    const glowFilter = openNow ? `<filter id="glow-${id}" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#f59e0b" flood-opacity="1"/></filter>` : `<filter id="shadow-${id}" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.4"/></filter>`;
     const filterRef = openNow ? `url(#glow-${id})` : `url(#shadow-${id})`;
     // Interior icons for each venue type
     const icons = {
@@ -6787,6 +6787,8 @@ ${adminBugNote}`,
           to { opacity: 1; transform: translateX(0); }
         }
         .animate-slide-in-right { animation: slideInFromRight 0.22s ease-out forwards; }
+        .custom-castle-marker { overflow: visible !important; background: transparent !important; border: none !important; }
+        .custom-castle-marker svg { overflow: visible !important; }
         .animate-slide-out-right { animation: slideOutToRight 0.22s ease-in forwards; }
         .animate-slide-in-left { animation: slideInFromLeft 0.22s ease-out forwards; }
 
