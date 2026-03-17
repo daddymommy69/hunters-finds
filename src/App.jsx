@@ -1399,11 +1399,12 @@ const HuntersFindsApp = () => {
       const dishNameChanged = dishName !== (editingRating.dish?.name || editingRating.dish_name);
       const restaurantChanged = restaurant !== editingRating.restaurant_name;
       const priceChanged = parseFloat(price) !== editingRating.price;
+      const subcategoryChanged = dishSubcategory !== (editingRating.dish?.subcategory || editingRating.subcategory || '');
       
       let dishId = editingRating.dish_id || editingRating.id;
       
-      // Step 2: If dish name, restaurant, or price changed, update dish
-      if (dishNameChanged || restaurantChanged || priceChanged) {
+      // Step 2: If dish name, restaurant, price, or subcategory changed, update dish
+      if (dishNameChanged || restaurantChanged || priceChanged || subcategoryChanged) {
         const targetRestaurant = restaurants.find(r =>
           r.name.toLowerCase() === restaurant.toLowerCase()
         );
@@ -2387,7 +2388,8 @@ const HuntersFindsApp = () => {
           comments: 0,
           created_at: rating.created_at,
           edit_count: rating.edit_count,
-          edited_at: rating.edited_at
+          edited_at: rating.edited_at,
+          subcategory: rating.dish?.subcategory || null,
         };
       });
     }
@@ -5376,10 +5378,11 @@ const HuntersFindsApp = () => {
         // Dish already exists
         dishId = existingDishes[0].id;
         console.log('✅ Using existing dish:', dishName);
-        // Update subcategory on the dish if provided
-        if (dishSubcategory) {
-          await supabase.from('dishes').update({ subcategory: dishSubcategory }).eq('id', dishId);
-        }
+        // Always update subcategory when provided (user explicitly set it)
+        await supabase.from('dishes').update({
+          subcategory: dishSubcategory || null,
+          cuisine_type: dishCategory || null
+        }).eq('id', dishId);
         
         // Check if user already has an ACTIVE (non-deleted) rating for this dish
         const { data: existingRating } = await supabase
@@ -7556,25 +7559,29 @@ ${adminBugNote}`,
                       )}
                     </div>
 
-                    {/* Subcategory dropdown — only when cuisine selected */}
-                    {selectedCuisine !== 'all' && rankingView === 'dishes' && (() => {
-                      const subs = [...new Set(allDishes.filter(d => (d.cuisine || '').toLowerCase() === selectedCuisine.toLowerCase() && d.subcategory).map(d => d.subcategory.toLowerCase()))].sort();
+                    {/* Subcategory filter — shows when any dishes have subcategories */}
+                    {rankingView === 'dishes' && (() => {
+                      const subs = [...new Set(
+                        allDishes
+                          .filter(d => d.subcategory && (selectedCuisine === 'all' || (d.cuisine || '').toLowerCase() === selectedCuisine.toLowerCase()))
+                          .map(d => d.subcategory.toLowerCase())
+                      )].sort();
                       if (subs.length === 0) return null;
                       return (
                         <div className="relative">
                           <button
                             onClick={() => setActiveOtherCategory(prev => prev === 'subcategory' ? null : 'subcategory')}
-                            className={`px-3 py-1.5 rounded-full text-xs font-semibold transition flex items-center gap-1 ${selectedSubcategory !== 'all' ? 'bg-gray-700 text-white' : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'}`}
+                            className={`px-3 py-1.5 rounded-full text-xs font-semibold transition flex items-center gap-1 ${selectedSubcategory !== 'all' ? 'bg-[#33a29b] text-white' : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'}`}
                             style={{ fontFamily: '"Courier New", monospace' }}
                           >
-                            sub {selectedSubcategory !== 'all' && `(${selectedSubcategory})`}
+                            {selectedSubcategory !== 'all' ? selectedSubcategory : 'type'}
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                           </button>
                           {activeOtherCategory === 'subcategory' && (
                             <div className="absolute top-full left-0 mt-1 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-2 min-w-[140px]">
-                              <button onClick={() => setSelectedSubcategory('all')} className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-semibold transition mb-0.5 ${selectedSubcategory === 'all' ? 'bg-gray-700 text-white' : 'hover:bg-gray-100 text-gray-700'}`} style={{ fontFamily: '"Courier New", monospace' }}>all</button>
+                              <button onClick={() => { setSelectedSubcategory('all'); setActiveOtherCategory(null); }} className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-semibold transition mb-0.5 ${selectedSubcategory === 'all' ? 'bg-[#33a29b] text-white' : 'hover:bg-gray-100 text-gray-700'}`} style={{ fontFamily: '"Courier New", monospace' }}>all</button>
                               {subs.map(sub => (
-                                <button key={sub} onClick={() => setSelectedSubcategory(sub)} className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-semibold transition mb-0.5 ${selectedSubcategory === sub ? 'bg-gray-700 text-white' : 'hover:bg-gray-100 text-gray-700'}`} style={{ fontFamily: '"Courier New", monospace' }}>{sub}</button>
+                                <button key={sub} onClick={() => { setSelectedSubcategory(sub); setActiveOtherCategory(null); }} className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-semibold transition mb-0.5 ${selectedSubcategory === sub ? 'bg-[#33a29b] text-white' : 'hover:bg-gray-100 text-gray-700'}`} style={{ fontFamily: '"Courier New", monospace' }}>{sub}</button>
                               ))}
                             </div>
                           )}
@@ -10608,6 +10615,12 @@ ${adminBugNote}`,
                   <button onClick={(e) => { e.stopPropagation(); if (dishRestaurant) { setSelectedRestaurant(dishRestaurant); handleCloseDish(); } }} className={`text-sm font-semibold hover:underline ${headerPhoto ? 'text-[#7ee8e2]' : 'text-[#33a29b]'}`} style={{ fontFamily: '"Courier New", monospace' }}>{selectedDish.restaurantName}</button>
                   {address && <p className={`text-xs mt-0.5 break-words px-2 ${headerPhoto ? 'text-white/60' : 'text-gray-400'}`} style={{ fontFamily: '"Courier New", monospace' }}>{address}</p>}
                   <p className={`text-xs mt-0.5 ${headerPhoto ? 'text-white/60' : 'text-gray-400'}`} style={{ fontFamily: '"Courier New", monospace' }}>${selectedDish.price.toFixed(2)} · {selectedDish.numRatings} rating{selectedDish.numRatings !== 1 ? 's' : ''}</p>
+                  {(selectedDish.cuisine || selectedDish.subcategory) && (
+                    <div className="flex items-center justify-center gap-1 mt-1.5 flex-wrap">
+                      {selectedDish.cuisine && <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${headerPhoto ? 'bg-white/20 text-white' : 'bg-[#33a29b]/10 text-[#33a29b]'}`} style={{ fontFamily: '"Courier New", monospace' }}>{selectedDish.cuisine}</span>}
+                      {selectedDish.subcategory && <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${headerPhoto ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`} style={{ fontFamily: '"Courier New", monospace' }}>{selectedDish.subcategory}</span>}
+                    </div>
+                  )}
                 </div>
               </div>{/* end z-10 */}
               </div>{/* end header */}
