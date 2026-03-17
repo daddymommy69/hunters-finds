@@ -869,12 +869,17 @@ const HuntersFindsApp = () => {
     setExploreUserHistory([]);
     setExploreUserFollowersList(null);
     setViewFollowersOverlay(null);
-    // Fetch live follower counts
+    // Fetch live follower counts using full select (count: exact can return null)
     if (u) {
-      supabase.from('user_follows').select('id', { count: 'exact', head: true }).eq('following_id', u.id).then(({ count: fc }) => {
-        supabase.from('user_follows').select('id', { count: 'exact', head: true }).eq('follower_id', u.id).then(({ count: fg }) => {
-          setSelectedExploreUser(prev => prev && prev.id === u.id ? { ...prev, followers_count: fc || 0, following_count: fg || 0 } : prev);
-        });
+      Promise.all([
+        supabase.from('user_follows').select('id').eq('following_id', u.id),
+        supabase.from('user_follows').select('id').eq('follower_id', u.id)
+      ]).then(([{ data: fd }, { data: fg }]) => {
+        setSelectedExploreUser(prev => prev && prev.id === u.id ? {
+          ...prev,
+          followers_count: (fd || []).length,
+          following_count: (fg || []).length
+        } : prev);
       });
     }
   };
@@ -944,12 +949,17 @@ const HuntersFindsApp = () => {
       return u;
     });
     setProfileModalTab('stats');
-    // Fetch live follower counts
+    // Fetch live follower counts using full select
     if (u) {
-      supabase.from('user_follows').select('id', { count: 'exact', head: true }).eq('following_id', u.id).then(({ count: fc }) => {
-        supabase.from('user_follows').select('id', { count: 'exact', head: true }).eq('follower_id', u.id).then(({ count: fg }) => {
-          setSelectedUserRaw(prev => prev && prev.id === u.id ? { ...prev, followers_count: fc || 0, following_count: fg || 0 } : prev);
-        });
+      Promise.all([
+        supabase.from('user_follows').select('id').eq('following_id', u.id),
+        supabase.from('user_follows').select('id').eq('follower_id', u.id)
+      ]).then(([{ data: fd }, { data: fg }]) => {
+        setSelectedUserRaw(prev => prev && prev.id === u.id ? {
+          ...prev,
+          followers_count: (fd || []).length,
+          following_count: (fg || []).length
+        } : prev);
       });
     }
   };
