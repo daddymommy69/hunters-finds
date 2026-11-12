@@ -1,22 +1,19 @@
 // api/places/details.js — Vercel serverless function
-// Proxies Google Places Details API to get opening_hours with open_now
+// Proxies Google Places Details API to get opening_hours with open_now.
+// The API key stays on the server; the browser only ever calls this route.
+
+import { getPlacesKey, rejectBadMethod, rejectForeignOrigin, isReasonableString } from './_shared.js';
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+  if (rejectBadMethod(req, res) || rejectForeignOrigin(req, res)) return;
 
   const { place_id } = req.query;
 
-  if (!place_id) {
+  if (!isReasonableString(place_id, 300)) {
     return res.status(400).json({ error: 'place_id is required' });
   }
 
-  const apiKey = process.env.VITE_GOOGLE_PLACES_API_KEY;
+  const apiKey = getPlacesKey();
   if (!apiKey) {
     return res.status(500).json({ error: 'API key not configured' });
   }

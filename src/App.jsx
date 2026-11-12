@@ -1808,7 +1808,7 @@ const HuntersFindsApp = () => {
     
     try {
       const response = await fetch(
-        `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(restaurantName)}&key=${GOOGLE_PLACES_API_KEY}`
+        `/api/places/search?query=${encodeURIComponent(restaurantName)}`
       );
       
       const data = await response.json();
@@ -2679,7 +2679,7 @@ const HuntersFindsApp = () => {
           opening_hours: place.opening_hours,
           user_ratings_total: place.user_ratings_total,
           photo: place.photos?.[0] ? 
-            `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${place.photos[0].photo_reference}&key=${GOOGLE_PLACES_API_KEY}` 
+            `/api/places/photo?ref=${encodeURIComponent(place.photos[0].photo_reference)}`
             : null
         }));
         
@@ -4306,13 +4306,10 @@ const HuntersFindsApp = () => {
   // ENHANCED MAP FUNCTIONS
   // ============================================
   
-  const GOOGLE_PLACES_API_KEY = import.meta.env.VITE_GOOGLE_PLACES_API_KEY;
-  
-  // Debug: Log API key status (first 10 chars only for security)
-  React.useEffect(() => {
-    console.log('🔑 Google API Key status:', GOOGLE_PLACES_API_KEY ? `${GOOGLE_PLACES_API_KEY.substring(0, 10)}...` : 'MISSING');
-  }, []);
-  
+  // The Google Places key lives only on the server (api/places/*.js).
+  // Never read it here: anything in import.meta.env.VITE_* is published
+  // in the website's JavaScript for anyone to copy.
+
   // Cache management (24 hour cache)
   const CACHE_DURATION = 24 * 60 * 60 * 1000;
   
